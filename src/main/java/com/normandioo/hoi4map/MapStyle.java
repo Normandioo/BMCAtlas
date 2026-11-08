@@ -188,14 +188,14 @@ final class MapStyle {
                         int dist = DIST[gi] / 3;
                         if (grey) {
                             c = mix(muted(c), country, 0.10f);
-                            if (dist == 0) c = mix(c, 0xFF070B10, 0.6f);
+                            if (dist == 0) c = mix(c, 0xFF070B10, 0.6f * Prefs.border());
                         } else if (political) {
-                            c = tint(c, country, 0.72f);
-                            if (dist == 0) c = mix(c, 0xFF070B10, 0.85f);
-                            else if (dist <= 8) c = mix(c, lighten(country, 1.45f), 0.5f * (1f - (dist - 1) / 7f));
+                            c = tint(c, country, 0.72f * Prefs.fill());
+                            if (dist == 0) c = mix(c, 0xFF070B10, 0.85f * Prefs.border());
+                            else if (dist <= 8) c = mix(c, lighten(country, 1.45f), 0.5f * Prefs.border() * (1f - (dist - 1) / 7f));
                         } else {
-                            c = tint(c, country, 0.30f);
-                            if (dist == 0) c = mix(c, 0xFF05080C, 0.5f);
+                            c = tint(c, country, 0.30f * Prefs.fill());
+                            if (dist == 0) c = mix(c, 0xFF05080C, 0.5f * Prefs.border());
                         }
                         if (p == selected) {
                             c = mix(c, 0xFFFFE27A, 0.28f);
@@ -261,7 +261,7 @@ final class MapStyle {
                     int idx = ((y / SPAN) + 1) * N + ((x / SPAN) + 1);
                     int country = rgb[idx];
                     if (country != 0) {
-                        c = tint(c, country, political ? 0.72f : 0.30f);
+                        c = tint(c, country, (political ? 0.72f : 0.30f) * Prefs.fill());
                         if (political) {
                             int lx = x % SPAN;
                             int lz = y % SPAN;
@@ -271,9 +271,9 @@ final class MapStyle {
                             if (du[idx]) d = Math.min(d, lz);
                             if (dd[idx]) d = Math.min(d, SPAN - 1 - lz);
                             if (d <= 1) {
-                                c = mix(c, 0xFF070B10, 0.85f);
+                                c = mix(c, 0xFF070B10, 0.85f * Prefs.border());
                             } else if (d <= 8) {
-                                float a = 0.5f * (1f - (d - 2) / 7f);
+                                float a = 0.5f * Prefs.border() * (1f - (d - 2) / 7f);
                                 c = mix(c, lighten(country, 1.45f), a);
                             }
                         }

@@ -267,7 +267,9 @@ final class MapData {
 
     static void ensureWorld(Minecraft mc) {
         if (mc.level == null) return;
-        siteApplies = mc.level.dimension().toString().contains("overworld");
+        ServerData srv = mc.getCurrentServer();
+        SiteTerritories.serverChanged(srv != null && srv.ip != null ? srv.ip : "");
+        siteApplies = SiteTerritories.dimensionApplies(mc.level.dimension().toString());
         if (siteSeen != SiteTerritories.version()) {
             siteSeen = SiteTerritories.version();
             for (Region r : REGIONS.values()) r.styledMode = -1;

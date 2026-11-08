@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Países e províncias do site (somente leitura): baixa o territories.json que o site já publica
@@ -192,6 +191,12 @@ final class SiteTerritories {
         boolean liveWar = true;
         /** Espadas e bandeiras sobre as cidades em guerra. */
         boolean warMarkers = true;
+        /** Lista de mapas do servidor (maps.json); vazio = maps.json na raiz do site. */
+        String mapsUrl = "";
+        /** Chave do mapa em uso; vazio = automático (pelo endereço do servidor, senão o primeiro da lista). */
+        String currentMap = "";
+        /** Mapas escritos aqui mesmo (mesmo formato do maps.json); valem junto com os da lista do servidor. */
+        List<MapCatalog.Entry> maps = new ArrayList<>();
     }
 
     // ------------------------------------------------------------------- dados
@@ -245,7 +250,9 @@ final class SiteTerritories {
     private static Settings settings = new Settings();
     private static Path settingsFile, cacheFile;
     private static ScheduledExecutorService scheduler;
-    private static final AtomicBoolean LOADING = new AtomicBoolean();
+    private static volatile String loadingUrl;
+    private static volatile MapCatalog.Entry active;
+    private static String lastServer = "";
 
     /** O jogador pode desligar o uso do site e voltar ao modo manual (botão do painel). */
     static volatile boolean useSite = true;
@@ -265,8 +272,28 @@ final class SiteTerritories {
     }
 
     /** Pasta do territories.json (onde ficam flags/ e skins/). */
+    /** Endereço do territories.json em uso: o do mapa escolhido, senão o de site.json. */
+    static String url() {
+        MapCatalog.Entry e = active;
+        String u = e == null ? null : MapCatalog.territoriesUrl(e);
+        return u != null && !u.isBlank() ? u : settings.url == null ? "" : settings.url;
+    }
+
+    static String mapsUrl() {
+        return settings.mapsUrl;
+    }
+
+    static List<MapCatalog.Entry> localMaps() {
+        return settings.maps == null ? List.of() : settings.maps;
+    }
+
+    /** O mapa em uso (null = o "url" de site.json, sem lista). */
+    static MapCatalog.Entry activeMap() {
+        return active;
+    }
+
     static String baseUrl() {
-        String u = settings.url == null ? "" : settings.url;
+        String u = url();
         int i = u.lastIndexOf('/');
         return i < 0 ? "" : u.substring(0, i + 1);
     }
@@ -274,7 +301,7 @@ final class SiteTerritories {
     /** Raiz do site (para caminhos como "gaia/flags/SC.png"). */
     static String rootUrl() {
         try {
-            URI u = URI.create(settings.url);
+            URI u = URI.create(url());
             return u.getScheme() + "://" + u.getAuthority() + "/";
         } catch (RuntimeException e) {
             return "";
@@ -292,6 +319,35 @@ final class SiteTerritories {
         return settings.showPlayers;
     }
 
+    static void setLiveWar(boolean v) {
+        settings.liveWar = v;
+        saveSettings();
+    }
+
+    static void setWarMarkers(boolean v) {
+        settings.warMarkers = v;
+        saveSettings();
+    }
+
+    static void setShowPlayers(boolean v) {
+        settings.showPlayers = v;
+        saveSettings();
+    }
+
+    static void saveSettings() {
+        if (settingsFile == null) return;
+        try {
+            Files.writeString(settingsFile, GSON.toJson(settings), StandardCharsets.UTF_8);
+        } catch (IOException | RuntimeException e) {
+            Hoi4MapClient.LOG.warn("Não foi possível gravar {}", settingsFile, e);
+        }
+    }
+
+    /** O mapa vale para esta dimensão do mundo em que o jogador está? */
+    static boolean dimensionApplies(String dim) {
+        return MapCatalog.dimensionMatches(active, dim);
+    }
+
     static boolean liveWar() {
         return settings.liveWar;
     }
@@ -301,12 +357,15 @@ final class SiteTerritories {
     }
 
     static String dynmapUrl() {
-        String u = settings.dynmapUrl;
+        MapCatalog.Entry e = active;
+        String u = e != null && e.dynmapUrl != null ? e.dynmapUrl : settings.dynmapUrl;
         return u == null || u.isBlank() ? null : u.endsWith("/") ? u : u + "/";
     }
 
     static String dynmapWorld() {
-        return settings.dynmapWorld == null || settings.dynmapWorld.isBlank() ? "world" : settings.dynmapWorld;
+        MapCatalog.Entry e = active;
+        String w = e != null && e.dynmapWorld != null ? e.dynmapWorld : settings.dynmapWorld;
+        return w == null || w.isBlank() ? "world" : w;
     }
 
     static int playersRefreshMs() {
@@ -331,16 +390,18 @@ final class SiteTerritories {
 
     // ------------------------------------------------------------------- início
 
+    private static Path dir;
+
     static void init() {
-        Path dir = FabricLoader.getInstance().getConfigDir().resolve("hoi4map");
+        dir = FabricLoader.getInstance().getConfigDir().resolve("hoi4map");
         settingsFile = dir.resolve("site.json");
-        cacheFile = dir.resolve("territories_cache.json");
         try {
             Files.createDirectories(dir);
             if (Files.exists(settingsFile)) {
                 Settings read = GSON.fromJson(Files.readString(settingsFile, StandardCharsets.UTF_8), Settings.class);
                 if (read != null) settings = read;
             }
+            if (settings.maps == null) settings.maps = new ArrayList<>();
             Files.writeString(settingsFile, GSON.toJson(settings), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
             Hoi4MapClient.LOG.warn("Não foi possível ler {}", settingsFile, e);
@@ -349,38 +410,112 @@ final class SiteTerritories {
             status = "desligado em site.json";
             return;
         }
+        MapCatalog.init(dir);
+        active = pick();
+        cacheFile = cacheFileFor(active);
+        loadCache();
 
-        // 1) cópia local: a nossa, ou a do outro mod (Cumania Territories), para funcionar offline
-        Path other = FabricLoader.getInstance().getConfigDir().resolve("cumania_territories_cache.json");
-        for (Path p : new Path[]{cacheFile, other}) {
-            try {
-                if (Files.exists(p)) {
-                    apply(parse(Files.readString(p, StandardCharsets.UTF_8)), "cache");
-                    break;
-                }
-            } catch (IOException | RuntimeException e) {
-                Hoi4MapClient.LOG.warn("Cópia ilegível: {}", p, e);
-            }
-        }
-
-        // 2) site: agora e depois a cada refreshMinutes
+        // site: agora e depois a cada refreshMinutes (a lista de mapas primeiro, que pode mudar o mapa em uso)
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "hoi4map-site");
             t.setDaemon(true);
             return t;
         });
+        Runnable job = () -> {
+            MapCatalog.refresh();
+            reload();
+        };
         if (settings.refreshMinutes > 0) {
-            scheduler.scheduleWithFixedDelay(SiteTerritories::reload, 0, settings.refreshMinutes, TimeUnit.MINUTES);
+            scheduler.scheduleWithFixedDelay(job, 0, settings.refreshMinutes, TimeUnit.MINUTES);
         } else {
-            scheduler.execute(SiteTerritories::reload);
+            scheduler.execute(job);
         }
+    }
+
+    private static Path cacheFileFor(MapCatalog.Entry e) {
+        return dir.resolve(e == null ? "territories_cache.json" : "territories_cache_" + e.key.replaceAll("[^a-zA-Z0-9._-]", "_") + ".json");
+    }
+
+    /** A cópia local do mapa em uso (e, no mapa padrão, a do outro mod de territórios), para funcionar offline. */
+    private static void loadCache() {
+        List<Path> candidates = new ArrayList<>();
+        candidates.add(cacheFile);
+        if (active == null) candidates.add(FabricLoader.getInstance().getConfigDir().resolve("cumania_territories_cache.json"));
+        for (Path p : candidates) {
+            try {
+                if (Files.exists(p)) {
+                    apply(parse(Files.readString(p, StandardCharsets.UTF_8)), "cache");
+                    return;
+                }
+            } catch (IOException | RuntimeException e) {
+                Hoi4MapClient.LOG.warn("Cópia ilegível: {}", p, e);
+            }
+        }
+    }
+
+    /** O mapa a usar: o escolhido, senão o do servidor em que se está, senão o primeiro da lista (null = só o url de site.json). */
+    private static MapCatalog.Entry pick() {
+        MapCatalog.Entry e = MapCatalog.get(settings.currentMap);
+        if (e != null || (settings.currentMap != null && !settings.currentMap.isBlank())) return e;
+        e = MapCatalog.forServer(lastServer);
+        if (e != null) return e;
+        List<MapCatalog.Entry> list = MapCatalog.list();
+        return list.isEmpty() ? null : list.get(0);
+    }
+
+    private static boolean sameMap(MapCatalog.Entry a, MapCatalog.Entry b) {
+        if (a == b) return true;
+        if (a == null || b == null) return false;
+        return a.key.equals(b.key) && java.util.Objects.equals(MapCatalog.territoriesUrl(a), MapCatalog.territoriesUrl(b))
+                && java.util.Objects.equals(a.dynmapWorld, b.dynmapWorld) && java.util.Objects.equals(a.dynmapUrl, b.dynmapUrl)
+                && java.util.Objects.equals(a.dimension, b.dimension);
+    }
+
+    private static void activate(MapCatalog.Entry e) {
+        if (sameMap(e, active)) {
+            active = e;      // mesma coisa, objeto novo
+            return;
+        }
+        active = e;
+        cacheFile = cacheFileFor(e);
+        data = null;
+        version++;
+        status = "carregando " + (e == null ? "" : e.name) + "...";
+        OnlinePlayers.reset();
+        DynmapMarkers.reset();
+        WarMarkers.clear();
+        loadCache();
+        if (scheduler != null) scheduler.execute(SiteTerritories::reload);
+    }
+
+    /** Escolha do jogador (botão de mapas): grava em site.json e carrega o mapa. */
+    static void selectMap(String key) {
+        settings.currentMap = key == null ? "" : key;
+        saveSettings();
+        activate(pick());
+    }
+
+    /** Ao entrar num mundo: se o jogador não fixou um mapa, vale o que o servidor pede (maps.json "servers"). */
+    static void serverChanged(String address) {
+        String a = address == null ? "" : address;
+        if (a.equals(lastServer)) return;
+        lastServer = a;
+        if (settings.currentMap == null || settings.currentMap.isBlank()) activate(pick());
+    }
+
+    /** A lista de mapas mudou (chegou o maps.json): reavalia qual usar. */
+    static void catalogChanged() {
+        activate(pick());
     }
 
     /** Baixa o arquivo em segundo plano; se for válido, troca os dados. */
     static void reload() {
-        if (!settings.enabled || settings.url == null || settings.url.isBlank()) return;
-        if (!LOADING.compareAndSet(false, true)) return;
-        HTTP.sendAsync(HttpRequest.newBuilder(URI.create(settings.url))
+        if (!settings.enabled) return;
+        String url = url();
+        if (url == null || url.isBlank() || url.equals(loadingUrl)) return;
+        loadingUrl = url;
+        Path cf = cacheFile;
+        HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url))
                                 .timeout(Duration.ofSeconds(30))
                                 .header("User-Agent", "hoi4map-fabric-mod")
                                 .GET().build(),
@@ -390,13 +525,14 @@ final class SiteTerritories {
                         if (failure != null) throw new IOException(failure);
                         if (response.statusCode() != 200) throw new IOException("HTTP " + response.statusCode());
                         Data d = parse(response.body());
-                        Files.writeString(cacheFile, response.body(), StandardCharsets.UTF_8);
+                        if (!url.equals(url())) return;      // o jogador trocou de mapa no meio do download
+                        if (cf != null) Files.writeString(cf, response.body(), StandardCharsets.UTF_8);
                         apply(d, "site");
                     } catch (IOException | RuntimeException e) {
                         if (data == null) status = "falhou: " + e;
-                        Hoi4MapClient.LOG.warn("Não foi possível baixar {}: {}", settings.url, e.toString());
+                        Hoi4MapClient.LOG.warn("Não foi possível baixar {}: {}", url, e.toString());
                     } finally {
-                        LOADING.set(false);
+                        if (url.equals(loadingUrl)) loadingUrl = null;
                     }
                 });
     }
