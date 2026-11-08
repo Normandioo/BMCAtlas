@@ -10,6 +10,11 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -217,7 +222,7 @@ final class MapData {
 
     private static void load() {
         if (worldKey == null) return;
-        Path regions = dir().resolve(worldKey + ".regions");
+        Path regions = dir().resolve(worldKey + ".regions3");
         if (Files.exists(regions)) {
             try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(regions)))) {
                 int n = in.readInt();
@@ -257,7 +262,7 @@ final class MapData {
         if (worldKey == null || (REGIONS.isEmpty() && OWNERS.isEmpty())) return;
         try {
             Files.createDirectories(dir());
-            Path regions = dir().resolve(worldKey + ".regions");
+            Path regions = dir().resolve(worldKey + ".regions3");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(regions)))) {
                 out.writeInt(REGIONS.size());
                 for (Region r : REGIONS.values()) {
@@ -359,10 +364,11 @@ final class MapData {
         LevelChunk north = level.getChunkSource().getChunkNow(cx, cz - 1);
         LevelChunk northWest = level.getChunkSource().getChunkNow(cx - 1, cz - 1);
 
+        // MOTION_BLOCKING ignora plantas/flores (sem colisão) mas inclui folhas, vidro e fluidos
         int[] heights = new int[256];
         for (int lz = 0; lz < 16; lz++) {
             for (int lx = 0; lx < 16; lx++) {
-                heights[lz * 16 + lx] = chunk.getHeight(Heightmap.Types.WORLD_SURFACE, lx, lz);
+                heights[lz * 16 + lx] = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, lx, lz);
             }
         }
 
@@ -380,20 +386,33 @@ final class MapData {
                 }
                 pos.set(wx, y, wz);
                 BlockState state = chunk.getBlockState(pos);
+                FluidState fluid = state.getFluidState();
 
                 int color;
-                if (!state.getFluidState().isEmpty()) {
-                    int floor = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR, lx, lz);
-                    color = waterColor(Math.max(0, top - floor));
+                if (!fluid.isEmpty()) {
+                    if (fluid.is(FluidTags.LAVA)) {
+                        color = 0xFFD9561A;
+                    } else {
+                        int floorTop = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR, lx, lz);
+                        int depth = Math.max(0, top - floorTop);
+                        int floorColor = 0xFF30323C;
+                        if (floorTop - 1 >= -64) {
+                            pos.set(wx, floorTop - 1, wz);
+                            int c = blockColor(level, chunk.getBlockState(pos), pos);
+                            if (c != 0) floorColor = c;
+                            pos.set(wx, y, wz);
+                        }
+                        color = mix(floorColor, waterColor(level, pos), Math.min(0.92f, 0.42f + depth * 0.04f));
+                    }
                 } else {
-                    MapColor mc = state.getMapColor(level, pos);
-                    if (mc.col == 0) {
+                    int c = blockColor(level, state, pos);
+                    if (c == 0) {
                         reg.px[outIndex] = 0;
                         continue;
                     }
                     int hNW = neighborHeight(chunk, west, north, northWest, heights, lx - 1, lz - 1, top);
-                    float shade = 1.0f + Math.max(-4, Math.min(4, top - hNW)) * 0.055f;
-                    color = shadeColor(mc.col, shade);
+                    float shade = 1.0f + Math.max(-4, Math.min(4, top - hNW)) * 0.06f;
+                    color = shadeColor(c, shade);
                 }
                 reg.px[outIndex] = color;
             }
@@ -419,12 +438,114 @@ final class MapData {
             z = 15;
         }
         if (c == null) return fallback;
-        return c.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+        return c.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
     }
 
-    private static int waterColor(int depth) {
-        float f = 1.0f - Math.min(depth, 30) / 46.0f; // 1.0 raso ... ~0.35 fundo
-        return shadeColor(0x3A68D8, f);
+    // ------------------------------------------------------------- cores de bloco
+
+    /** Cor média da textura de cada bloco (0 = sem textura encontrada). */
+    private static final Map<Block, Integer> BASE_COLORS = new HashMap<>();
+
+    private static final String[] STRIP_SUFFIXES = {
+            "_stairs", "_slab", "_wall", "_fence_gate", "_fence", "_button", "_pressure_plate"
+    };
+
+    /** Cor do bloco como no Xaero's: textura (face de cima) multiplicada pelo tint do bioma. */
+    private static int blockColor(ClientLevel level, BlockState state, BlockPos pos) {
+        Block block = state.getBlock();
+        Integer base = BASE_COLORS.get(block);
+        if (base == null) {
+            base = loadBaseColor(block);
+            BASE_COLORS.put(block, base);
+        }
+        if (base == 0) {
+            MapColor mc = state.getMapColor(level, pos);
+            return mc.col == 0 ? 0 : (0xFF000000 | mc.col);
+        }
+        int tint = Minecraft.getInstance().getBlockColors().getColor(state, level, pos, 0);
+        if (tint != -1) return multiply(base, tint);
+        return base;
+    }
+
+    private static int waterColor(ClientLevel level, BlockPos pos) {
+        int tint = Minecraft.getInstance().getBlockColors().getColor(Blocks.WATER.defaultBlockState(), level, pos, 0);
+        if (tint == -1) return 0xFF3F76E4;
+        return 0xFF000000 | (tint & 0xFFFFFF);
+    }
+
+    private static int loadBaseColor(Block block) {
+        Identifier id = BuiltInRegistries.BLOCK.getKey(block);
+        String ns = id.getNamespace();
+        String path = id.getPath();
+
+        List<String> names = new ArrayList<>();
+        if (path.equals("water")) names.add("water_still");
+        if (path.equals("lava")) names.add("lava_still");
+        addCandidates(names, path);
+        for (String suffix : STRIP_SUFFIXES) {
+            if (path.endsWith(suffix)) {
+                String stem = path.substring(0, path.length() - suffix.length());
+                addCandidates(names, stem);
+                names.add(stem + "s");
+                names.add(stem + "_planks");
+                names.add(stem + "_block");
+                break;
+            }
+        }
+        for (String name : names) {
+            int c = averageTexture(ns, name);
+            if (c != 0) return c;
+        }
+        return 0;
+    }
+
+    private static void addCandidates(List<String> out, String name) {
+        out.add(name + "_top");
+        out.add(name);
+        out.add(name + "_side");
+        out.add(name + "_front");
+    }
+
+    private static int averageTexture(String ns, String name) {
+        Identifier tex = Identifier.fromNamespaceAndPath(ns, "textures/block/" + name + ".png");
+        try {
+            var res = Minecraft.getInstance().getResourceManager().getResource(tex);
+            if (res.isEmpty()) return 0;
+            try (java.io.InputStream in = res.get().open(); NativeImage img = NativeImage.read(in)) {
+                long r = 0, g = 0, b = 0;
+                int n = 0;
+                int w = img.getWidth();
+                int h = Math.min(img.getHeight(), w); // texturas animadas: só o primeiro quadro
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        int argb = img.getPixel(x, y);
+                        if (((argb >>> 24) & 0xFF) < 32) continue;
+                        r += (argb >> 16) & 0xFF;
+                        g += (argb >> 8) & 0xFF;
+                        b += argb & 0xFF;
+                        n++;
+                    }
+                }
+                if (n == 0) return 0;
+                return 0xFF000000 | ((int) (r / n) << 16) | ((int) (g / n) << 8) | (int) (b / n);
+            }
+        } catch (IOException | RuntimeException e) {
+            return 0;
+        }
+    }
+
+    private static int multiply(int a, int b) {
+        int r = (((a >> 16) & 0xFF) * ((b >> 16) & 0xFF)) / 255;
+        int g = (((a >> 8) & 0xFF) * ((b >> 8) & 0xFF)) / 255;
+        int bl = ((a & 0xFF) * (b & 0xFF)) / 255;
+        return 0xFF000000 | (r << 16) | (g << 8) | bl;
+    }
+
+    private static int mix(int a, int b, float t) {
+        int r = (int) (((a >> 16) & 0xFF) * (1 - t) + ((b >> 16) & 0xFF) * t);
+        int g = (int) (((a >> 8) & 0xFF) * (1 - t) + ((b >> 8) & 0xFF) * t);
+        int bl = (int) ((a & 0xFF) * (1 - t) + (b & 0xFF) * t);
+        return 0xFF000000 | (r << 16) | (g << 8) | bl;
     }
 
     private static int shadeColor(int rgb, float shade) {
