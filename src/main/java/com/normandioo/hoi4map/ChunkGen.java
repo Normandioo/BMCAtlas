@@ -45,6 +45,7 @@ final class ChunkGen {
     private static long[] order = new long[0];
     private static int cursor;
     private static final AtomicInteger inflight = new AtomicInteger();
+    private static final AtomicInteger failures = new AtomicInteger();
     private static final Queue<Patch> PATCHES = new ConcurrentLinkedQueue<>();
     private static int ticks;
     private static net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension;
@@ -126,6 +127,7 @@ final class ChunkGen {
         FAILED.clear();
         PATCHES.clear();
         inflight.set(0);
+        failures.set(0);
         cursor = 0;
         ticks = 0;
         startedAt = System.currentTimeMillis();
@@ -248,6 +250,10 @@ final class ChunkGen {
             stop(mc, "Parado: o servidor interno não está disponível.");
             return;
         }
+        if (failures.get() > 200) {
+            stop(mc, "Parado: muitos chunks falharam (veja o log do jogo).");
+            return;
+        }
         int submitted = 0;
         while (cursor < order.length && inflight.get() < MAX_INFLIGHT && submitted < SUBMIT_PER_TICK) {
             long k = order[cursor++];
@@ -257,7 +263,7 @@ final class ChunkGen {
                 try {
                     job(sl, cx, cz);
                 } catch (Throwable t) {
-                    Hoi4MapClient.LOG.warn("Falha ao gerar o chunk {},{}", cx, cz, t);
+                    if (failures.incrementAndGet() <= 5) Hoi4MapClient.LOG.warn("Falha ao gerar o chunk {},{}", cx, cz, t);
                 } finally {
                     inflight.decrementAndGet();
                 }

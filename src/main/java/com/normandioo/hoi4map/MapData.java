@@ -598,7 +598,12 @@ final class MapData {
         int v = Math.floorMod(pos.getZ(), 16) * t.w / 16;
         int s = t.px[v * t.w + u];
         int base = ((s >>> 24) < 32) ? t.avg : mix(t.avg, s, 0.6f);
-        int tint = Minecraft.getInstance().getBlockColors().getColor(state, level, pos, 0);
+        int tint;
+        try {
+            tint = Minecraft.getInstance().getBlockColors().getColor(state, level, pos, 0);
+        } catch (RuntimeException e) {
+            tint = -1; // sem tint do bioma (por exemplo, nível do servidor sem as cores de bioma)
+        }
         if (tint != -1) return multiply(base, tint);
         return base;
     }
