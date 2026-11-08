@@ -29,7 +29,7 @@ public class Hoi4MapClient implements ClientModInitializer {
         Countries.load();
         SiteTerritories.init();
 
-        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "minimap"), (graphics, tickCounter) -> Minimap.render(graphics));
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "minimap"), (graphics, tickCounter) -> Minimap.render(graphics, tickCounter.getGameTimeDeltaPartialTick(false)));
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             ChunkGen.tick(mc);

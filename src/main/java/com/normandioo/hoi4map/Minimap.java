@@ -17,7 +17,7 @@ final class Minimap {
 
     private static final int MARGIN = 6;
 
-    static void render(GuiGraphics g) {
+    static void render(GuiGraphics g, float partial) {
         Prefs.Data p = Prefs.get();
         Minecraft mc = Minecraft.getInstance();
         if (!p.minimap || mc.player == null || mc.level == null || mc.options.hideGui) return;
@@ -31,7 +31,8 @@ final class Minimap {
         if (p.minimapCorner == 1) y += 24;
 
         double scale = p.minimapZoomPct / 100.0;
-        double cx = mc.player.getX(), cz = mc.player.getZ();
+        double cx = net.minecraft.util.Mth.lerp(partial, mc.player.xo, mc.player.getX());
+        double cz = net.minecraft.util.Mth.lerp(partial, mc.player.zo, mc.player.getZ());
         int mode = MapScreen.minimapMode();
 
         // moldura
@@ -49,6 +50,9 @@ final class Minimap {
         int ox = x + size / 2, oy = y + size / 2;
         SiteTerritories.Data d = MapData.siteApplies() && SiteTerritories.active() ? SiteTerritories.data() : null;
         int uploads = 0;
+        g.pose().pushMatrix();
+        g.pose().translate((float) (ox - cx * scale), (float) (oy - cz * scale));
+        g.pose().scale((float) scale, (float) scale);
         for (int rx = rx0; rx <= rx1; rx++) {
             for (int rz = rz0; rz <= rz1; rz++) {
                 MapData.Region r = MapData.region(rx, rz, false);
@@ -61,18 +65,15 @@ final class Minimap {
                 }
                 if (r.id == null) continue;
                 MapData.markUsed(r);
-                int sx0 = (int) Math.floor(ox + (rx * (double) MapData.REGION_PX - cx) * scale);
-                int sx1 = (int) Math.floor(ox + ((rx + 1) * (double) MapData.REGION_PX - cx) * scale);
-                int sy0 = (int) Math.floor(oy + (rz * (double) MapData.REGION_PX - cz) * scale);
-                int sy1 = (int) Math.floor(oy + ((rz + 1) * (double) MapData.REGION_PX - cz) * scale);
                 int rs = MapData.REGION_PX;
-                g.blit(RenderPipelines.GUI_TEXTURED, r.id, sx0, sy0, 0f, 0f, sx1 - sx0, sy1 - sy0, rs, rs, rs, rs);
+                g.blit(RenderPipelines.GUI_TEXTURED, r.id, rx * rs, rz * rs, 0f, 0f, rs, rs, rs, rs, rs, rs);
             }
         }
+        g.pose().popMatrix();
 
         if (d != null && p.minimapCities) drawCities(g, d, ox, oy, cx, cz, scale, size);
         if (p.minimapPlayers && SiteTerritories.showPlayers()) drawPlayers(g, d, mc, ox, oy, cx, cz, scale, size);
-        drawSelf(g, mc, ox, oy);
+        drawSelf(g, mc, ox, oy, partial);
         g.disableScissor();
 
         // norte e coordenadas
@@ -102,12 +103,15 @@ final class Minimap {
             if (l.tier < 1 && scale < 1.0) continue;
             if (l.tier < 2 && scale < 0.6) continue;
             if (l.tier < 3 && scale < 0.35) continue;
-            int sx = (int) Math.round(ox + (l.x + 0.5 - cx) * scale), sy = (int) Math.round(oy + (l.z + 0.5 - cz) * scale);
+            double sx = ox + (l.x + 0.5 - cx) * scale, sy = oy + (l.z + 0.5 - cz) * scale;
             if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
             int r = l.tier >= 3 ? 2 : 1;
             int rgb = l.countryIdx >= 0 ? d.rgb[l.countryIdx] | 0xFF000000 : 0xFF909090;
-            g.fill(sx - r - 1, sy - r - 1, sx + r + 2, sy + r + 2, 0xFF05080C);
-            g.fill(sx - r, sy - r, sx + r + 1, sy + r + 1, l.tier == 4 ? 0xFFD9B45A : rgb);
+            g.pose().pushMatrix();
+            g.pose().translate((float) sx, (float) sy);
+            g.fill(-r - 1, -r - 1, r + 2, r + 2, 0xFF05080C);
+            g.fill(-r, -r, r + 1, r + 1, l.tier == 4 ? 0xFFD9B45A : rgb);
+            g.pose().popMatrix();
         }
     }
 
@@ -119,7 +123,7 @@ final class Minimap {
         int half = size / 2 + 4;
         for (OnlinePlayers.Entry e : list) {
             if (e.account.equalsIgnoreCase(self)) continue;
-            int sx = (int) Math.round(ox + (e.x(now) - cx) * scale), sy = (int) Math.round(oy + (e.z(now) - cz) * scale);
+            double sx = ox + (e.x(now) - cx) * scale, sy = oy + (e.z(now) - cz) * scale;
             if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
             int rgb = 0xFFFFFFFF;
             if (d != null) {
@@ -127,14 +131,17 @@ final class Minimap {
                 Integer ci = d.countryOfPlayer.get(site != null ? site.toLowerCase(Locale.ROOT) : e.account.toLowerCase(Locale.ROOT));
                 if (ci != null) rgb = d.rgb[ci] | 0xFF000000;
             }
-            g.fill(sx - 2, sy - 2, sx + 3, sy + 3, 0xFF05080C);
-            g.fill(sx - 1, sy - 1, sx + 2, sy + 2, rgb);
+            g.pose().pushMatrix();
+            g.pose().translate((float) sx, (float) sy);
+            g.fill(-2, -2, 3, 3, 0xFF05080C);
+            g.fill(-1, -1, 2, 2, rgb);
+            g.pose().popMatrix();
         }
     }
 
     /** Você: uma seta branca apontando para onde olha (o norte é sempre para cima). */
-    private static void drawSelf(GuiGraphics g, Minecraft mc, int ox, int oy) {
-        float yaw = (float) Math.toRadians(mc.player.getYRot() + 180f);   // 0 = sul no jogo; seta desenhada para cima = norte
+    private static void drawSelf(GuiGraphics g, Minecraft mc, int ox, int oy, float partial) {
+        float yaw = (float) Math.toRadians(net.minecraft.util.Mth.rotLerp(partial, mc.player.yRotO, mc.player.getYRot()) + 180f);   // 0 = sul no jogo; seta desenhada para cima = norte
         g.pose().pushMatrix();
         g.pose().translate(ox, oy);
         g.pose().rotate(yaw);
