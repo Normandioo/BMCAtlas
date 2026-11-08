@@ -253,6 +253,10 @@ public class MapScreen extends Screen {
         }
     }
 
+    private int provOf(int chunk) {
+        return Math.floorDiv(chunk, MapData.PROV);
+    }
+
     private void refreshStats() {
         if (cacheVersion == MapData.ownersVersion()) return;
         cacheVersion = MapData.ownersVersion();
