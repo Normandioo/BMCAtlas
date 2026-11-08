@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "hoi4map",
+  "version": "${version}",
+  "name": "HOI4 Style Map",
+  "description": "Mapa em tela cheia estilo Hearts of Iron IV: modos de mapa (físico, político, províncias), países coloridos e seleção de províncias com painel.",
+  "authors": ["Normandioo"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.normandioo.hoi4map.Hoi4MapClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.1",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
