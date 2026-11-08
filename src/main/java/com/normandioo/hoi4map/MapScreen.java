@@ -2564,6 +2564,10 @@ public class MapScreen extends Screen {
             p.minimapCities = !p.minimapCities;
             Prefs.save();
         });
+        toggleRow(g, "Limites no minimapa", p.minimapLimits, mouseX, mouseY, () -> {
+            p.minimapLimits = !p.minimapLimits;
+            Prefs.save();
+        });
         toggleRow(g, "Jogadores no minimapa", p.minimapPlayers, mouseX, mouseY, () -> {
             p.minimapPlayers = !p.minimapPlayers;
             Prefs.save();

@@ -511,8 +511,16 @@ final class MapData {
                 int color;
                 if (!fluid.isEmpty() && !fluid.is(FluidTags.LAVA)) {
                     // água: o estilo final pinta pelo flag/profundidade guardado no byte alto
-                    int floorTop = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR, lx, lz);
-                    int depth = Math.max(0, Math.min(63, top - floorTop));
+                    // profundidade: conta os blocos de fluido abaixo da superfície (o heightmap do fundo não existe no cliente)
+                    int depth = 0;
+                    int y0 = pos.getY();
+                    for (int y = y0 - 1; y >= -64 && depth < 63; y--) {
+                        pos.setY(y);
+                        FluidState below = chunk.getFluidState(pos);
+                        if (below.isEmpty() || below.is(FluidTags.LAVA)) break;
+                        depth++;
+                    }
+                    pos.setY(y0);
                     color = (0x80 | depth) << 24;
                 } else if (!fluid.isEmpty()) {
                     color = 0xFFD9561A;
@@ -525,7 +533,7 @@ final class MapData {
                     int hW = neighborHeight(chunk, west, north, northWest, heights, lx - 1, lz, top);
                     int hN = neighborHeight(chunk, west, north, northWest, heights, lx, lz - 1, top);
                     int slope = (top - hW) + (top - hN);
-                    float shade = 1.0f + Math.max(-8, Math.min(8, slope)) * 0.055f;
+                    float shade = 1.0f + Math.max(-6, Math.min(6, slope)) * 0.095f;
                     color = shadeColor(c, shade);
                 }
                 result[outIndex] = color;

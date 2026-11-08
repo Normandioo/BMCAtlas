@@ -324,8 +324,9 @@ final class MapStyle {
         if (depth < 0) depth = 0;
         if (Prefs.get().mapStyle == 1) {
             // limpo: azul liso, só escurece um pouco com a profundidade
-            float t = Math.min(1f, depth / 40f);
-            return pack(lerpf(0x4A, 0x24, t), lerpf(0x7E, 0x48, t), lerpf(0xC8, 0x9A, t));
+            float t = Math.min(1f, depth / 26f);
+            t = (float) Math.sqrt(t);
+            return pack(lerpf(0x5E, 0x1A, t), lerpf(0x9C, 0x36, t), lerpf(0xE0, 0x84, t));
         }
         int k = 1;
         while (k < SEA_D.length - 1 && depth > SEA_D[k]) k++;
