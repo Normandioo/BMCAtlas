@@ -48,6 +48,16 @@ final class SiteTerritories {
         String color;
         Map<String, String> info;
         List<String> population;
+        Diplomacy diplomacy;
+    }
+
+    static final class WarRef {
+        String name, side; // side: attacker / defender
+    }
+
+    static final class Diplomacy {
+        List<String> overlord, subject, allies, nap, alliances;
+        List<WarRef> wars;
     }
 
     private static final class ProvinceJson {
@@ -68,9 +78,11 @@ final class SiteTerritories {
     /** Os territórios já preparados. Imutável depois de criado. */
     static final class Data {
         String generated = "";
-        String[] ids, names;
+        String[] ids, names, labels;
         int[] rgb;
         Map<String, String>[] info;
+        Diplomacy[] diplomacy;
+        List<String>[] people;
         int[] population;
         int[] provinceCount;
         // por província
@@ -80,7 +92,7 @@ final class SiteTerritories {
         List<int[]>[] rings;
         int[][] bounds; // minX, minZ, maxX, maxZ
         // por país: centro e variâncias em blocos, para o nome no mapa
-        double[][] shape; // {mx, mz, vxx, vzz, vxz}
+        double[][] shape; // {mx, mz, vxx, vzz, vxz, area}
         int minX, minZ, maxX, maxZ;
 
         int countryOfProvince(int province) {
@@ -213,8 +225,11 @@ final class SiteTerritories {
         int nc = f.countries.size();
         d.ids = new String[nc];
         d.names = new String[nc];
+        d.labels = new String[nc];
         d.rgb = new int[nc];
         d.info = new Map[nc];
+        d.diplomacy = new Diplomacy[nc];
+        d.people = new List[nc];
         d.population = new int[nc];
         Map<String, Integer> byId = new HashMap<>();
         int i = 0;
@@ -225,6 +240,10 @@ final class SiteTerritories {
             d.rgb[i] = c == null ? 0xFF888888 : Countries.parseColor(c.color);
             d.info[i] = c == null || c.info == null ? new LinkedHashMap<>() : c.info;
             d.population[i] = c == null || c.population == null ? 0 : c.population.size();
+            d.people[i] = c == null || c.population == null ? List.of() : c.population;
+            d.diplomacy[i] = c == null ? null : c.diplomacy;
+            String disp = d.info[i].get("displayName");
+            d.labels[i] = disp != null && !disp.isBlank() ? disp : splitCamel(e.getKey());
             byId.put(e.getKey(), i);
             i++;
         }
@@ -279,7 +298,7 @@ final class SiteTerritories {
                 continue;
             }
             double mx = sx[c] / w[c], mz = sz[c] / w[c];
-            d.shape[c] = new double[]{mx, mz, sxx[c] / w[c] - mx * mx, szz[c] / w[c] - mz * mz, sxz[c] / w[c] - mx * mz};
+            d.shape[c] = new double[]{mx, mz, sxx[c] / w[c] - mx * mx, szz[c] / w[c] - mz * mz, sxz[c] / w[c] - mx * mz, w[c]};
         }
         if (n == 0) throw new IllegalArgumentException("sem províncias");
         return d;
@@ -309,6 +328,10 @@ final class SiteTerritories {
             }
         }
         return new int[]{minX, minZ, maxX, maxZ};
+    }
+
+    private static String splitCamel(String s) {
+        return s.replaceAll("(?<=[a-z])(?=[A-Z0-9])|(?<=[0-9])(?=[A-Za-z])|(?<=[A-Z])(?=[A-Z][a-z])", " ").trim();
     }
 
     /** "SynorWestern64Province" no país "Synor" vira "Western 64". */

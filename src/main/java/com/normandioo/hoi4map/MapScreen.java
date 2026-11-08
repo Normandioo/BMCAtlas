@@ -3,12 +3,13 @@ package com.normandioo.hoi4map;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -16,25 +17,33 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Tela cheia do mapa, estilo Hearts of Iron IV. */
+/** Tela cheia do mapa, no estilo do menu de mapa do Hearts of Iron IV. */
 public class MapScreen extends Screen {
-    private static final int TOP = 26;
-    private static final int PANEL_W = 176;
+    private static final int BTN = 26;       // lado dos botões de ícone
+    private static final int BAR_H = 34;     // altura da barra de ícones
+    private static final int PW = 262;       // largura do painel de informações
+    private static final int MARGIN = 8;
 
     private static final int MODE_PHYSICAL = MapStyle.MODE_PHYSICAL;
     private static final int MODE_POLITICAL = MapStyle.MODE_POLITICAL;
     private static final int MODE_PROVINCES = MapStyle.MODE_PROVINCES;
 
     private static final int COL_GOLD = 0xFFC8A64A;
-    private static final int COL_PANEL = 0xFF101820;
+    private static final int COL_GOLD_DIM = 0xFF6B5A2A;
+    private static final int COL_PANEL = 0xF2101820;
+    private static final int COL_PANEL_2 = 0xFF16212C;
     private static final int COL_TEXT = 0xFFE6E0CC;
     private static final int COL_DIM = 0xFF8C94A0;
+
+    private static final int TAB_NONE = 0, TAB_INFO = 1, TAB_LIST = 2;
 
     // O estado da vista persiste entre aberturas da tela.
     private static double viewX, viewZ;
     private static double scale = 1.0;
     private static boolean viewInit;
     private static int mode = MODE_POLITICAL;
+    private static int tab = TAB_NONE;
+    private static double scrollInfo, scrollList;
 
     // seleção no modo manual (províncias de 32x32 blocos)
     private static boolean hasSel;
@@ -46,13 +55,33 @@ public class MapScreen extends Screen {
     private boolean moved;
     private double pressX, pressY;
 
-    private Button prevBtn, nextBtn, clearBtn, sourceBtn;
+    // UI em modo imediato: cada quadro registra as áreas clicáveis
+    private record Hit(int x, int y, int w, int h, Runnable action, String tip) {
+        boolean contains(double mx, double my) {
+            return mx >= x && mx < x + w && my >= y && my < y + h;
+        }
+    }
+
+    private final List<Hit> hits = new ArrayList<>();
+    private int panelX, panelY, panelW, panelH;
+    private boolean panelVisible;
+    private int cy;          // cursor vertical dentro do painel
+    private int rowIdx;      // para o zebrado das linhas
+    private int contentH;    // altura total do conteúdo desenhado (para a rolagem)
+
+    private final ItemStack iconPhysical = new ItemStack(Items.GRASS_BLOCK);
+    private final ItemStack iconPolitical = new ItemStack(Items.WHITE_BANNER);
+    private final ItemStack iconProvinces = new ItemStack(Items.IRON_BARS);
+    private final ItemStack iconCountries = new ItemStack(Items.BOOK);
+    private final ItemStack iconCenter = new ItemStack(Items.COMPASS);
+    private final ItemStack iconSource = new ItemStack(Items.LEVER);
+    private final ItemStack iconReload = new ItemStack(Items.CLOCK);
 
     // cache do modo manual: país -> {somaX, somaZ, n, somaXX, somaZZ, somaXZ} (em províncias)
     private int cacheVersion = -1;
     private final Map<String, double[]> stats = new HashMap<>();
 
-    // cache da legenda do site
+    // cache da lista do site
     private int legendVersion = -1;
     private List<Integer> legendOrder = new ArrayList<>();
 
@@ -75,34 +104,6 @@ public class MapScreen extends Screen {
             viewInit = true;
         }
         MapStyle.selectedProvince = selSite;
-
-        String[] names = {"Físico", "Político", "Províncias"};
-        for (int i = 0; i < names.length; i++) {
-            final int m = i;
-            addRenderableWidget(Button.builder(Component.literal(names[i]), b -> mode = m)
-                    .bounds(6 + i * 74, 4, 70, 18).build());
-        }
-        addRenderableWidget(Button.builder(Component.literal("Centralizar"), b -> centerOnPlayer())
-                .bounds(6 + names.length * 74 + 6, 4, 80, 18).build());
-
-        int x0 = width - PANEL_W;
-        int by = TOP + 104;
-        prevBtn = addRenderableWidget(Button.builder(Component.literal("<"), b -> cycleOwner(-1))
-                .bounds(x0 + 8, by, 22, 18).build());
-        nextBtn = addRenderableWidget(Button.builder(Component.literal(">"), b -> cycleOwner(1))
-                .bounds(x0 + PANEL_W - 30, by, 22, 18).build());
-        clearBtn = addRenderableWidget(Button.builder(Component.literal("Sem dono"), b -> {
-                    if (hasSel) MapData.setOwner(selPx, selPz, null);
-                }).bounds(x0 + 8, by + 22, PANEL_W - 16, 18).build());
-
-        sourceBtn = addRenderableWidget(Button.builder(Component.literal("Fonte: Site"), b -> {
-                    SiteTerritories.useSite = !SiteTerritories.useSite;
-                    MapData.ownersChanged();
-                }).bounds(x0 + 8, height - 48, PANEL_W - 16, 18).build());
-        addRenderableWidget(Button.builder(Component.literal("Recarregar países"), b -> {
-                    Countries.load();
-                    SiteTerritories.reload();
-                }).bounds(x0 + 8, height - 26, PANEL_W - 16, 18).build());
     }
 
     private void centerOnPlayer() {
@@ -110,21 +111,6 @@ public class MapScreen extends Screen {
         if (mc.player == null) return;
         viewX = mc.player.getX();
         viewZ = mc.player.getZ();
-    }
-
-    private void cycleOwner(int dir) {
-        if (!hasSel || Countries.LIST.isEmpty()) return;
-        String cur = MapData.ownerOf(selPx, selPz);
-        int idx = -1; // -1 = sem dono
-        for (int i = 0; i < Countries.LIST.size(); i++) {
-            if (Countries.LIST.get(i).id.equals(cur)) {
-                idx = i;
-                break;
-            }
-        }
-        int total = Countries.LIST.size() + 1;
-        int next = (idx + 1 + dir + total) % total - 1;
-        MapData.setOwner(selPx, selPz, next < 0 ? null : Countries.LIST.get(next).id);
     }
 
     @Override
@@ -138,14 +124,14 @@ public class MapScreen extends Screen {
         super.onClose();
     }
 
-    // ----------------------------------------------------------------- render
+    // ----------------------------------------------------------- coordenadas
 
     private int areaCx() {
-        return (width - PANEL_W) / 2;
+        return width / 2;
     }
 
     private int areaCy() {
-        return TOP + (height - TOP) / 2;
+        return height / 2;
     }
 
     private double toScreenX(double blockX) {
@@ -164,39 +150,26 @@ public class MapScreen extends Screen {
         return viewZ + (sy - areaCy()) / scale;
     }
 
-    private boolean inMap(double mx, double my) {
-        return mx >= 0 && mx < width - PANEL_W && my >= TOP && my < height;
+    private boolean blockedAt(double mx, double my) {
+        for (Hit h : hits) if (h.contains(mx, my)) return true;
+        return false;
     }
+
+    // ----------------------------------------------------------------- render
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
         MapData.nextFrame();
-        g.fill(0, 0, width, height, 0xFF0A0F16);
+        hits.clear();
+        panelVisible = false;
 
-        g.enableScissor(0, TOP, width - PANEL_W, height);
+        g.fill(0, 0, width, height, 0xFF0B1628);
         drawMap(g);
-        g.disableScissor();
 
-        drawTopBar(g);
+        drawPanel(g, mouseX, mouseY);
+        drawBar(g, mouseX, mouseY);
         drawHover(g, mouseX, mouseY);
-        drawPanel(g);
-
-        boolean site = siteMode();
-        prevBtn.visible = !site;
-        nextBtn.visible = !site;
-        clearBtn.visible = !site;
-        prevBtn.active = hasSel && !Countries.LIST.isEmpty();
-        nextBtn.active = prevBtn.active;
-        clearBtn.active = hasSel;
-        if (SiteTerritories.data() == null) {
-            sourceBtn.setMessage(Component.literal("Fonte: Manual (sem site)"));
-            sourceBtn.active = false;
-        } else {
-            sourceBtn.setMessage(Component.literal(SiteTerritories.useSite ? "Fonte: Site" : "Fonte: Manual"));
-            sourceBtn.active = true;
-        }
-
-        super.render(g, mouseX, mouseY, delta);
+        drawTooltip(g, mouseX, mouseY);
     }
 
     private boolean regionTouchesSite(SiteTerritories.Data d, int rx, int rz) {
@@ -206,17 +179,13 @@ public class MapScreen extends Screen {
 
     private void drawMap(GuiGraphics g) {
         double leftB = toBlockX(0);
-        double rightB = toBlockX(width - PANEL_W);
-        double topB = toBlockZ(TOP);
+        double rightB = toBlockX(width);
+        double topB = toBlockZ(0);
         double botB = toBlockZ(height);
-
-        // mar profundo: o que ainda não foi explorado aparece como oceano escuro
-        g.fill(0, TOP, width - PANEL_W, height, 0xFF0B1628);
 
         boolean site = siteMode();
         SiteTerritories.Data sd = site && mode != MODE_PHYSICAL ? SiteTerritories.data() : null;
 
-        // 1) terreno: um blit por região (texturas de 1 pixel por bloco)
         int rx0 = (int) Math.floor(leftB / MapData.REGION_PX);
         int rx1 = (int) Math.floor(rightB / MapData.REGION_PX);
         int rz0 = (int) Math.floor(topB / MapData.REGION_PX);
@@ -262,11 +231,11 @@ public class MapScreen extends Screen {
         int line = 0x55FFFFFF;
         for (int gx = gx0; gx <= gx1; gx++) {
             int sx = (int) Math.floor(toScreenX(gx * (double) span));
-            g.fill(sx, TOP, sx + 1, height, line);
+            g.fill(sx, 0, sx + 1, height, line);
         }
         for (int gz = gz0; gz <= gz1; gz++) {
             int sy = (int) Math.floor(toScreenY(gz * (double) span));
-            g.fill(0, sy, width - PANEL_W, sy + 1, line);
+            g.fill(0, sy, width, sy + 1, line);
         }
     }
 
@@ -307,7 +276,7 @@ public class MapScreen extends Screen {
             double vzz = s[4] / n - mz * mz;
             double vxz = s[5] / n - mx * mz;
             double k = (double) span * span;
-            drawName(g, c.name, (mx + 0.5) * span, (mz + 0.5) * span, vxx * k, vzz * k, vxz * k, span, 0.08 * k);
+            drawName(g, c.name, (mx + 0.5) * span, (mz + 0.5) * span, vxx * k, vzz * k, vxz * k, n * k, span, 0.08 * k);
         }
     }
 
@@ -317,13 +286,21 @@ public class MapScreen extends Screen {
         for (int c = 0; c < d.ids.length; c++) {
             double[] s = d.shape[c];
             if (s == null) continue;
-            drawName(g, d.names[c], s[0], s[1], s[2], s[3], s[4], 0, 400);
+            drawName(g, d.labels[c], s[0], s[1], s[2], s[3], s[4], s[5], 0, 400);
         }
     }
 
-    /** Nome grande, em maiúsculas, espaçado, inclinado ao longo do território, com contorno. */
+    /**
+     * Nome em maiúsculas, espaçado, inclinado ao longo do território, com contorno.
+     * O tamanho vem do território, mas limitado pela área real do país (países feitos de ilhas
+     * espalhadas têm variância enorme) e por uma fração da largura da tela.
+     */
     private void drawName(GuiGraphics g, String name, double mxB, double mzB,
-                          double vxx, double vzz, double vxz, double pad, double minVar) {
+                          double vxx, double vzz, double vxz, double area, double pad, double minVar) {
+        double sx = toScreenX(mxB);
+        double sy = toScreenY(mzB);
+        if (sx < -300 || sx > width + 300 || sy < -100 || sy > height + 100) return;
+
         double common = Math.sqrt(((vxx - vzz) / 2) * ((vxx - vzz) / 2) + vxz * vxz);
         double l1 = (vxx + vzz) / 2 + common;
         double l2 = (vxx + vzz) / 2 - common;
@@ -332,11 +309,7 @@ public class MapScreen extends Screen {
             angle = 0.5 * Math.atan2(2 * vxz, vxx - vzz);
             if (angle > 0.6 || angle < -0.6) angle = 0;
         }
-        double extentBlocks = Math.sqrt(12 * Math.max(l1, minVar)) + pad;
-
-        double sx = toScreenX(mxB);
-        double sy = toScreenY(mzB);
-        if (sx < -300 || sx > width || sy < -100 || sy > height + 100) return;
+        double extentBlocks = Math.min(Math.sqrt(12 * Math.max(l1, minVar)), 2.0 * Math.sqrt(Math.max(area, 1))) + pad;
 
         String text = name.toUpperCase();
         int spacing = 2;
@@ -348,7 +321,9 @@ public class MapScreen extends Screen {
             widths[i] = font.width(comps[i]);
             tw += widths[i] + (i > 0 ? spacing : 0);
         }
-        float sc = (float) Math.min(8.0, extentBlocks * scale * 0.85 / Math.max(1, tw));
+        float sc = (float) (extentBlocks * scale * 0.75 / Math.max(1, tw));
+        sc = Math.min(sc, 4.0f);                      // nunca maior que 4x
+        sc = Math.min(sc, width * 0.30f / tw);        // nem mais que 30% da largura da tela
         if (sc < 0.55f) return;
 
         g.pose().pushMatrix();
@@ -392,166 +367,456 @@ public class MapScreen extends Screen {
         g.fill(px - 3, pz - 3, px + 3, pz + 3, 0xFFE03C3C);
     }
 
-    private void drawTopBar(GuiGraphics g) {
-        g.fill(0, 0, width, TOP, 0xFF0D141C);
-        g.fill(0, TOP - 2, width, TOP, COL_GOLD);
-
-        String hint = "Arraste: mover | Roda: zoom | 1/2/3: modos";
-        g.drawString(font, hint, width - PANEL_W - 6 - font.width(hint), 9, COL_DIM, false);
-    }
-
-    /** Coordenadas (e país/província, no modo site) sob o cursor, no canto do mapa. */
+    /** Coordenadas (e país/província, no modo site) sob o cursor, e a dica de controles. */
     private void drawHover(GuiGraphics g, int mouseX, int mouseY) {
-        if (!inMap(mouseX, mouseY)) return;
+        String hint = "Arraste: mover  |  Roda: zoom  |  Clique: selecionar  |  1/2/3: modos";
+        g.drawString(font, hint, MARGIN, height - 12, COL_DIM, true);
+        if (blockedAt(mouseX, mouseY)) return;
         int bx = (int) Math.floor(toBlockX(mouseX));
         int bz = (int) Math.floor(toBlockZ(mouseY));
         String text = "X " + bx + "  Z " + bz;
         SiteTerritories.Data d = SiteTerritories.data();
         if (siteMode() && d != null) {
             int p = SiteTerritories.provinceAt(d, bx, bz);
-            if (p >= 0) text += "  |  " + d.names[d.provCountry[p]] + " - " + d.provLabel[p];
+            if (p >= 0) text += "  |  " + d.labels[d.provCountry[p]] + " - " + d.provLabel[p];
         }
-        int w = font.width(text) + 8;
-        int y = height - 16;
-        g.fill(4, y - 2, 4 + w, y + 11, 0xB00D141C);
-        g.drawString(font, text, 8, y, COL_TEXT, false);
+        int w = font.width(text) + 10;
+        int y = height - 34;
+        box(g, MARGIN - 2, y - 3, w, 15, COL_PANEL_2);
+        g.drawString(font, text, MARGIN + 3, y, COL_TEXT, false);
+    }
+
+    // ------------------------------------------------------------ peças de UI
+
+    private void box(GuiGraphics g, int x, int y, int w, int h, int fill) {
+        g.fill(x, y, x + w, y + h, fill);
+        g.fill(x, y, x + w, y + 1, COL_GOLD_DIM);
+        g.fill(x, y + h - 1, x + w, y + h, COL_GOLD_DIM);
+        g.fill(x, y, x + 1, y + h, COL_GOLD_DIM);
+        g.fill(x + w - 1, y, x + w, y + h, COL_GOLD_DIM);
+    }
+
+    private void iconButton(GuiGraphics g, int x, int y, ItemStack icon, boolean active, boolean enabled,
+                            int mouseX, int mouseY, String tip, Runnable action) {
+        boolean hover = enabled && mouseX >= x && mouseX < x + BTN && mouseY >= y && mouseY < y + BTN;
+        int bg = active ? 0xFF3A3220 : hover ? 0xFF26364A : 0xFF1A2430;
+        g.fill(x, y, x + BTN, y + BTN, bg);
+        int border = active ? COL_GOLD : hover ? 0xFF9C8A4A : COL_GOLD_DIM;
+        g.fill(x, y, x + BTN, y + 1, border);
+        g.fill(x, y + BTN - 1, x + BTN, y + BTN, border);
+        g.fill(x, y, x + 1, y + BTN, border);
+        g.fill(x + BTN - 1, y, x + BTN, y + BTN, border);
+        g.renderItem(icon, x + (BTN - 16) / 2, y + (BTN - 16) / 2);
+        if (!enabled) g.fill(x + 1, y + 1, x + BTN - 1, y + BTN - 1, 0x99101820);
+        hits.add(new Hit(x, y, BTN, BTN, enabled ? action : null, tip));
+    }
+
+    private void textButton(GuiGraphics g, int x, int y, int w, int h, String label, int mouseX, int mouseY, boolean enabled, Runnable action) {
+        boolean hover = enabled && mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
+        g.fill(x, y, x + w, y + h, hover ? 0xFF26364A : 0xFF1A2430);
+        g.fill(x, y, x + w, y + 1, COL_GOLD_DIM);
+        g.fill(x, y + h - 1, x + w, y + h, COL_GOLD_DIM);
+        g.fill(x, y, x + 1, y + h, COL_GOLD_DIM);
+        g.fill(x + w - 1, y, x + w, y + h, COL_GOLD_DIM);
+        g.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, enabled ? COL_TEXT : COL_DIM, false);
+        hits.add(new Hit(x, y, w, h, enabled ? action : null, null));
+    }
+
+    // --------------------------------------------------------------- barra de ícones
+
+    private void drawBar(GuiGraphics g, int mouseX, int mouseY) {
+        int n = 7;
+        int barW = n * (BTN + 4) + 4;
+        int bx = width - barW - MARGIN;
+        int by = height - BAR_H - MARGIN;
+        box(g, bx, by, barW, BAR_H, COL_PANEL);
+        g.fill(bx + 1, by + 1, bx + barW - 1, by + 2, COL_GOLD);
+        hits.add(new Hit(bx, by, barW, BAR_H, null, null));
+
+        int x = bx + 4;
+        int y = by + 4;
+        iconButton(g, x, y, iconPhysical, mode == MODE_PHYSICAL, true, mouseX, mouseY, "Mapa físico (1)", () -> mode = MODE_PHYSICAL);
+        x += BTN + 4;
+        iconButton(g, x, y, iconPolitical, mode == MODE_POLITICAL, true, mouseX, mouseY, "Mapa político (2)", () -> mode = MODE_POLITICAL);
+        x += BTN + 4;
+        iconButton(g, x, y, iconProvinces, mode == MODE_PROVINCES, true, mouseX, mouseY, "Províncias (3)", () -> mode = MODE_PROVINCES);
+        x += BTN + 4;
+        iconButton(g, x, y, iconCountries, tab == TAB_LIST, true, mouseX, mouseY, "Lista de países",
+                () -> tab = tab == TAB_LIST ? TAB_NONE : TAB_LIST);
+        x += BTN + 4;
+        iconButton(g, x, y, iconCenter, false, true, mouseX, mouseY, "Centralizar em você", this::centerOnPlayer);
+        x += BTN + 4;
+        boolean haveSite = SiteTerritories.data() != null;
+        String sourceTip = !haveSite ? "Fonte: manual (sem dados do site)"
+                : SiteTerritories.useSite ? "Fonte: site (clique para modo manual)" : "Fonte: manual (clique para usar o site)";
+        iconButton(g, x, y, iconSource, haveSite && SiteTerritories.useSite, haveSite, mouseX, mouseY, sourceTip, () -> {
+            SiteTerritories.useSite = !SiteTerritories.useSite;
+            tab = TAB_NONE;
+            MapData.ownersChanged();
+        });
+        x += BTN + 4;
+        iconButton(g, x, y, iconReload, false, true, mouseX, mouseY, "Recarregar países e site", () -> {
+            Countries.load();
+            SiteTerritories.reload();
+        });
+    }
+
+    private void drawTooltip(GuiGraphics g, int mouseX, int mouseY) {
+        for (int i = hits.size() - 1; i >= 0; i--) {
+            Hit h = hits.get(i);
+            if (h.tip() == null || !h.contains(mouseX, mouseY)) continue;
+            int w = font.width(h.tip()) + 10;
+            int x = Math.min(mouseX + 8, width - w - 4);
+            int y = Math.max(4, mouseY - 22);
+            box(g, x, y, w, 16, 0xFF0D141C);
+            g.drawString(font, h.tip(), x + 5, y + 4, COL_TEXT, false);
+            return;
+        }
     }
 
     // ------------------------------------------------------------------ painel
+
+    private boolean panelOpen() {
+        if (tab == TAB_LIST) return true;
+        if (tab != TAB_INFO) return false;
+        return siteMode() ? selSite >= 0 : hasSel;
+    }
+
+    private void closePanel() {
+        tab = TAB_NONE;
+        hasSel = false;
+        setSite(-1);
+    }
+
+    private void setSite(int idx) {
+        SiteTerritories.Data d = SiteTerritories.data();
+        int old = selSite;
+        selSite = idx;
+        MapStyle.selectedProvince = idx;
+        if (d == null) return;
+        if (old >= 0 && old < d.n) MapData.invalidateRect(d.bounds[old][0], d.bounds[old][1], d.bounds[old][2], d.bounds[old][3]);
+        if (idx >= 0 && idx < d.n) MapData.invalidateRect(d.bounds[idx][0], d.bounds[idx][1], d.bounds[idx][2], d.bounds[idx][3]);
+    }
+
+    private void drawPanel(GuiGraphics g, int mouseX, int mouseY) {
+        if (!panelOpen()) return;
+        panelX = width - PW - MARGIN;
+        panelY = MARGIN;
+        panelW = PW;
+        panelH = height - MARGIN * 2 - BAR_H - 8;
+        panelVisible = true;
+        box(g, panelX, panelY, panelW, panelH, COL_PANEL);
+        hits.add(new Hit(panelX, panelY, panelW, panelH, null, null));
+
+        if (tab == TAB_LIST) {
+            if (siteMode()) drawSiteList(g, mouseX, mouseY);
+            else drawManualList(g, mouseX, mouseY);
+        } else if (siteMode()) {
+            drawCountryPanel(g, mouseX, mouseY);
+        } else {
+            drawManualPanel(g, mouseX, mouseY);
+        }
+    }
+
+    /** Cabeçalho fixo: faixa na cor do país, "bandeira", título, subtítulo e botão de fechar. */
+    private int header(GuiGraphics g, int rgb, String title, String subtitle, int mouseX, int mouseY) {
+        int x = panelX, y = panelY, w = panelW;
+        int band = darken(rgb | 0xFF000000, 0.55f);
+        g.fill(x + 1, y + 1, x + w - 1, y + 40, band);
+        g.fill(x + 1, y + 40, x + w - 1, y + 41, COL_GOLD);
+        // "bandeira": a cor do país num quadro com moldura
+        g.fill(x + 9, y + 8, x + 45, y + 32, 0xFF05080C);
+        g.fill(x + 10, y + 9, x + 44, y + 31, rgb | 0xFF000000);
+        g.fill(x + 10, y + 9, x + 44, y + 15, lighten(rgb | 0xFF000000, 1.25f));
+        g.drawString(font, fit(title.toUpperCase(), w - 86), x + 52, y + 9, 0xFFFFFFFF, true);
+        if (subtitle != null) g.drawString(font, fit(subtitle, w - 86), x + 52, y + 22, COL_TEXT, false);
+        // fechar
+        int cx = x + w - 20, cyy = y + 6;
+        boolean hover = mouseX >= cx && mouseX < cx + 14 && mouseY >= cyy && mouseY < cyy + 14;
+        g.fill(cx, cyy, cx + 14, cyy + 14, hover ? 0xFF5A2A2A : 0xFF2A1A1A);
+        g.drawString(font, "x", cx + 4, cyy + 3, COL_TEXT, false);
+        hits.add(new Hit(cx, cyy, 14, 14, this::closePanel, "Fechar"));
+        return y + 46;
+    }
+
+    private static int darken(int c, float k) {
+        return 0xFF000000 | ((int) (((c >> 16) & 0xFF) * k) << 16) | ((int) (((c >> 8) & 0xFF) * k) << 8) | (int) ((c & 0xFF) * k);
+    }
+
+    private static int lighten(int c, float k) {
+        return 0xFF000000 | (Math.min(255, (int) (((c >> 16) & 0xFF) * k)) << 16)
+                | (Math.min(255, (int) (((c >> 8) & 0xFF) * k)) << 8) | Math.min(255, (int) ((c & 0xFF) * k));
+    }
 
     private String fit(String s, int maxWidth) {
         if (s == null) return "";
         return font.width(s) <= maxWidth ? s : font.plainSubstrByWidth(s, maxWidth - font.width("...")) + "...";
     }
 
-    private void row(GuiGraphics g, int x, int y, String label, String value) {
+    private List<String> wrap(String text, int maxW) {
+        List<String> out = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.split(" ")) {
+            if (word.isEmpty()) continue;
+            String test = line.length() == 0 ? word : line + " " + word;
+            if (line.length() == 0 || font.width(test) <= maxW) {
+                line = new StringBuilder(test);
+            } else {
+                out.add(line.toString());
+                line = new StringBuilder(word);
+            }
+        }
+        if (line.length() > 0) out.add(line.toString());
+        for (int i = 0; i < out.size(); i++) out.set(i, fit(out.get(i), maxW));
+        return out;
+    }
+
+    /** Começa a área rolável do painel, abaixo do cabeçalho. */
+    private void beginScroll(GuiGraphics g, int top, double scroll) {
+        g.enableScissor(panelX + 1, top, panelX + panelW - 1, panelY + panelH - 1);
+        cy = top + 4 - (int) scroll;
+        rowIdx = 0;
+    }
+
+    private void endScroll(GuiGraphics g, int top, boolean info) {
+        g.disableScissor();
+        contentH = cy - (top + 4) + 8;
+        int viewH = panelY + panelH - top;
+        double max = Math.max(0, contentH - viewH);
+        if (info) scrollInfo = Math.max(0, Math.min(scrollInfo, max));
+        else scrollList = Math.max(0, Math.min(scrollList, max));
+    }
+
+    private void section(GuiGraphics g, String title) {
+        cy += 4;
+        g.drawString(font, title, panelX + 9, cy, COL_GOLD, false);
+        g.fill(panelX + 8, cy + 10, panelX + panelW - 8, cy + 11, COL_GOLD_DIM);
+        cy += 15;
+        rowIdx = 0;
+    }
+
+    /** Linha da tabela: rótulo à esquerda, valor (com quebra de linha) à direita. */
+    private void kv(GuiGraphics g, String label, String value) {
         if (value == null || value.isBlank()) return;
-        g.drawString(font, label, x, y, COL_DIM, false);
-        int lw = font.width(label) + 4;
-        g.drawString(font, fit(value, PANEL_W - 16 - lw), x + lw, y, COL_TEXT, false);
+        int labelCol = 84;
+        List<String> lines = wrap(value, panelW - 16 - labelCol - 6);
+        int h = Math.max(1, lines.size()) * 10 + 3;
+        if ((rowIdx++ & 1) == 0) g.fill(panelX + 5, cy - 1, panelX + panelW - 5, cy + h - 1, 0x26FFFFFF);
+        g.drawString(font, label, panelX + 9, cy + 1, COL_DIM, false);
+        int ly = cy + 1;
+        for (String line : lines) {
+            g.drawString(font, line, panelX + 9 + labelCol, ly, COL_TEXT, false);
+            ly += 10;
+        }
+        cy += h;
     }
 
-    private void drawPanel(GuiGraphics g) {
-        int x0 = width - PANEL_W;
-        g.fill(x0, TOP, width, height, COL_PANEL);
-        g.fill(x0, TOP, x0 + 2, height, COL_GOLD);
-        if (siteMode()) drawSitePanel(g, x0);
-        else drawManualPanel(g, x0);
+    private void paragraph(GuiGraphics g, String text) {
+        for (String line : wrap(text, panelW - 20)) {
+            g.drawString(font, line, panelX + 10, cy, COL_TEXT, false);
+            cy += 10;
+        }
+        cy += 2;
     }
 
-    private void drawSitePanel(GuiGraphics g, int x0) {
+    private static String join(List<String> list) {
+        return list == null || list.isEmpty() ? null : String.join(", ", list);
+    }
+
+    private void drawCountryPanel(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
-        int x = x0 + 8;
-        int y = TOP + 8;
-        g.drawString(font, "PROVÍNCIA", x, y, COL_GOLD, false);
-        y += 14;
+        if (selSite < 0 || selSite >= d.n) return;
+        int c = d.provCountry[selSite];
+        Map<String, String> info = d.info[c];
+        int top = header(g, d.rgb[c], d.names[c], info.get("type"), mouseX, mouseY);
 
-        if (selSite < 0 || selSite >= d.n) {
-            g.drawString(font, "Clique num território", x, y, COL_DIM, false);
-            g.drawString(font, "para ver os dados.", x, y + 11, COL_DIM, false);
-        } else {
-            int c = d.provCountry[selSite];
-            g.drawString(font, fit(d.provLabel[selSite], PANEL_W - 16), x, y, COL_TEXT, false);
-            y += 14;
-            g.fill(x, y, x + 10, y + 9, d.rgb[c] | 0xFF000000);
-            g.drawString(font, fit(d.names[c], PANEL_W - 34), x + 15, y + 1, COL_TEXT, false);
-            y += 15;
-            Map<String, String> info = d.info[c];
-            row(g, x, y, "Tipo:", info.get("type"));
-            row(g, x, y + 11, "Oficial:", info.get("officialName"));
-            row(g, x, y + 22, "Formação:", info.get("formed"));
-            row(g, x, y + 33, "Governo:", info.get("government"));
-            row(g, x, y + 44, "Líder:", info.get("leader"));
-            row(g, x, y + 55, "Capital:", info.get("capital"));
-            row(g, x, y + 66, "Etnia:", info.get("ethnicity"));
-            row(g, x, y + 77, "População:", String.valueOf(d.population[c]));
-            row(g, x, y + 88, "Províncias:", String.valueOf(d.provinceCount[c]));
+        beginScroll(g, top, scrollInfo);
+        section(g, "INFORMAÇÕES");
+        String official = info.get("officialName");
+        kv(g, "Nome oficial", official == null ? d.names[c] : official);
+        kv(g, "Tipo", info.get("type"));
+        kv(g, "Formação", info.get("formed"));
+        kv(g, "Governo", info.get("government"));
+        kv(g, "Líder", info.get("leader"));
+        kv(g, "Capital", info.get("capital"));
+        kv(g, "Etnia", info.get("ethnicity"));
+        kv(g, "Gentílico", info.get("demonym"));
+
+        section(g, "TERRITÓRIO");
+        kv(g, "Províncias", String.valueOf(d.provinceCount[c]));
+        kv(g, "Selecionada", d.provLabel[selSite]);
+        kv(g, "População", String.valueOf(d.population[c]));
+
+        SiteTerritories.Diplomacy dip = d.diplomacy[c];
+        if (dip != null) {
+            section(g, "DIPLOMACIA");
+            kv(g, "Suserano", join(dip.overlord));
+            kv(g, "Súditos", join(dip.subject));
+            kv(g, "Aliados", join(dip.allies));
+            kv(g, "Pacto (NAP)", join(dip.nap));
+            kv(g, "Alianças", join(dip.alliances));
+            if (dip.wars != null && !dip.wars.isEmpty()) {
+                List<String> wars = new ArrayList<>();
+                for (SiteTerritories.WarRef w : dip.wars) {
+                    String side = "attacker".equals(w.side) ? "atacante" : "defender".equals(w.side) ? "defensor" : w.side;
+                    wars.add(w.name + (side == null ? "" : " (" + side + ")"));
+                }
+                kv(g, "Guerras", join(wars));
+            }
         }
 
-        // legenda: países com mais províncias primeiro
+        List<String> people = d.people[c];
+        if (people != null && !people.isEmpty()) {
+            section(g, "POPULAÇÃO (" + people.size() + ")");
+            paragraph(g, String.join(", ", people.size() > 60 ? people.subList(0, 60) : people)
+                    + (people.size() > 60 ? " ..." : ""));
+        }
+        endScroll(g, top, true);
+    }
+
+    private void selectCountry(int country) {
+        SiteTerritories.Data d = SiteTerritories.data();
+        long best = -1;
+        int bestIdx = -1;
+        for (int i = 0; i < d.n; i++) {
+            if (d.provCountry[i] != country) continue;
+            int[] b = d.bounds[i];
+            long area = (long) (b[2] - b[0] + 1) * (b[3] - b[1] + 1);
+            if (area > best) {
+                best = area;
+                bestIdx = i;
+            }
+        }
+        if (bestIdx < 0) return;
+        setSite(bestIdx);
+        int[] b = d.bounds[bestIdx];
+        viewX = (b[0] + b[2]) / 2.0;
+        viewZ = (b[1] + b[3]) / 2.0;
+        if (scale < 0.25) scale = 0.25;
+        tab = TAB_INFO;
+        scrollInfo = 0;
+    }
+
+    private void drawSiteList(GuiGraphics g, int mouseX, int mouseY) {
+        SiteTerritories.Data d = SiteTerritories.data();
+        int top = header(g, 0xFFC8A64A, "Países", d.ids.length + " países  -  " + d.n + " províncias", mouseX, mouseY);
         if (legendVersion != SiteTerritories.version()) {
             legendVersion = SiteTerritories.version();
             legendOrder = new ArrayList<>();
-            for (int i = 0; i < d.ids.length; i++) legendOrder.add(i);
+            for (int i = 0; i < d.ids.length; i++) if (d.provinceCount[i] > 0) legendOrder.add(i);
             legendOrder.sort((a, b) -> Integer.compare(d.provinceCount[b], d.provinceCount[a]));
         }
-        int ly = TOP + 146;
-        g.drawString(font, "PAÍSES", x, ly, COL_GOLD, false);
-        ly += 13;
+        beginScroll(g, top, scrollList);
+        int bottom = panelY + panelH - 2;
         for (int idx : legendOrder) {
-            if (ly > height - 66) break;
-            if (d.provinceCount[idx] == 0) continue;
-            g.fill(x, ly, x + 10, ly + 8, d.rgb[idx] | 0xFF000000);
-            g.drawString(font, fit(d.names[idx], PANEL_W - 56) + " (" + d.provinceCount[idx] + ")", x + 16, ly, COL_TEXT, false);
-            ly += 11;
-        }
-        g.drawString(font, fit(SiteTerritories.status(), PANEL_W - 16), x, height - 62, COL_DIM, false);
-    }
-
-    private void drawManualPanel(GuiGraphics g, int x0) {
-        int x = x0 + 8;
-        int y = TOP + 8;
-        g.drawString(font, "PROVÍNCIA", x, y, COL_GOLD, false);
-        y += 14;
-
-        if (!hasSel) {
-            g.drawString(font, "Clique no mapa para", x, y, COL_DIM, false);
-            g.drawString(font, "selecionar uma província.", x, y + 11, COL_DIM, false);
-        } else {
-            int span = MapData.PROV * 16;
-            g.drawString(font, "ID: " + selPx + ", " + selPz, x, y, COL_TEXT, false);
-            g.drawString(font, "X: " + (selPx * span) + " a " + ((selPx + 1) * span - 1), x, y + 11, COL_TEXT, false);
-            g.drawString(font, "Z: " + (selPz * span) + " a " + ((selPz + 1) * span - 1), x, y + 22, COL_TEXT, false);
-
-            int known = 0;
-            for (int dx = 0; dx < MapData.PROV; dx++) {
-                for (int dz = 0; dz < MapData.PROV; dz++) {
-                    if (MapData.chunkKnown(selPx * MapData.PROV + dx, selPz * MapData.PROV + dz)) known++;
+            int rowTop = cy;
+            boolean visible = rowTop >= top - 12 && rowTop + 14 <= bottom + 12;
+            if (visible) {
+                boolean hover = mouseX >= panelX + 4 && mouseX < panelX + panelW - 4 && mouseY >= rowTop && mouseY < rowTop + 14
+                        && mouseY >= top && mouseY < bottom;
+                if (hover) g.fill(panelX + 4, rowTop, panelX + panelW - 4, rowTop + 14, 0x40C8A64A);
+                else if ((rowIdx & 1) == 0) g.fill(panelX + 4, rowTop, panelX + panelW - 4, rowTop + 14, 0x16FFFFFF);
+                g.fill(panelX + 9, rowTop + 3, panelX + 21, rowTop + 11, 0xFF05080C);
+                g.fill(panelX + 10, rowTop + 4, panelX + 20, rowTop + 10, d.rgb[idx] | 0xFF000000);
+                String count = String.valueOf(d.provinceCount[idx]);
+                g.drawString(font, fit(d.labels[idx], panelW - 70), panelX + 27, rowTop + 3, COL_TEXT, false);
+                g.drawString(font, count, panelX + panelW - 10 - font.width(count), rowTop + 3, COL_DIM, false);
+                if (rowTop >= top && rowTop + 14 <= bottom) {
+                    final int country = idx;
+                    hits.add(new Hit(panelX + 4, rowTop, panelW - 8, 14, () -> selectCountry(country), null));
                 }
             }
-            int total = MapData.PROV * MapData.PROV;
-            g.drawString(font, "Explorado: " + known + "/" + total + " chunks", x, y + 33, COL_TEXT, false);
+            rowIdx++;
+            cy += 14;
+        }
+        endScroll(g, top, false);
+    }
 
-            String ownerId = MapData.ownerOf(selPx, selPz);
-            Countries.Country c = ownerId == null ? null : Countries.BY_ID.get(ownerId);
-            g.drawString(font, "Dono:", x, y + 46, COL_DIM, false);
-            String name = c == null ? "Ninguém" : c.name;
-            int nameW = font.width(name);
-            int midX = x0 + PANEL_W / 2;
-            g.drawString(font, name, midX - nameW / 2, TOP + 109, c == null ? COL_DIM : COL_TEXT, false);
-            if (c != null) {
-                g.fill(x, y + 58, x + PANEL_W - 16, y + 62, c.rgb);
+    // ---------------------------------------------------------- painel (modo manual)
+
+    private void cycleOwner(int dir) {
+        if (!hasSel || Countries.LIST.isEmpty()) return;
+        String cur = MapData.ownerOf(selPx, selPz);
+        int idx = -1; // -1 = sem dono
+        for (int i = 0; i < Countries.LIST.size(); i++) {
+            if (Countries.LIST.get(i).id.equals(cur)) {
+                idx = i;
+                break;
             }
         }
+        int total = Countries.LIST.size() + 1;
+        int next = (idx + 1 + dir + total) % total - 1;
+        MapData.setOwner(selPx, selPz, next < 0 ? null : Countries.LIST.get(next).id);
+    }
 
-        // legenda de países
-        int ly = TOP + 154;
-        g.drawString(font, "PAÍSES", x, ly, COL_GOLD, false);
-        ly += 14;
-        refreshStats();
-        for (Countries.Country c : Countries.LIST) {
-            if (ly > height - 66) break;
-            g.fill(x, ly, x + 10, ly + 8, c.rgb);
-            double[] s = stats.get(c.id);
-            int n = s == null ? 0 : (int) s[2];
-            g.drawString(font, c.name + " (" + n + ")", x + 16, ly, COL_TEXT, false);
-            ly += 12;
+    private void drawManualPanel(GuiGraphics g, int mouseX, int mouseY) {
+        String ownerId = MapData.ownerOf(selPx, selPz);
+        Countries.Country c = ownerId == null ? null : Countries.BY_ID.get(ownerId);
+        int span = MapData.PROV * 16;
+        int top = header(g, c == null ? 0xFF4A5560 : c.rgb, c == null ? "Sem dono" : c.name,
+                "Província " + selPx + ", " + selPz + "  (modo manual)", mouseX, mouseY);
+
+        beginScroll(g, top, 0);
+        section(g, "PROVÍNCIA");
+        kv(g, "ID", selPx + ", " + selPz);
+        kv(g, "X", (selPx * span) + " a " + ((selPx + 1) * span - 1));
+        kv(g, "Z", (selPz * span) + " a " + ((selPz + 1) * span - 1));
+        int known = 0;
+        for (int dx = 0; dx < MapData.PROV; dx++) {
+            for (int dz = 0; dz < MapData.PROV; dz++) {
+                if (MapData.chunkKnown(selPx * MapData.PROV + dx, selPz * MapData.PROV + dz)) known++;
+            }
         }
+        kv(g, "Explorado", known + "/" + (MapData.PROV * MapData.PROV) + " chunks");
+        kv(g, "Dono", c == null ? "Ninguém" : c.name);
+
+        cy += 6;
+        int bx = panelX + 9;
+        boolean enabled = !Countries.LIST.isEmpty();
+        textButton(g, bx, cy, 28, 18, "<", mouseX, mouseY, enabled, () -> cycleOwner(-1));
+        textButton(g, bx + 32, cy, 28, 18, ">", mouseX, mouseY, enabled, () -> cycleOwner(1));
+        textButton(g, bx + 64, cy, panelW - 18 - 64, 18, "Sem dono", mouseX, mouseY, true,
+                () -> MapData.setOwner(selPx, selPz, null));
+        cy += 24;
+        paragraph(g, "Sem dados do site: as províncias (32x32 blocos) são atribuídas na mão. Edite config/hoi4map/countries.json para mudar os países.");
+        endScroll(g, top, true);
+    }
+
+    private void drawManualList(GuiGraphics g, int mouseX, int mouseY) {
+        int top = header(g, 0xFFC8A64A, "Países", "modo manual", mouseX, mouseY);
+        refreshStats();
+        beginScroll(g, top, scrollList);
+        for (Countries.Country c : Countries.LIST) {
+            int rowTop = cy;
+            if ((rowIdx & 1) == 0) g.fill(panelX + 4, rowTop, panelX + panelW - 4, rowTop + 14, 0x16FFFFFF);
+            g.fill(panelX + 9, rowTop + 3, panelX + 21, rowTop + 11, 0xFF05080C);
+            g.fill(panelX + 10, rowTop + 4, panelX + 20, rowTop + 10, c.rgb);
+            double[] s = stats.get(c.id);
+            String count = String.valueOf(s == null ? 0 : (int) s[2]);
+            g.drawString(font, fit(c.name, panelW - 70), panelX + 27, rowTop + 3, COL_TEXT, false);
+            g.drawString(font, count, panelX + panelW - 10 - font.width(count), rowTop + 3, COL_DIM, false);
+            rowIdx++;
+            cy += 14;
+        }
+        endScroll(g, top, false);
     }
 
     // ------------------------------------------------------------------ input
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        if (super.mouseClicked(event, doubleClick)) return true;
-        if (inMap(event.x(), event.y())) {
-            dragging = true;
-            moved = false;
-            pressX = event.x();
-            pressY = event.y();
+        double mx = event.x(), my = event.y();
+        for (int i = hits.size() - 1; i >= 0; i--) {
+            Hit h = hits.get(i);
+            if (!h.contains(mx, my)) continue;
+            if (h.action() != null && event.button() == 0) h.action().run();
             return true;
         }
-        return false;
+        dragging = true;
+        moved = false;
+        pressX = mx;
+        pressY = my;
+        return true;
     }
 
     @Override
@@ -571,7 +836,7 @@ public class MapScreen extends Screen {
     public boolean mouseReleased(MouseButtonEvent event) {
         if (dragging) {
             dragging = false;
-            if (!moved && inMap(event.x(), event.y())) select(toBlockX(event.x()), toBlockZ(event.y()));
+            if (!moved) select(toBlockX(event.x()), toBlockZ(event.y()));
             return true;
         }
         return super.mouseReleased(event);
@@ -580,24 +845,30 @@ public class MapScreen extends Screen {
     private void select(double bx, double bz) {
         if (siteMode()) {
             SiteTerritories.Data d = SiteTerritories.data();
-            int old = selSite;
-            selSite = SiteTerritories.provinceAt(d, (int) Math.floor(bx), (int) Math.floor(bz));
-            MapStyle.selectedProvince = selSite;
-            if (old >= 0 && old < d.n) MapData.invalidateRect(d.bounds[old][0], d.bounds[old][1], d.bounds[old][2], d.bounds[old][3]);
-            if (selSite >= 0) {
-                int[] b = d.bounds[selSite];
-                MapData.invalidateRect(b[0], b[1], b[2], b[3]);
+            int p = SiteTerritories.provinceAt(d, (int) Math.floor(bx), (int) Math.floor(bz));
+            setSite(p);
+            if (p >= 0) {
+                tab = TAB_INFO;
+                scrollInfo = 0;
+            } else if (tab == TAB_INFO) {
+                tab = TAB_NONE; // clicar no mar fecha o painel
             }
             return;
         }
         selPx = provOf((int) Math.floor(bx / 16));
         selPz = provOf((int) Math.floor(bz / 16));
         hasSel = true;
+        tab = TAB_INFO;
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (!inMap(mouseX, mouseY)) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        if (panelVisible && mouseX >= panelX && mouseX < panelX + panelW && mouseY >= panelY && mouseY < panelY + panelH) {
+            if (tab == TAB_LIST) scrollList = Math.max(0, scrollList - scrollY * 20);
+            else scrollInfo = Math.max(0, scrollInfo - scrollY * 20);
+            return true;
+        }
+        if (blockedAt(mouseX, mouseY)) return true;
         double bx = toBlockX(mouseX);
         double bz = toBlockZ(mouseY);
         double ns = Math.max(0.05, Math.min(8.0, scale * Math.pow(1.2, scrollY)));
