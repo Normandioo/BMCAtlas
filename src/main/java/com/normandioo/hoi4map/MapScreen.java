@@ -632,8 +632,8 @@ public class MapScreen extends Screen {
                     drawRing(g, ring, 0x90000000, 3.5f);
                     drawRingDashed(g, ring, color, 2f, 8, 5);
                 }
-            } else if (scale < 0.15) {
-                for (double[] ring : ringsFor(z)) drawRing(g, ring, color, thick);      // muito longe: linha contínua (mais barata)
+            } else if (scale < 0.5) {
+                for (double[] ring : ringsFor(z)) drawRing(g, ring, color, thick);      // longe: linha contínua (bem mais barata)
             } else {
                 for (double[] ring : ringsFor(z)) drawRingDashed(g, ring, color, thick, 8, 5);
             }
@@ -670,6 +670,12 @@ public class MapScreen extends Screen {
             double x = i == n ? fx : toScreenX(ring[2 * i]), y = i == n ? fy : toScreenY(ring[2 * i + 1]);
             double dx = x - px, dy = y - py, len = Math.hypot(dx, dy);
             if (len < 0.5 && i < n) continue;
+            if ((px < 0 && x < 0) || (px > width && x > width) || (py < 0 && y < 0) || (py > height && y > height)) {
+                pos += len;                       // fora da tela: só avança a fase
+                px = x;
+                py = y;
+                continue;
+            }
             double t = 0;
             while (t < len) {
                 double phase = (pos + t) % period;

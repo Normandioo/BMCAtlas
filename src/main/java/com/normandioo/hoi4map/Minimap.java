@@ -118,14 +118,12 @@ final class Minimap {
                 int n = ring.length / 2;
                 if (n < 2) continue;
                 double px = ox + (ring[0] - cx) * scale, py = oy + (ring[1] - cz) * scale;
-                double fx = px, fy = py, acc = 0;
+                double fx = px, fy = py;
                 for (int i = 1; i <= n; i++) {
                     double x = i == n ? fx : ox + (ring[2 * i] - cx) * scale, y = i == n ? fy : oy + (ring[2 * i + 1] - cz) * scale;
                     double dx = x - px, dy = y - py, len = Math.hypot(dx, dy);
-                    if (len < 2 && i < n) continue;
-                    acc += len;
-                    if (((int) (acc / 4)) % 2 == 0
-                            && !((px < ox - half * scale && x < ox - half * scale) || (px > ox + half * scale && x > ox + half * scale)
+                    if (len < 3 && i < n) continue;
+                    if (!((px < ox - half * scale && x < ox - half * scale) || (px > ox + half * scale && x > ox + half * scale)
                             || (py < oy - half * scale && y < oy - half * scale) || (py > oy + half * scale && y > oy + half * scale))) {
                         g.pose().pushMatrix();
                         g.pose().translate((float) px, (float) py);
