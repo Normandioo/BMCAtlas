@@ -45,6 +45,7 @@ final class SiteTerritories {
         List<Zone> zones;
         Map<String, Player> players;
         WarData war;
+        Network network;
     }
 
     private static final class CountryJson {
@@ -106,13 +107,35 @@ final class SiteTerritories {
     static final class Captured {
         String name, country, state, holder, holderKey;
         int x, z;
+        /** Lado que segura a cidade segundo o dynmap (guerra ao vivo); não vem do arquivo. */
+        transient Integer liveSide;
+    }
+
+    /** Conexões entre localidades, pontes e estreitos (para o In Play da Lei 7). */
+    static final class Network {
+        Map<String, Link> links;
+        List<List<Object>> edges;
+    }
+
+    static final class Link {
+        String kind;
+        boolean open;
+        Integer x, z;
     }
 
     static final class WarInfo {
         String id, name, type, started, ended, notes;
         boolean live;
+        String rule, theater;
         List<Side> sides;
         List<Captured> captured;
+        /** Escolhas da staff para empates sobre terra neutra: pares de "Nome(País)". */
+        List<List<String>> shortCircuits;
+        Boolean shortCircuit;
+        /** Capitais de suprimento: país -> chaves de cidade. */
+        Map<String, List<String>> supplyCapitals;
+        /** Ponte/estreito -> "open" / "closed", nesta guerra. */
+        Map<String, String> bridges;
     }
 
     static final class AllianceInfo {
@@ -165,6 +188,10 @@ final class SiteTerritories {
         /** Milissegundos entre perguntas ao dynmap (só com o mapa aberto). Mínimo 1000. */
         int playersRefreshMs = 1000;
         boolean showPlayers = true;
+        /** Guerras marcadas "ao vivo" no site: quem segura cada cidade vem dos marcadores do dynmap. */
+        boolean liveWar = true;
+        /** Espadas e bandeiras sobre as cidades em guerra. */
+        boolean warMarkers = true;
     }
 
     // ------------------------------------------------------------------- dados
@@ -199,6 +226,7 @@ final class SiteTerritories {
         Map<String, Integer> countryOfPlayer = Map.of();
         Map<String, String> ignToSite = Map.of();
         WarData war;
+        Network network;
         // posição do nome de cada país no mapa (calculada em segundo plano, ver LabelFit)
         volatile double[][] fit;
         boolean[] fitAsked;
@@ -262,6 +290,14 @@ final class SiteTerritories {
 
     static boolean showPlayers() {
         return settings.showPlayers;
+    }
+
+    static boolean liveWar() {
+        return settings.liveWar;
+    }
+
+    static boolean warMarkers() {
+        return settings.warMarkers;
     }
 
     static String dynmapUrl() {
@@ -465,6 +501,7 @@ final class SiteTerritories {
         d.fit = new double[nc][];
         d.fitAsked = new boolean[nc];
         d.war = f.war;
+        d.network = f.network;
         parseExtras(d, f, byId);
         return d;
     }

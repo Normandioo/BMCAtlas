@@ -248,11 +248,13 @@ final class Relations {
             String name = sides.get(s).name == null ? "Lado " + (s + 1) : sides.get(s).name;
             legend.add(new Rel(name, color, new ArrayList<>(members)));
         }
-        if (w.captured != null) {
-            for (SiteTerritories.Captured c : w.captured) {
+        List<SiteTerritories.Captured> captured = LiveControl.captured(d, w);
+        if (!captured.isEmpty()) {
+            for (SiteTerritories.Captured c : captured) {
                 int color;
                 if ("contested".equals(c.state)) color = CONTESTED;
                 else if ("uncontrolled".equals(c.state)) color = UNCONTROLLED;
+                else if (c.liveSide != null && c.liveSide < sides.size()) color = sideColor(sides.get(c.liveSide), c.liveSide);
                 else {
                     Integer s = sideOf.get(norm(c.holderKey));
                     if (s == null) s = sideOf.get(norm(c.holder));
