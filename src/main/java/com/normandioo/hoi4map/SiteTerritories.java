@@ -298,6 +298,16 @@ final class SiteTerritories {
         return i < 0 ? "" : u.substring(0, i + 1);
     }
 
+    /** Raiz do site configurado em site.json (não do mapa escolhido): daqui sai o endereço padrão do maps.json. */
+    static String configuredRootUrl() {
+        try {
+            URI u = URI.create(settings.url);
+            return u.getScheme() + "://" + u.getAuthority() + "/";
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
     /** Raiz do site (para caminhos como "gaia/flags/SC.png"). */
     static String rootUrl() {
         try {

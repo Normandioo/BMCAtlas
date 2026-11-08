@@ -116,7 +116,7 @@ final class MapCatalog {
     static String catalogUrl() {
         String u = SiteTerritories.mapsUrl();
         if (u != null && !u.isBlank()) return u;
-        String root = SiteTerritories.rootUrl();
+        String root = SiteTerritories.configuredRootUrl();
         return root.isEmpty() ? null : root + "maps.json";
     }
 
