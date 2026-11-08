@@ -222,7 +222,7 @@ final class MapData {
 
     private static void load() {
         if (worldKey == null) return;
-        Path regions = dir().resolve(worldKey + ".regions3");
+        Path regions = dir().resolve(worldKey + ".regions4");
         if (Files.exists(regions)) {
             try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(regions)))) {
                 int n = in.readInt();
@@ -262,7 +262,7 @@ final class MapData {
         if (worldKey == null || (REGIONS.isEmpty() && OWNERS.isEmpty())) return;
         try {
             Files.createDirectories(dir());
-            Path regions = dir().resolve(worldKey + ".regions3");
+            Path regions = dir().resolve(worldKey + ".regions4");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(regions)))) {
                 out.writeInt(REGIONS.size());
                 for (Region r : REGIONS.values()) {
@@ -376,16 +376,15 @@ final class MapData {
         for (int lz = 0; lz < 16; lz++) {
             for (int lx = 0; lx < 16; lx++) {
                 int top = heights[lz * 16 + lx];
-                int y = top - 1;
                 int wx = (cx << 4) + lx;
                 int wz = (cz << 4) + lz;
                 int outIndex = (oz + lz) * REGION_PX + (ox + lx);
-                if (y < -64) {
+                if (top < -63) {
                     reg.px[outIndex] = 0;
                     continue;
                 }
-                pos.set(wx, y, wz);
-                BlockState state = chunk.getBlockState(pos);
+                BlockState state = stateAtTop(chunk, pos, wx, top, wz);
+                int y = pos.getY();
                 FluidState fluid = state.getFluidState();
 
                 int color;
@@ -396,9 +395,9 @@ final class MapData {
                         int floorTop = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR, lx, lz);
                         int depth = Math.max(0, top - floorTop);
                         int floorColor = 0xFF30323C;
-                        if (floorTop - 1 >= -64) {
-                            pos.set(wx, floorTop - 1, wz);
-                            int c = blockColor(level, chunk.getBlockState(pos), pos);
+                        if (floorTop >= -63) {
+                            BlockState floorState = stateAtTop(chunk, pos, wx, floorTop, wz);
+                            int c = blockColor(level, floorState, pos);
                             if (c != 0) floorColor = c;
                             pos.set(wx, y, wz);
                         }
@@ -419,6 +418,20 @@ final class MapData {
         }
         reg.dirty = true;
         dirty = true;
+    }
+
+    /**
+     * O heightmap devolve a altura do bloco mais alto (ou 1 a mais, conforme a versão):
+     * lê em h e, se for ar, em h-1. Deixa pos no bloco lido.
+     */
+    private static BlockState stateAtTop(LevelChunk chunk, BlockPos.MutableBlockPos pos, int wx, int h, int wz) {
+        pos.set(wx, h, wz);
+        BlockState s = chunk.getBlockState(pos);
+        if (s.isAir()) {
+            pos.set(wx, h - 1, wz);
+            s = chunk.getBlockState(pos);
+        }
+        return s;
     }
 
     private static int neighborHeight(LevelChunk self, LevelChunk west, LevelChunk north, LevelChunk northWest,
