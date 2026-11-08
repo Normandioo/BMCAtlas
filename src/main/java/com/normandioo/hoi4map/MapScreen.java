@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
@@ -23,7 +24,6 @@ public class MapScreen extends Screen {
     private static final int MODE_POLITICAL = 1;
     private static final int MODE_PROVINCES = 2;
 
-    private static final int COL_UNKNOWN = 0xFF141C26;
     private static final int COL_GOLD = 0xFFC8A64A;
     private static final int COL_PANEL = 0xFF101820;
     private static final int COL_TEXT = 0xFFE6E0CC;
@@ -56,7 +56,7 @@ public class MapScreen extends Screen {
     @Override
     protected void init() {
         Minecraft mc = Minecraft.getInstance();
-        MapData.scan(mc);
+        MapData.ensureWorld(mc);
         if (!viewInit && mc.player != null) {
             centerOnPlayer();
             viewInit = true;
@@ -166,111 +166,91 @@ public class MapScreen extends Screen {
     }
 
     private void drawMap(GuiGraphics g) {
-        int step = 1;
-        while (step * 16 * scale < 5 && step < 128) step <<= 1;
-
         double leftB = toBlockX(0);
         double rightB = toBlockX(width - PANEL_W);
         double topB = toBlockZ(TOP);
         double botB = toBlockZ(height);
 
-        int minC = Math.floorDiv((int) Math.floor(leftB / 16), step) * step;
-        int maxC = (int) Math.floor(rightB / 16);
-        int minR = Math.floorDiv((int) Math.floor(topB / 16), step) * step;
-        int maxR = (int) Math.floor(botB / 16);
-
-        for (int cxu = minC; cxu <= maxC; cxu += step) {
-            int sx0 = (int) Math.floor(toScreenX(cxu * 16.0));
-            int sx1 = (int) Math.floor(toScreenX((cxu + step) * 16.0));
-            for (int czu = minR; czu <= maxR; czu += step) {
-                int sy0 = (int) Math.floor(toScreenY(czu * 16.0));
-                int sy1 = (int) Math.floor(toScreenY((czu + step) * 16.0));
-                g.fill(sx0, sy0, sx1, sy1, colorFor(cxu, czu, step));
-
-                if (mode != MODE_PHYSICAL) {
-                    int border = mode == MODE_POLITICAL ? 0xCC05080C : 0x66000000;
-                    int t = scale >= 1.5 ? 2 : 1;
-                    if (differs(cxu, czu, cxu + step, czu)) g.fill(sx1 - t, sy0, sx1, sy1, border);
-                    if (differs(cxu, czu, cxu, czu + step)) g.fill(sx0, sy1 - t, sx1, sy1, border);
+        // 1) terreno: um blit por região (texturas de 1 pixel por bloco)
+        int rx0 = (int) Math.floor(leftB / MapData.REGION_PX);
+        int rx1 = (int) Math.floor(rightB / MapData.REGION_PX);
+        int rz0 = (int) Math.floor(topB / MapData.REGION_PX);
+        int rz1 = (int) Math.floor(botB / MapData.REGION_PX);
+        int uploads = 0;
+        for (int rx = rx0; rx <= rx1; rx++) {
+            for (int rz = rz0; rz <= rz1; rz++) {
+                MapData.Region r = MapData.region(rx, rz, false);
+                if (r == null) continue;
+                if ((r.id == null || r.dirty) && uploads < 3) {
+                    r.ensureUploaded();
+                    uploads++;
                 }
+                if (r.id == null) continue; // ainda sem textura: espera o próximo quadro
+                int sx0 = (int) Math.floor(toScreenX(rx * (double) MapData.REGION_PX));
+                int sx1 = (int) Math.floor(toScreenX((rx + 1) * (double) MapData.REGION_PX));
+                int sy0 = (int) Math.floor(toScreenY(rz * (double) MapData.REGION_PX));
+                int sy1 = (int) Math.floor(toScreenY((rz + 1) * (double) MapData.REGION_PX));
+                int size = MapData.REGION_PX;
+                g.blit(RenderPipelines.GUI_TEXTURED, r.id, sx0, sy0, 0f, 0f, sx1 - sx0, sy1 - sy0, size, size, size, size);
             }
         }
+
+        // 2) camadas políticas: só as províncias com dono (poucos retângulos)
+        if (mode != MODE_PHYSICAL) drawOwners(g, leftB, rightB, topB, botB);
+
+        // 3) grade de províncias
+        if (mode == MODE_PROVINCES) drawGrid(g, leftB, rightB, topB, botB);
 
         if (mode == MODE_POLITICAL) drawCountryNames(g);
         drawSelection(g);
         drawPlayer(g);
     }
 
-    private int provOf(int chunk) {
-        return Math.floorDiv(chunk, MapData.PROV);
-    }
+    private void drawOwners(GuiGraphics g, double leftB, double rightB, double topB, double botB) {
+        int span = MapData.PROV * 16;
+        int alpha = mode == MODE_POLITICAL ? 0x9A : 0x48;
+        int t = scale >= 1.5 ? 2 : 1;
+        int border = 0xE0080C10;
+        for (Map.Entry<Long, String> e : MapData.OWNERS.entrySet()) {
+            int px = MapData.keyA(e.getKey());
+            int pz = MapData.keyB(e.getKey());
+            double bx0 = px * (double) span;
+            double bz0 = pz * (double) span;
+            if (bx0 + span < leftB || bx0 > rightB || bz0 + span < topB || bz0 > botB) continue;
+            Countries.Country c = Countries.BY_ID.get(e.getValue());
+            if (c == null) continue;
+            int x0 = (int) Math.floor(toScreenX(bx0));
+            int x1 = (int) Math.floor(toScreenX(bx0 + span));
+            int y0 = (int) Math.floor(toScreenY(bz0));
+            int y1 = (int) Math.floor(toScreenY(bz0 + span));
+            g.fill(x0, y0, x1, y1, (alpha << 24) | (c.rgb & 0xFFFFFF));
 
-    /** Há fronteira entre as duas unidades? */
-    private boolean differs(int ax, int az, int bx, int bz) {
-        int apx = provOf(ax), apz = provOf(az), bpx = provOf(bx), bpz = provOf(bz);
-        if (apx == bpx && apz == bpz) return false;
-        if (mode == MODE_PROVINCES) return true;
-        String a = MapData.ownerOf(apx, apz);
-        String b = MapData.ownerOf(bpx, bpz);
-        if (a == null) return b != null;
-        return !a.equals(b);
-    }
-
-    private int terrainAt(int cxu, int czu, int step) {
-        if (step == 1) return MapData.CHUNK_COLORS.get(MapData.key(cxu, czu));
-        int last = step - 1;
-        int[] xs = {cxu, cxu + last};
-        int[] zs = {czu, czu + last};
-        int r = 0, gg = 0, b = 0, n = 0;
-        for (int x : xs) {
-            for (int z : zs) {
-                int c = MapData.CHUNK_COLORS.get(MapData.key(x, z));
-                if (c == 0) continue;
-                r += (c >> 16) & 0xFF;
-                gg += (c >> 8) & 0xFF;
-                b += c & 0xFF;
-                n++;
-            }
-        }
-        if (n == 0) return 0;
-        return 0xFF000000 | ((r / n) << 16) | ((gg / n) << 8) | (b / n);
-    }
-
-    private int colorFor(int cxu, int czu, int step) {
-        int terrain = terrainAt(cxu, czu, step);
-        switch (mode) {
-            case MODE_PHYSICAL:
-                return terrain != 0 ? terrain : COL_UNKNOWN;
-            case MODE_POLITICAL: {
-                String owner = MapData.ownerOf(provOf(cxu), provOf(czu));
-                Countries.Country c = owner == null ? null : Countries.BY_ID.get(owner);
-                if (c != null) {
-                    return terrain != 0 ? lerp(terrain, c.rgb, 0.78f) : lerp(COL_UNKNOWN, c.rgb, 0.65f);
-                }
-                if (terrain == 0) return COL_UNKNOWN;
-                return lerp(terrain, 0xFF6A7078, 0.55f);
-            }
-            default: {
-                int h = hash(provOf(cxu), provOf(czu));
-                int base = 0xFF000000 | (70 + ((h >> 16) & 0x7F)) << 16 | (70 + ((h >> 8) & 0x7F)) << 8 | (70 + (h & 0x7F));
-                return terrain != 0 ? lerp(terrain, base, 0.7f) : lerp(COL_UNKNOWN, base, 0.5f);
+            if (mode == MODE_POLITICAL) {
+                String id = e.getValue();
+                if (!id.equals(MapData.ownerOf(px - 1, pz))) g.fill(x0, y0, x0 + t, y1, border);
+                if (!id.equals(MapData.ownerOf(px + 1, pz))) g.fill(x1 - t, y0, x1, y1, border);
+                if (!id.equals(MapData.ownerOf(px, pz - 1))) g.fill(x0, y0, x1, y0 + t, border);
+                if (!id.equals(MapData.ownerOf(px, pz + 1))) g.fill(x0, y1 - t, x1, y1, border);
             }
         }
     }
 
-    private static int hash(int a, int b) {
-        int h = a * 73856093 ^ b * 19349663;
-        h ^= h >>> 13;
-        h *= 0x5bd1e995;
-        h ^= h >>> 15;
-        return h;
-    }
-
-    private static int lerp(int a, int b, float t) {
-        int r = (int) (((a >> 16) & 0xFF) * (1 - t) + ((b >> 16) & 0xFF) * t);
-        int g = (int) (((a >> 8) & 0xFF) * (1 - t) + ((b >> 8) & 0xFF) * t);
-        int bl = (int) ((a & 0xFF) * (1 - t) + (b & 0xFF) * t);
-        return 0xFF000000 | (r << 16) | (g << 8) | bl;
+    private void drawGrid(GuiGraphics g, double leftB, double rightB, double topB, double botB) {
+        int span = MapData.PROV * 16;
+        if (span * scale < 6) return; // linhas muito juntas: não desenha
+        int gx0 = (int) Math.floor(leftB / span);
+        int gx1 = (int) Math.floor(rightB / span) + 1;
+        int gz0 = (int) Math.floor(topB / span);
+        int gz1 = (int) Math.floor(botB / span) + 1;
+        int line = 0x55FFFFFF;
+        for (int gx = gx0; gx <= gx1; gx++) {
+            int sx = (int) Math.floor(toScreenX(gx * (double) span));
+            g.fill(sx, TOP, sx + 1, height, line);
+        }
+        for (int gz = gz0; gz <= gz1; gz++) {
+            int sy = (int) Math.floor(toScreenY(gz * (double) span));
+            g.fill(0, sy, width - PANEL_W, sy + 1, line);
+        }
     }
 
     private void refreshStats() {
@@ -336,7 +316,7 @@ public class MapScreen extends Screen {
         g.fill(0, 0, width, TOP, 0xFF0D141C);
         g.fill(0, TOP - 2, width, TOP, COL_GOLD);
 
-        String hint = "Arraste: mover   Roda: zoom   Clique: selecionar   1/2/3: modos";
+        String hint = "Arraste: mover | Roda: zoom | 1/2/3: modos";
         g.drawString(font, hint, width - PANEL_W - 6 - font.width(hint), 9, COL_DIM, false);
     }
 
@@ -362,7 +342,7 @@ public class MapScreen extends Screen {
             int known = 0;
             for (int dx = 0; dx < MapData.PROV; dx++) {
                 for (int dz = 0; dz < MapData.PROV; dz++) {
-                    if (MapData.CHUNK_COLORS.get(MapData.key(selPx * MapData.PROV + dx, selPz * MapData.PROV + dz)) != 0) known++;
+                    if (MapData.chunkKnown(selPx * MapData.PROV + dx, selPz * MapData.PROV + dz)) known++;
                 }
             }
             int total = MapData.PROV * MapData.PROV;
@@ -444,7 +424,7 @@ public class MapScreen extends Screen {
         if (!inMap(mouseX, mouseY)) return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         double bx = toBlockX(mouseX);
         double bz = toBlockZ(mouseY);
-        double ns = Math.max(0.03, Math.min(6.0, scale * Math.pow(1.2, scrollY)));
+        double ns = Math.max(0.05, Math.min(8.0, scale * Math.pow(1.2, scrollY)));
         scale = ns;
         viewX = bx - (mouseX - areaCx()) / scale;
         viewZ = bz - (mouseY - areaCy()) / scale;

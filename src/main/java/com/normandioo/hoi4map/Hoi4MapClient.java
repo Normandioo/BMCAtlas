@@ -31,8 +31,8 @@ public class Hoi4MapClient implements ClientModInitializer {
             while (OPEN_KEY.consumeClick()) {
                 if (mc.screen == null) mc.setScreen(new MapScreen());
             }
-            if (++ticks % 100 == 0) MapData.scan(mc);
-            if (ticks % 2400 == 0 && MapData.isDirty()) MapData.save();
+            MapData.tick(mc);
+            if (++ticks % 6000 == 0 && MapData.isDirty()) MapData.save();
         });
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> MapData.unload());
