@@ -78,6 +78,7 @@ final class SiteTerritories {
         String name, country;
         List<double[]> rings;
         transient double[] box;   // minX, minZ, maxX, maxZ
+        transient List<double[]> smooth;   // contornos suavizados para desenhar (preenchido na tela)
         transient int countryIdx = -1;
     }
 
@@ -131,7 +132,13 @@ final class SiteTerritories {
         String from, to, sent;
     }
 
+    /** Diplolock registrado no site (Foundation ou Set by Staff), com fim opcional. */
+    static final class Lock {
+        String nation, kind, until;
+    }
+
     static final class WarData {
+        List<Lock> locks;
         List<WarInfo> wars;
         List<AllianceInfo> alliances;
         List<Truce> truces;
@@ -152,6 +159,12 @@ final class SiteTerritories {
         boolean enabled = true;
         /** Metade do lado do mapa do servidor, em blocos (0 = deduzir dos territórios; 2500 = mapa de 5000x5000). */
         int worldHalfSize = 0;
+        /** Dynmap do servidor (o site encaminha /dynmap/): de onde vêm os jogadores online. Só leitura. */
+        String dynmapUrl = "https://bmcmc.online/dynmap/";
+        String dynmapWorld = "world";
+        /** Milissegundos entre perguntas ao dynmap (só com o mapa aberto). Mínimo 1000. */
+        int playersRefreshMs = 2000;
+        boolean showPlayers = true;
     }
 
     // ------------------------------------------------------------------- dados
@@ -182,6 +195,9 @@ final class SiteTerritories {
         List<Zone> zones = List.of();
         Map<String, Zone> zoneByKey = Map.of();
         Map<String, Player> players = Map.of();
+        /** nome do jogador no site (minúsculo) -> país; nome no jogo (minúsculo) -> nome no site. */
+        Map<String, Integer> countryOfPlayer = Map.of();
+        Map<String, String> ignToSite = Map.of();
         WarData war;
         // posição do nome de cada país no mapa (calculada em segundo plano, ver LabelFit)
         volatile double[][] fit;
@@ -242,6 +258,23 @@ final class SiteTerritories {
         if (rel == null || rel.isBlank()) return null;
         if (rel.startsWith("http://") || rel.startsWith("https://")) return rel;
         return (fromRoot ? rootUrl() : baseUrl()) + rel;
+    }
+
+    static boolean showPlayers() {
+        return settings.showPlayers;
+    }
+
+    static String dynmapUrl() {
+        String u = settings.dynmapUrl;
+        return u == null || u.isBlank() ? null : u.endsWith("/") ? u : u + "/";
+    }
+
+    static String dynmapWorld() {
+        return settings.dynmapWorld == null || settings.dynmapWorld.isBlank() ? "world" : settings.dynmapWorld;
+    }
+
+    static int playersRefreshMs() {
+        return Math.max(1000, settings.playersRefreshMs);
     }
 
     /** Limites do mapa do servidor em blocos {minX, minZ, maxX, maxZ}, ou null se não der para saber. */
@@ -499,6 +532,18 @@ final class SiteTerritories {
             d.zoneByKey = byKey;
         }
         if (f.players != null) d.players = f.players;
+        Map<String, Integer> cop = new HashMap<>();
+        for (int c = 0; c < d.people.length; c++) {
+            if (d.people[c] == null) continue;
+            for (String n : d.people[c]) cop.putIfAbsent(n.toLowerCase(java.util.Locale.ROOT), c);
+        }
+        Map<String, String> its = new HashMap<>();
+        for (Map.Entry<String, Player> e : d.players.entrySet()) {
+            its.putIfAbsent(e.getKey().toLowerCase(java.util.Locale.ROOT), e.getKey());
+            if (e.getValue() != null && e.getValue().ign != null) its.put(e.getValue().ign.toLowerCase(java.util.Locale.ROOT), e.getKey());
+        }
+        d.countryOfPlayer = cop;
+        d.ignToSite = its;
     }
 
     private static double signedArea(List<int[]> rings) {
@@ -577,6 +622,51 @@ final class SiteTerritories {
                 }
             }
         }
+    }
+
+    /**
+     * Preenche out (w x h) com o número da zona de captura (índice + 1, 0 = nenhuma) de cada bloco do retângulo
+     * que começa em (x0, z0). Par-ímpar no centro do bloco; zonas mais abaixo na lista ficam por cima.
+     * include (opcional) escolhe quais zonas entram; devolve se alguma tocou o retângulo.
+     */
+    static boolean rasterZones(Data d, int x0, int z0, int w, int h, short[] out, boolean[] include) {
+        Arrays.fill(out, 0, w * h, (short) 0);
+        boolean any = false;
+        double[] xs = new double[64];
+        for (int zi = 0; zi < d.zones.size(); zi++) {
+            if (include != null && !include[zi]) continue;
+            Zone z = d.zones.get(zi);
+            double[] b = z.box;
+            if (b[2] < x0 || b[0] >= x0 + w || b[3] < z0 || b[1] >= z0 + h) continue;
+            short value = (short) (zi + 1);
+            int zFrom = Math.max((int) Math.floor(b[1]), z0);
+            int zTo = Math.min((int) Math.ceil(b[3]), z0 + h - 1);
+            for (int zz = zFrom; zz <= zTo; zz++) {
+                double zc = zz + 0.5;
+                int cnt = 0;
+                for (double[] r : z.rings) {
+                    int len = r.length / 2;
+                    for (int i = 0, j = len - 1; i < len; j = i++) {
+                        double zi2 = r[2 * i + 1], zj = r[2 * j + 1];
+                        if ((zi2 <= zc) == (zj <= zc)) continue;
+                        double xi = r[2 * i], xj = r[2 * j];
+                        if (cnt == xs.length) xs = Arrays.copyOf(xs, cnt * 2);
+                        xs[cnt++] = xi + (zc - zi2) * (xj - xi) / (zj - zi2);
+                    }
+                }
+                Arrays.sort(xs, 0, cnt);
+                int row = (zz - z0) * w;
+                for (int k = 0; k + 1 < cnt; k += 2) {
+                    int from = (int) Math.ceil(xs[k] - 0.5);
+                    int to = (int) Math.ceil(xs[k + 1] - 0.5) - 1;
+                    for (int x = Math.max(from, x0); x <= Math.min(to, x0 + w - 1); x++) {
+                        out[row + (x - x0)] = value;
+                        any = true;
+                    }
+                }
+            }
+        }
+        return any;
     }
 
     /** Província que contém o bloco (teste exato do polígono; a mais "de cima" vence), ou -1. */

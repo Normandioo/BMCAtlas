@@ -47,11 +47,44 @@ final class MapStyle {
     private static final short[] PROV_GRID = new short[W * W];
     private static final int[] DIST = new int[W * W];
 
+    /**
+     * Cor (ARGB; o alfa é a força da mistura) com que cada zona de cidade (índice em Data.zones) é tingida
+     * por dentro; 0 = não tinge. null = sem camada de zonas. Mude junto com overrideVersion.
+     */
+    static volatile int[] zoneTint;
+
+    private static final short[] ZONE_GRID = new short[MapData.REGION_PX * MapData.REGION_PX];
+
     static int[] paint(MapData.Region r, int mode) {
-        if (mode != MODE_PHYSICAL && MapData.siteApplies() && SiteTerritories.active()) {
-            return paintSite(r, mode, SiteTerritories.data());
+        boolean site = MapData.siteApplies() && SiteTerritories.active();
+        int[] out;
+        if (mode != MODE_PHYSICAL && site) out = paintSite(r, mode, SiteTerritories.data());
+        else out = paintGrid(r, mode);
+        int[] tint = zoneTint;
+        if (site && tint != null) applyZones(r, out, SiteTerritories.data(), tint);
+        return out;
+    }
+
+    /** Clareia (ou tinge) por dentro as zonas de cidade escolhidas; a linha do limite é desenhada pela tela. */
+    private static void applyZones(MapData.Region r, int[] out, SiteTerritories.Data d, int[] tint) {
+        int nz = Math.min(tint.length, d.zones.size());
+        boolean[] include = new boolean[d.zones.size()];
+        boolean anyZone = false;
+        for (int i = 0; i < nz; i++) {
+            if (tint[i] != 0) {
+                include[i] = true;
+                anyZone = true;
+            }
         }
-        return paintGrid(r, mode);
+        if (!anyZone) return;
+        int size = MapData.REGION_PX;
+        if (!SiteTerritories.rasterZones(d, r.rx * size, r.rz * size, size, size, ZONE_GRID, include)) return;
+        for (int i = 0; i < size * size; i++) {
+            int z = ZONE_GRID[i];
+            if (z == 0 || out[i] == 0) continue;
+            int t = tint[z - 1];
+            out[i] = mix(out[i], 0xFF000000 | t, (t >>> 24) / 255f);
+        }
     }
 
     /** Pinta usando os países/províncias do site, bloco a bloco. */
@@ -272,17 +305,62 @@ final class MapStyle {
         return pack(r * 0.78f, g * 0.80f, b * 0.86f);
     }
 
-    /** Mar: azul-marinho escuro, um pouco mais claro perto da costa. */
+    // profundidade (blocos abaixo da superfície) -> cor do mar: do turquesa raso ao azul-marinho profundo
+    private static final float[] SEA_D = {0, 3, 8, 16, 28, 44, 60};
+    private static final int[] SEA_C = {0x4A94B8, 0x3A80AA, 0x2C6694, 0x1D4777, 0x132E58, 0x0C2044, 0x081532};
+
+    /** Mar com degradê de profundidade, ondas suaves de brilho, espuma na costa e um grão fino. */
     private static int water(int raw, int wx, int wz) {
         int depth = Math.min(63, (raw >>> 24) - 0x80);
         if (depth < 0) depth = 0;
-        float t = Math.min(depth, 26) / 26f;
-        float r = lerpf(0x34, 0x09, t);
-        float g = lerpf(0x58, 0x14, t);
-        float b = lerpf(0x8E, 0x2C, t);
-        int h = hash(wx, wz);
-        float n = ((h & 7) - 3) * 0.9f;
-        return pack(r + n, g + n, b + n * 1.2f);
+        int k = 1;
+        while (k < SEA_D.length - 1 && depth > SEA_D[k]) k++;
+        float t = Math.max(0f, Math.min(1f, (depth - SEA_D[k - 1]) / (SEA_D[k] - SEA_D[k - 1])));
+        t = t * t * (3f - 2f * t);
+        int c0 = SEA_C[k - 1], c1 = SEA_C[k];
+        float r = lerpf((c0 >> 16) & 0xFF, (c1 >> 16) & 0xFF, t);
+        float g = lerpf((c0 >> 8) & 0xFF, (c1 >> 8) & 0xFF, t);
+        float b = lerpf(c0 & 0xFF, c1 & 0xFF, t);
+
+        // brilho: manchas largas + ondulação média; menos contraste no fundo
+        float calm = 1f - Math.min(depth, 48) / 80f;
+        float big = vnoise(wx / 34f, wz / 34f) - 0.5f;
+        float mid = vnoise(wx / 9f + 17.3f, wz / 9f - 5.1f) - 0.5f;
+        float f = 1f + (big * 0.26f + mid * 0.12f) * (0.55f + calm * 0.45f);
+        r *= f;
+        g *= f;
+        b *= f;
+
+        // estrias de ondas na água rasa
+        if (depth < 22) {
+            float wave = (float) Math.sin((wx * 0.55f + wz * 0.32f) * 0.9f + big * 9f);
+            float streak = Math.max(0f, wave - 0.86f) / 0.14f * (1f - depth / 22f);
+            r += 22f * streak;
+            g += 30f * streak;
+            b += 34f * streak;
+        }
+        // espuma junto à costa
+        if (depth <= 2) {
+            float foam = depth == 0 ? 0.40f : depth == 1 ? 0.24f : 0.10f;
+            r = lerpf(r, 0xB8, foam);
+            g = lerpf(g, 0xE0, foam);
+            b = lerpf(b, 0xEA, foam);
+        }
+        float grain = ((hash(wx, wz) & 7) - 3.5f) * 0.55f;
+        return pack(r + grain, g + grain, b + grain * 1.2f);
+    }
+
+    /** Ruído de valor suave (0..1) em coordenadas já escaladas. */
+    private static float vnoise(float x, float z) {
+        int xi = (int) Math.floor(x), zi = (int) Math.floor(z);
+        float fx = x - xi, fz = z - zi;
+        fx = fx * fx * (3f - 2f * fx);
+        fz = fz * fz * (3f - 2f * fz);
+        float a = (hash(xi, zi) & 0xFFFF) / 65535f;
+        float b = (hash(xi + 1, zi) & 0xFFFF) / 65535f;
+        float c = (hash(xi, zi + 1) & 0xFFFF) / 65535f;
+        float d = (hash(xi + 1, zi + 1) & 0xFFFF) / 65535f;
+        return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fz);
     }
 
     /** Cor do país aplicada sobre o terreno, mantendo o relevo (luminância). */

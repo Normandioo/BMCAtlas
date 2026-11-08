@@ -86,7 +86,7 @@ final class MapData {
                 Minecraft.getInstance().getTextureManager().register(id, texture);
                 dirty = true;
             }
-            int ver = MapStyle.relational(mode) ? MapStyle.overrideVersion : 0;
+            int ver = MapStyle.overrideVersion;
             if (dirty || styledMode != mode || styledVer != ver) {
                 int[] out = MapStyle.paint(this, mode);
                 for (int y = 0; y < REGION_PX; y++) {
