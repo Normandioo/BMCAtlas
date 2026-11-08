@@ -1,12 +1,13 @@
 package com.normandioo.hoi4map;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
@@ -20,9 +21,9 @@ public class MapScreen extends Screen {
     private static final int TOP = 26;
     private static final int PANEL_W = 176;
 
-    private static final int MODE_PHYSICAL = 0;
-    private static final int MODE_POLITICAL = 1;
-    private static final int MODE_PROVINCES = 2;
+    private static final int MODE_PHYSICAL = MapStyle.MODE_PHYSICAL;
+    private static final int MODE_POLITICAL = MapStyle.MODE_POLITICAL;
+    private static final int MODE_PROVINCES = MapStyle.MODE_PROVINCES;
 
     private static final int COL_GOLD = 0xFFC8A64A;
     private static final int COL_PANEL = 0xFF101820;
@@ -34,21 +35,33 @@ public class MapScreen extends Screen {
     private static double scale = 1.0;
     private static boolean viewInit;
     private static int mode = MODE_POLITICAL;
+
+    // seleção no modo manual (províncias de 32x32 blocos)
     private static boolean hasSel;
     private static int selPx, selPz;
+    // seleção no modo site (índice da província no arquivo do site)
+    private static int selSite = -1;
 
     private boolean dragging;
     private boolean moved;
     private double pressX, pressY;
 
-    private Button prevBtn, nextBtn, clearBtn;
+    private Button prevBtn, nextBtn, clearBtn, sourceBtn;
 
-    // cache de contagem/centroide por país
+    // cache do modo manual: país -> {somaX, somaZ, n, somaXX, somaZZ, somaXZ} (em províncias)
     private int cacheVersion = -1;
-    private final Map<String, double[]> stats = new HashMap<>(); // id -> {sumPx, sumPz, n}
+    private final Map<String, double[]> stats = new HashMap<>();
+
+    // cache da legenda do site
+    private int legendVersion = -1;
+    private List<Integer> legendOrder = new ArrayList<>();
 
     public MapScreen() {
         super(Component.literal("Mapa"));
+    }
+
+    private static boolean siteMode() {
+        return MapData.siteApplies() && SiteTerritories.active();
     }
 
     // ------------------------------------------------------------------ init
@@ -61,6 +74,7 @@ public class MapScreen extends Screen {
             centerOnPlayer();
             viewInit = true;
         }
+        MapStyle.selectedProvince = selSite;
 
         String[] names = {"Físico", "Político", "Províncias"};
         for (int i = 0; i < names.length; i++) {
@@ -80,8 +94,15 @@ public class MapScreen extends Screen {
         clearBtn = addRenderableWidget(Button.builder(Component.literal("Sem dono"), b -> {
                     if (hasSel) MapData.setOwner(selPx, selPz, null);
                 }).bounds(x0 + 8, by + 22, PANEL_W - 16, 18).build());
-        addRenderableWidget(Button.builder(Component.literal("Recarregar países"), b -> Countries.load())
-                .bounds(x0 + 8, height - 26, PANEL_W - 16, 18).build());
+
+        sourceBtn = addRenderableWidget(Button.builder(Component.literal("Fonte: Site"), b -> {
+                    SiteTerritories.useSite = !SiteTerritories.useSite;
+                    MapData.ownersChanged();
+                }).bounds(x0 + 8, height - 48, PANEL_W - 16, 18).build());
+        addRenderableWidget(Button.builder(Component.literal("Recarregar países"), b -> {
+                    Countries.load();
+                    SiteTerritories.reload();
+                }).bounds(x0 + 8, height - 26, PANEL_W - 16, 18).build());
     }
 
     private void centerOnPlayer() {
@@ -149,20 +170,38 @@ public class MapScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+        MapData.nextFrame();
         g.fill(0, 0, width, height, 0xFF0A0F16);
 
         g.enableScissor(0, TOP, width - PANEL_W, height);
         drawMap(g);
         g.disableScissor();
 
-        drawTopBar(g, mouseX, mouseY);
+        drawTopBar(g);
+        drawHover(g, mouseX, mouseY);
         drawPanel(g);
 
+        boolean site = siteMode();
+        prevBtn.visible = !site;
+        nextBtn.visible = !site;
+        clearBtn.visible = !site;
         prevBtn.active = hasSel && !Countries.LIST.isEmpty();
         nextBtn.active = prevBtn.active;
         clearBtn.active = hasSel;
+        if (SiteTerritories.data() == null) {
+            sourceBtn.setMessage(Component.literal("Fonte: Manual (sem site)"));
+            sourceBtn.active = false;
+        } else {
+            sourceBtn.setMessage(Component.literal(SiteTerritories.useSite ? "Fonte: Site" : "Fonte: Manual"));
+            sourceBtn.active = true;
+        }
 
         super.render(g, mouseX, mouseY, delta);
+    }
+
+    private boolean regionTouchesSite(SiteTerritories.Data d, int rx, int rz) {
+        int x0 = rx * MapData.REGION_PX, z0 = rz * MapData.REGION_PX;
+        return x0 + MapData.REGION_PX > d.minX && x0 <= d.maxX && z0 + MapData.REGION_PX > d.minZ && z0 <= d.maxZ;
     }
 
     private void drawMap(GuiGraphics g) {
@@ -170,6 +209,12 @@ public class MapScreen extends Screen {
         double rightB = toBlockX(width - PANEL_W);
         double topB = toBlockZ(TOP);
         double botB = toBlockZ(height);
+
+        // mar profundo: o que ainda não foi explorado aparece como oceano escuro
+        g.fill(0, TOP, width - PANEL_W, height, 0xFF0B1628);
+
+        boolean site = siteMode();
+        SiteTerritories.Data sd = site && mode != MODE_PHYSICAL ? SiteTerritories.data() : null;
 
         // 1) terreno: um blit por região (texturas de 1 pixel por bloco)
         int rx0 = (int) Math.floor(leftB / MapData.REGION_PX);
@@ -180,9 +225,11 @@ public class MapScreen extends Screen {
         for (int rx = rx0; rx <= rx1; rx++) {
             for (int rz = rz0; rz <= rz1; rz++) {
                 MapData.Region r = MapData.region(rx, rz, false);
+                if (r == null && sd != null && regionTouchesSite(sd, rx, rz)) r = MapData.viewRegion(rx, rz);
                 if (r == null) continue;
-                if ((r.id == null || r.dirty) && uploads < 3) {
-                    r.ensureUploaded();
+                MapData.markUsed(r);
+                if ((r.id == null || r.dirty || r.styledMode != mode) && uploads < 3) {
+                    r.ensureUploaded(mode);
                     uploads++;
                 }
                 if (r.id == null) continue; // ainda sem textura: espera o próximo quadro
@@ -195,44 +242,14 @@ public class MapScreen extends Screen {
             }
         }
 
-        // 2) camadas políticas: só as províncias com dono (poucos retângulos)
-        if (mode != MODE_PHYSICAL) drawOwners(g, leftB, rightB, topB, botB);
-
-        // 3) grade de províncias
-        if (mode == MODE_PROVINCES) drawGrid(g, leftB, rightB, topB, botB);
-
-        if (mode == MODE_POLITICAL) drawCountryNames(g);
-        drawSelection(g);
-        drawPlayer(g);
-    }
-
-    private void drawOwners(GuiGraphics g, double leftB, double rightB, double topB, double botB) {
-        int span = MapData.PROV * 16;
-        int alpha = mode == MODE_POLITICAL ? 0x9A : 0x48;
-        int t = scale >= 1.5 ? 2 : 1;
-        int border = 0xE0080C10;
-        for (Map.Entry<Long, String> e : MapData.OWNERS.entrySet()) {
-            int px = MapData.keyA(e.getKey());
-            int pz = MapData.keyB(e.getKey());
-            double bx0 = px * (double) span;
-            double bz0 = pz * (double) span;
-            if (bx0 + span < leftB || bx0 > rightB || bz0 + span < topB || bz0 > botB) continue;
-            Countries.Country c = Countries.BY_ID.get(e.getValue());
-            if (c == null) continue;
-            int x0 = (int) Math.floor(toScreenX(bx0));
-            int x1 = (int) Math.floor(toScreenX(bx0 + span));
-            int y0 = (int) Math.floor(toScreenY(bz0));
-            int y1 = (int) Math.floor(toScreenY(bz0 + span));
-            g.fill(x0, y0, x1, y1, (alpha << 24) | (c.rgb & 0xFFFFFF));
-
-            if (mode == MODE_POLITICAL) {
-                String id = e.getValue();
-                if (!id.equals(MapData.ownerOf(px - 1, pz))) g.fill(x0, y0, x0 + t, y1, border);
-                if (!id.equals(MapData.ownerOf(px + 1, pz))) g.fill(x1 - t, y0, x1, y1, border);
-                if (!id.equals(MapData.ownerOf(px, pz - 1))) g.fill(x0, y0, x1, y0 + t, border);
-                if (!id.equals(MapData.ownerOf(px, pz + 1))) g.fill(x0, y1 - t, x1, y1, border);
-            }
+        if (!site) {
+            if (mode == MODE_PROVINCES) drawGrid(g, leftB, rightB, topB, botB);
+            if (mode == MODE_POLITICAL) drawManualNames(g);
+            drawManualSelection(g);
+        } else if (mode == MODE_POLITICAL) {
+            drawSiteNames(g);
         }
+        drawPlayer(g);
     }
 
     private void drawGrid(GuiGraphics g, double leftB, double rightB, double topB, double botB) {
@@ -257,43 +274,102 @@ public class MapScreen extends Screen {
         return Math.floorDiv(chunk, MapData.PROV);
     }
 
+    // ------------------------------------------------------------------ nomes
+
     private void refreshStats() {
         if (cacheVersion == MapData.ownersVersion()) return;
         cacheVersion = MapData.ownersVersion();
         stats.clear();
         for (Map.Entry<Long, String> e : MapData.OWNERS.entrySet()) {
-            double[] s = stats.computeIfAbsent(e.getValue(), k -> new double[3]);
-            s[0] += MapData.keyA(e.getKey());
-            s[1] += MapData.keyB(e.getKey());
+            double x = MapData.keyA(e.getKey());
+            double z = MapData.keyB(e.getKey());
+            double[] s = stats.computeIfAbsent(e.getValue(), k -> new double[6]);
+            s[0] += x;
+            s[1] += z;
             s[2] += 1;
+            s[3] += x * x;
+            s[4] += z * z;
+            s[5] += x * z;
         }
     }
 
-    private void drawCountryNames(GuiGraphics g) {
+    private void drawManualNames(GuiGraphics g) {
         refreshStats();
+        int span = MapData.PROV * 16;
         for (Map.Entry<String, double[]> e : stats.entrySet()) {
             Countries.Country c = Countries.BY_ID.get(e.getKey());
             if (c == null) continue;
             double[] s = e.getValue();
-            double blockX = (s[0] / s[2] + 0.5) * MapData.PROV * 16;
-            double blockZ = (s[1] / s[2] + 0.5) * MapData.PROV * 16;
-            double sx = toScreenX(blockX);
-            double sy = toScreenY(blockZ);
-            String text = c.name.toUpperCase();
-            int tw = font.width(text);
-            double terrW = Math.sqrt(s[2]) * MapData.PROV * 16 * scale;
-            float sc = (float) Math.min(4.0, terrW * 0.9 / Math.max(1, tw));
-            if (sc < 0.6f) continue;
-            if (sx < -200 || sx > width || sy < 0 || sy > height) continue;
-            g.pose().pushMatrix();
-            g.pose().translate((float) sx, (float) sy);
-            g.pose().scale(sc, sc);
-            g.drawString(font, text, -tw / 2, -4, 0xFFFFFFFF, true);
-            g.pose().popMatrix();
+            double n = s[2];
+            double mx = s[0] / n;
+            double mz = s[1] / n;
+            double vxx = s[3] / n - mx * mx;
+            double vzz = s[4] / n - mz * mz;
+            double vxz = s[5] / n - mx * mz;
+            double k = (double) span * span;
+            drawName(g, c.name, (mx + 0.5) * span, (mz + 0.5) * span, vxx * k, vzz * k, vxz * k, span, 0.08 * k);
         }
     }
 
-    private void drawSelection(GuiGraphics g) {
+    private void drawSiteNames(GuiGraphics g) {
+        SiteTerritories.Data d = SiteTerritories.data();
+        if (d == null) return;
+        for (int c = 0; c < d.ids.length; c++) {
+            double[] s = d.shape[c];
+            if (s == null) continue;
+            drawName(g, d.names[c], s[0], s[1], s[2], s[3], s[4], 0, 400);
+        }
+    }
+
+    /** Nome grande, em maiúsculas, espaçado, inclinado ao longo do território, com contorno. */
+    private void drawName(GuiGraphics g, String name, double mxB, double mzB,
+                          double vxx, double vzz, double vxz, double pad, double minVar) {
+        double common = Math.sqrt(((vxx - vzz) / 2) * ((vxx - vzz) / 2) + vxz * vxz);
+        double l1 = (vxx + vzz) / 2 + common;
+        double l2 = (vxx + vzz) / 2 - common;
+        double angle = 0;
+        if (l1 > 1.8 * Math.max(l2, minVar / 2)) {
+            angle = 0.5 * Math.atan2(2 * vxz, vxx - vzz);
+            if (angle > 0.6 || angle < -0.6) angle = 0;
+        }
+        double extentBlocks = Math.sqrt(12 * Math.max(l1, minVar)) + pad;
+
+        double sx = toScreenX(mxB);
+        double sy = toScreenY(mzB);
+        if (sx < -300 || sx > width || sy < -100 || sy > height + 100) return;
+
+        String text = name.toUpperCase();
+        int spacing = 2;
+        int tw = 0;
+        int[] widths = new int[text.length()];
+        Component[] comps = new Component[text.length()];
+        for (int i = 0; i < text.length(); i++) {
+            comps[i] = Component.literal(String.valueOf(text.charAt(i))).withStyle(ChatFormatting.BOLD);
+            widths[i] = font.width(comps[i]);
+            tw += widths[i] + (i > 0 ? spacing : 0);
+        }
+        float sc = (float) Math.min(8.0, extentBlocks * scale * 0.85 / Math.max(1, tw));
+        if (sc < 0.55f) return;
+
+        g.pose().pushMatrix();
+        g.pose().translate((float) sx, (float) sy);
+        g.pose().rotate((float) angle);
+        g.pose().scale(sc, sc);
+        int x = -tw / 2;
+        int[][] outline = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+        for (int i = 0; i < comps.length; i++) {
+            for (int[] o : outline) {
+                g.drawString(font, comps[i], x + o[0], -4 + o[1], 0xB00A0E14, false);
+            }
+            g.drawString(font, comps[i], x, -4, 0xE6EDE8D8, false);
+            x += widths[i] + spacing;
+        }
+        g.pose().popMatrix();
+    }
+
+    // ------------------------------------------------------------ seleção/jogador
+
+    private void drawManualSelection(GuiGraphics g) {
         if (!hasSel) return;
         int span = MapData.PROV * 16;
         int x0 = (int) Math.floor(toScreenX(selPx * (double) span));
@@ -316,7 +392,7 @@ public class MapScreen extends Screen {
         g.fill(px - 3, pz - 3, px + 3, pz + 3, 0xFFE03C3C);
     }
 
-    private void drawTopBar(GuiGraphics g, int mouseX, int mouseY) {
+    private void drawTopBar(GuiGraphics g) {
         g.fill(0, 0, width, TOP, 0xFF0D141C);
         g.fill(0, TOP - 2, width, TOP, COL_GOLD);
 
@@ -324,11 +400,95 @@ public class MapScreen extends Screen {
         g.drawString(font, hint, width - PANEL_W - 6 - font.width(hint), 9, COL_DIM, false);
     }
 
+    /** Coordenadas (e país/província, no modo site) sob o cursor, no canto do mapa. */
+    private void drawHover(GuiGraphics g, int mouseX, int mouseY) {
+        if (!inMap(mouseX, mouseY)) return;
+        int bx = (int) Math.floor(toBlockX(mouseX));
+        int bz = (int) Math.floor(toBlockZ(mouseY));
+        String text = "X " + bx + "  Z " + bz;
+        SiteTerritories.Data d = SiteTerritories.data();
+        if (siteMode() && d != null) {
+            int p = SiteTerritories.provinceAt(d, bx, bz);
+            if (p >= 0) text += "  |  " + d.names[d.provCountry[p]] + " - " + d.provLabel[p];
+        }
+        int w = font.width(text) + 8;
+        int y = height - 16;
+        g.fill(4, y - 2, 4 + w, y + 11, 0xB00D141C);
+        g.drawString(font, text, 8, y, COL_TEXT, false);
+    }
+
+    // ------------------------------------------------------------------ painel
+
+    private String fit(String s, int maxWidth) {
+        if (s == null) return "";
+        return font.width(s) <= maxWidth ? s : font.plainSubstrByWidth(s, maxWidth - font.width("...")) + "...";
+    }
+
+    private void row(GuiGraphics g, int x, int y, String label, String value) {
+        if (value == null || value.isBlank()) return;
+        g.drawString(font, label, x, y, COL_DIM, false);
+        int lw = font.width(label) + 4;
+        g.drawString(font, fit(value, PANEL_W - 16 - lw), x + lw, y, COL_TEXT, false);
+    }
+
     private void drawPanel(GuiGraphics g) {
         int x0 = width - PANEL_W;
         g.fill(x0, TOP, width, height, COL_PANEL);
         g.fill(x0, TOP, x0 + 2, height, COL_GOLD);
+        if (siteMode()) drawSitePanel(g, x0);
+        else drawManualPanel(g, x0);
+    }
 
+    private void drawSitePanel(GuiGraphics g, int x0) {
+        SiteTerritories.Data d = SiteTerritories.data();
+        int x = x0 + 8;
+        int y = TOP + 8;
+        g.drawString(font, "PROVÍNCIA", x, y, COL_GOLD, false);
+        y += 14;
+
+        if (selSite < 0 || selSite >= d.n) {
+            g.drawString(font, "Clique num território", x, y, COL_DIM, false);
+            g.drawString(font, "para ver os dados.", x, y + 11, COL_DIM, false);
+        } else {
+            int c = d.provCountry[selSite];
+            g.drawString(font, fit(d.provLabel[selSite], PANEL_W - 16), x, y, COL_TEXT, false);
+            y += 14;
+            g.fill(x, y, x + 10, y + 9, d.rgb[c] | 0xFF000000);
+            g.drawString(font, fit(d.names[c], PANEL_W - 34), x + 15, y + 1, COL_TEXT, false);
+            y += 15;
+            Map<String, String> info = d.info[c];
+            row(g, x, y, "Tipo:", info.get("type"));
+            row(g, x, y + 11, "Oficial:", info.get("officialName"));
+            row(g, x, y + 22, "Formação:", info.get("formed"));
+            row(g, x, y + 33, "Governo:", info.get("government"));
+            row(g, x, y + 44, "Líder:", info.get("leader"));
+            row(g, x, y + 55, "Capital:", info.get("capital"));
+            row(g, x, y + 66, "Etnia:", info.get("ethnicity"));
+            row(g, x, y + 77, "População:", String.valueOf(d.population[c]));
+            row(g, x, y + 88, "Províncias:", String.valueOf(d.provinceCount[c]));
+        }
+
+        // legenda: países com mais províncias primeiro
+        if (legendVersion != SiteTerritories.version()) {
+            legendVersion = SiteTerritories.version();
+            legendOrder = new ArrayList<>();
+            for (int i = 0; i < d.ids.length; i++) legendOrder.add(i);
+            legendOrder.sort((a, b) -> Integer.compare(d.provinceCount[b], d.provinceCount[a]));
+        }
+        int ly = TOP + 146;
+        g.drawString(font, "PAÍSES", x, ly, COL_GOLD, false);
+        ly += 13;
+        for (int idx : legendOrder) {
+            if (ly > height - 66) break;
+            if (d.provinceCount[idx] == 0) continue;
+            g.fill(x, ly, x + 10, ly + 8, d.rgb[idx] | 0xFF000000);
+            g.drawString(font, fit(d.names[idx], PANEL_W - 56) + " (" + d.provinceCount[idx] + ")", x + 16, ly, COL_TEXT, false);
+            ly += 11;
+        }
+        g.drawString(font, fit(SiteTerritories.status(), PANEL_W - 16), x, height - 62, COL_DIM, false);
+    }
+
+    private void drawManualPanel(GuiGraphics g, int x0) {
         int x = x0 + 8;
         int y = TOP + 8;
         g.drawString(font, "PROVÍNCIA", x, y, COL_GOLD, false);
@@ -370,7 +530,7 @@ public class MapScreen extends Screen {
         ly += 14;
         refreshStats();
         for (Countries.Country c : Countries.LIST) {
-            if (ly > height - 40) break;
+            if (ly > height - 66) break;
             g.fill(x, ly, x + 10, ly + 8, c.rgb);
             double[] s = stats.get(c.id);
             int n = s == null ? 0 : (int) s[2];
@@ -411,16 +571,28 @@ public class MapScreen extends Screen {
     public boolean mouseReleased(MouseButtonEvent event) {
         if (dragging) {
             dragging = false;
-            if (!moved && inMap(event.x(), event.y())) {
-                int chunkX = (int) Math.floor(toBlockX(event.x()) / 16);
-                int chunkZ = (int) Math.floor(toBlockZ(event.y()) / 16);
-                selPx = provOf(chunkX);
-                selPz = provOf(chunkZ);
-                hasSel = true;
-            }
+            if (!moved && inMap(event.x(), event.y())) select(toBlockX(event.x()), toBlockZ(event.y()));
             return true;
         }
         return super.mouseReleased(event);
+    }
+
+    private void select(double bx, double bz) {
+        if (siteMode()) {
+            SiteTerritories.Data d = SiteTerritories.data();
+            int old = selSite;
+            selSite = SiteTerritories.provinceAt(d, (int) Math.floor(bx), (int) Math.floor(bz));
+            MapStyle.selectedProvince = selSite;
+            if (old >= 0 && old < d.n) MapData.invalidateRect(d.bounds[old][0], d.bounds[old][1], d.bounds[old][2], d.bounds[old][3]);
+            if (selSite >= 0) {
+                int[] b = d.bounds[selSite];
+                MapData.invalidateRect(b[0], b[1], b[2], b[3]);
+            }
+            return;
+        }
+        selPx = provOf((int) Math.floor(bx / 16));
+        selPz = provOf((int) Math.floor(bz / 16));
+        hasSel = true;
     }
 
     @Override

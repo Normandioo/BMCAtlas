@@ -59,7 +59,8 @@ final class MapData {
     /** Uma região de terreno. */
     static final class Region {
         final int rx, rz;
-        final int[] px = new int[REGION_PX * REGION_PX]; // ARGB; 0 = desconhecido
+        int[] px = EMPTY_PX; // ARGB; 0 = desconhecido. Compartilhado até a região ser lida de verdade.
+        long lastUsed;
         boolean dirty = true;
         private NativeImage image;
         private DynamicTexture texture;
@@ -70,8 +71,10 @@ final class MapData {
             this.rz = rz;
         }
 
-        /** Garante a textura e envia os pixels se houve mudança. Retorna false se não deu para criar. */
-        boolean ensureUploaded() {
+        int styledMode = -1;
+
+        /** Garante a textura e (re)pinta os pixels no estilo do modo atual, se necessário. */
+        boolean ensureUploaded(int mode) {
             if (texture == null) {
                 image = new NativeImage(NativeImage.Format.RGBA, REGION_PX, REGION_PX, true);
                 texture = new DynamicTexture(() -> "hoi4map region", image);
@@ -79,16 +82,28 @@ final class MapData {
                 Minecraft.getInstance().getTextureManager().register(id, texture);
                 dirty = true;
             }
-            if (dirty) {
+            if (dirty || styledMode != mode) {
+                int[] out = MapStyle.paint(this, mode);
                 for (int y = 0; y < REGION_PX; y++) {
                     for (int x = 0; x < REGION_PX; x++) {
-                        image.setPixel(x, y, px[y * REGION_PX + x]);
+                        image.setPixel(x, y, out[y * REGION_PX + x]);
                     }
                 }
                 texture.upload();
                 dirty = false;
+                styledMode = mode;
             }
             return true;
+        }
+
+        /** Dá à região o seu próprio array de pixels (ao ler chunks ou carregar do disco). */
+        int[] writable() {
+            if (px == EMPTY_PX) px = new int[REGION_PX * REGION_PX];
+            return px;
+        }
+
+        boolean hasData() {
+            return px != EMPTY_PX;
         }
 
         void release() {
@@ -96,11 +111,18 @@ final class MapData {
                 Minecraft.getInstance().getTextureManager().release(id);
                 texture = null;
                 image = null;
+                id = null;
+                styledMode = -1;
+                dirty = true;
             }
         }
     }
 
+    private static final int[] EMPTY_PX = new int[REGION_PX * REGION_PX];
     private static int textureCounter;
+    private static boolean siteApplies;
+    private static int siteSeen = -1;
+    private static long frame;
 
     static final Map<Long, Region> REGIONS = new HashMap<>();
     static final Map<Long, String> OWNERS = new HashMap<>();
@@ -135,15 +157,27 @@ final class MapData {
         return ownersVersion;
     }
 
+    /** Mudança geral (recarregar países, trocar de mundo): repinta todas as regiões. */
     static void ownersChanged() {
         ownersVersion++;
         dirty = true;
+        for (Region r : REGIONS.values()) r.styledMode = -1;
     }
+
+    static final int PROVS_PER_REGION = REGION_CHUNKS / PROV;
 
     static void setOwner(int px, int pz, String id) {
         if (id == null) OWNERS.remove(key(px, pz));
         else OWNERS.put(key(px, pz), id);
-        ownersChanged();
+        ownersVersion++;
+        dirty = true;
+        // repinta só a região da província e as vizinhas (o brilho da fronteira cruza regiões)
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                Region r = region(Math.floorDiv(px + dx, PROVS_PER_REGION), Math.floorDiv(pz + dz, PROVS_PER_REGION), false);
+                if (r != null) r.styledMode = -1;
+            }
+        }
     }
 
     static String ownerOf(int px, int pz) {
@@ -164,6 +198,39 @@ final class MapData {
             REGIONS.put(k, r);
         }
         return r;
+    }
+
+    /** Região só para visualização (sem terreno lido): usada para mostrar países do site em áreas não exploradas. */
+    static Region viewRegion(int rx, int rz) {
+        return region(rx, rz, true);
+    }
+
+    static boolean siteApplies() {
+        return siteApplies;
+    }
+
+    /** Chamado a cada quadro da tela: libera texturas de regiões que saíram de vista há um tempo. */
+    static void markUsed(Region r) {
+        r.lastUsed = frame;
+    }
+
+    static void nextFrame() {
+        frame++;
+        if (frame % 120 != 0) return;
+        for (Region r : REGIONS.values()) {
+            if (r.id != null && frame - r.lastUsed > 240) r.release();
+        }
+    }
+
+    /** Repinta as regiões que cruzam o retângulo de blocos (por exemplo, ao selecionar uma província). */
+    static void invalidateRect(int minX, int minZ, int maxX, int maxZ) {
+        int size = REGION_PX;
+        for (int rx = Math.floorDiv(minX - 1, size); rx <= Math.floorDiv(maxX + 1, size); rx++) {
+            for (int rz = Math.floorDiv(minZ - 1, size); rz <= Math.floorDiv(maxZ + 1, size); rz++) {
+                Region r = region(rx, rz, false);
+                if (r != null) r.styledMode = -1;
+            }
+        }
     }
 
     /** O chunk já foi lido alguma vez? */
@@ -194,6 +261,11 @@ final class MapData {
 
     static void ensureWorld(Minecraft mc) {
         if (mc.level == null) return;
+        siteApplies = mc.level.dimension().toString().contains("overworld");
+        if (siteSeen != SiteTerritories.version()) {
+            siteSeen = SiteTerritories.version();
+            for (Region r : REGIONS.values()) r.styledMode = -1;
+        }
         String k = computeKey(mc);
         if (k.equals(worldKey)) return;
         save();
@@ -222,7 +294,7 @@ final class MapData {
 
     private static void load() {
         if (worldKey == null) return;
-        Path regions = dir().resolve(worldKey + ".regions4");
+        Path regions = dir().resolve(worldKey + ".regions5");
         if (Files.exists(regions)) {
             try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(regions)))) {
                 int n = in.readInt();
@@ -233,7 +305,7 @@ final class MapData {
                     byte[] comp = new byte[len];
                     in.readFully(comp);
                     Region r = new Region(rx, rz);
-                    inflateInto(comp, r.px);
+                    inflateInto(comp, r.writable());
                     REGIONS.put(key(rx, rz), r);
                 }
             } catch (IOException | DataFormatException e) {
@@ -262,10 +334,13 @@ final class MapData {
         if (worldKey == null || (REGIONS.isEmpty() && OWNERS.isEmpty())) return;
         try {
             Files.createDirectories(dir());
-            Path regions = dir().resolve(worldKey + ".regions4");
+            Path regions = dir().resolve(worldKey + ".regions5");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(regions)))) {
-                out.writeInt(REGIONS.size());
+                int count = 0;
+                for (Region r : REGIONS.values()) if (r.hasData()) count++;
+                out.writeInt(count);
                 for (Region r : REGIONS.values()) {
+                    if (!r.hasData()) continue;
                     byte[] comp = deflate(r.px);
                     out.writeInt(r.rx);
                     out.writeInt(r.rz);
@@ -357,6 +432,7 @@ final class MapData {
 
     private static void scanChunk(ClientLevel level, LevelChunk chunk, int cx, int cz) {
         Region reg = region(Math.floorDiv(cx, REGION_CHUNKS), Math.floorDiv(cz, REGION_CHUNKS), true);
+        reg.writable();
         int ox = Math.floorMod(cx, REGION_CHUNKS) * 16;
         int oz = Math.floorMod(cz, REGION_CHUNKS) * 16;
 
@@ -388,29 +464,23 @@ final class MapData {
                 FluidState fluid = state.getFluidState();
 
                 int color;
-                if (!fluid.isEmpty()) {
-                    if (fluid.is(FluidTags.LAVA)) {
-                        color = 0xFFD9561A;
-                    } else {
-                        int floorTop = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR, lx, lz);
-                        int depth = Math.max(0, top - floorTop);
-                        int floorColor = 0xFF30323C;
-                        if (floorTop >= -63) {
-                            BlockState floorState = stateAtTop(chunk, pos, wx, floorTop, wz);
-                            int c = blockColor(level, floorState, pos);
-                            if (c != 0) floorColor = c;
-                            pos.set(wx, y, wz);
-                        }
-                        color = mix(floorColor, waterColor(level, pos), Math.min(0.92f, 0.42f + depth * 0.04f));
-                    }
+                if (!fluid.isEmpty() && !fluid.is(FluidTags.LAVA)) {
+                    // água: o estilo final pinta pelo flag/profundidade guardado no byte alto
+                    int floorTop = chunk.getHeight(Heightmap.Types.OCEAN_FLOOR, lx, lz);
+                    int depth = Math.max(0, Math.min(63, top - floorTop));
+                    color = (0x80 | depth) << 24;
+                } else if (!fluid.isEmpty()) {
+                    color = 0xFFD9561A;
                 } else {
                     int c = blockColor(level, state, pos);
                     if (c == 0) {
                         reg.px[outIndex] = 0;
                         continue;
                     }
-                    int hNW = neighborHeight(chunk, west, north, northWest, heights, lx - 1, lz - 1, top);
-                    float shade = 1.0f + Math.max(-4, Math.min(4, top - hNW)) * 0.06f;
+                    int hW = neighborHeight(chunk, west, north, northWest, heights, lx - 1, lz, top);
+                    int hN = neighborHeight(chunk, west, north, northWest, heights, lx, lz - 1, top);
+                    int slope = (top - hW) + (top - hN);
+                    float shade = 1.0f + Math.max(-8, Math.min(8, slope)) * 0.055f;
                     color = shadeColor(c, shade);
                 }
                 reg.px[outIndex] = color;
@@ -456,43 +526,47 @@ final class MapData {
 
     // ------------------------------------------------------------- cores de bloco
 
-    /** Cor média da textura de cada bloco (0 = sem textura encontrada). */
-    private static final Map<Block, Integer> BASE_COLORS = new HashMap<>();
+    /** Textura de um bloco: cor média + pixels (primeiro quadro), para dar granulado. */
+    private static final class Tex {
+        int avg;
+        int[] px;
+        int w;
+    }
+
+    private static final Tex NO_TEX = new Tex();
+    private static final Map<Block, Tex> TEXTURES = new HashMap<>();
 
     private static final String[] STRIP_SUFFIXES = {
             "_stairs", "_slab", "_wall", "_fence_gate", "_fence", "_button", "_pressure_plate"
     };
 
-    /** Cor do bloco como no Xaero's: textura (face de cima) multiplicada pelo tint do bioma. */
+    /** Cor do bloco: textura (face de cima) com granulado, multiplicada pelo tint do bioma. */
     private static int blockColor(ClientLevel level, BlockState state, BlockPos pos) {
         Block block = state.getBlock();
-        Integer base = BASE_COLORS.get(block);
-        if (base == null) {
-            base = loadBaseColor(block);
-            BASE_COLORS.put(block, base);
+        Tex t = TEXTURES.get(block);
+        if (t == null) {
+            t = loadTexture(block);
+            TEXTURES.put(block, t);
         }
-        if (base == 0) {
+        if (t == NO_TEX) {
             MapColor mc = state.getMapColor(level, pos);
             return mc.col == 0 ? 0 : (0xFF000000 | mc.col);
         }
+        int u = Math.floorMod(pos.getX(), 16) * t.w / 16;
+        int v = Math.floorMod(pos.getZ(), 16) * t.w / 16;
+        int s = t.px[v * t.w + u];
+        int base = ((s >>> 24) < 32) ? t.avg : mix(t.avg, s, 0.6f);
         int tint = Minecraft.getInstance().getBlockColors().getColor(state, level, pos, 0);
         if (tint != -1) return multiply(base, tint);
         return base;
     }
 
-    private static int waterColor(ClientLevel level, BlockPos pos) {
-        int tint = Minecraft.getInstance().getBlockColors().getColor(Blocks.WATER.defaultBlockState(), level, pos, 0);
-        if (tint == -1) return 0xFF3F76E4;
-        return 0xFF000000 | (tint & 0xFFFFFF);
-    }
-
-    private static int loadBaseColor(Block block) {
+    private static Tex loadTexture(Block block) {
         Identifier id = BuiltInRegistries.BLOCK.getKey(block);
         String ns = id.getNamespace();
         String path = id.getPath();
 
         List<String> names = new ArrayList<>();
-        if (path.equals("water")) names.add("water_still");
         if (path.equals("lava")) names.add("lava_still");
         addCandidates(names, path);
         for (String suffix : STRIP_SUFFIXES) {
@@ -506,10 +580,10 @@ final class MapData {
             }
         }
         for (String name : names) {
-            int c = averageTexture(ns, name);
-            if (c != 0) return c;
+            Tex t = readTexture(ns, name);
+            if (t != null) return t;
         }
-        return 0;
+        return NO_TEX;
     }
 
     private static void addCandidates(List<String> out, String name) {
@@ -519,19 +593,22 @@ final class MapData {
         out.add(name + "_front");
     }
 
-    private static int averageTexture(String ns, String name) {
+    private static Tex readTexture(String ns, String name) {
         Identifier tex = Identifier.fromNamespaceAndPath(ns, "textures/block/" + name + ".png");
         try {
             var res = Minecraft.getInstance().getResourceManager().getResource(tex);
-            if (res.isEmpty()) return 0;
+            if (res.isEmpty()) return null;
             try (java.io.InputStream in = res.get().open(); NativeImage img = NativeImage.read(in)) {
-                long r = 0, g = 0, b = 0;
-                int n = 0;
                 int w = img.getWidth();
                 int h = Math.min(img.getHeight(), w); // texturas animadas: só o primeiro quadro
-                for (int y = 0; y < h; y++) {
+                if (w < 1 || h < 1 || w != h) return null;
+                int[] px = new int[w * w];
+                long r = 0, g = 0, b = 0;
+                int n = 0;
+                for (int y = 0; y < w; y++) {
                     for (int x = 0; x < w; x++) {
                         int argb = img.getPixel(x, y);
+                        px[y * w + x] = argb;
                         if (((argb >>> 24) & 0xFF) < 32) continue;
                         r += (argb >> 16) & 0xFF;
                         g += (argb >> 8) & 0xFF;
@@ -539,11 +616,15 @@ final class MapData {
                         n++;
                     }
                 }
-                if (n == 0) return 0;
-                return 0xFF000000 | ((int) (r / n) << 16) | ((int) (g / n) << 8) | (int) (b / n);
+                if (n == 0) return null;
+                Tex t = new Tex();
+                t.w = w;
+                t.px = px;
+                t.avg = 0xFF000000 | ((int) (r / n) << 16) | ((int) (g / n) << 8) | (int) (b / n);
+                return t;
             }
         } catch (IOException | RuntimeException e) {
-            return 0;
+            return null;
         }
     }
 

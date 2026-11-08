@@ -25,6 +25,7 @@ public class Hoi4MapClient implements ClientModInitializer {
                 new KeyMapping("key.hoi4map.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
 
         Countries.load();
+        SiteTerritories.init();
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             if (mc.level == null || mc.player == null) return;
