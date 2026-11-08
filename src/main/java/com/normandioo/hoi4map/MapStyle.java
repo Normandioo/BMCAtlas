@@ -316,7 +316,7 @@ final class MapStyle {
 
     // profundidade (blocos abaixo da superfície) -> cor do mar: do turquesa raso ao azul-marinho profundo
     private static final float[] SEA_D = {0, 3, 8, 16, 28, 44, 60};
-    private static final int[] SEA_C = {0x4A94B8, 0x3A80AA, 0x2C6694, 0x1D4777, 0x132E58, 0x0C2044, 0x081532};
+    private static final int[] SEA_C = {0x4C86C2, 0x3F75B4, 0x33649F, 0x28528A, 0x1E4075, 0x16315F, 0x0F2448};
 
     /** Mar com degradê de profundidade, ondas suaves de brilho, espuma na costa e um grão fino. */
     private static int water(int raw, int wx, int wz) {
@@ -341,13 +341,13 @@ final class MapStyle {
         float calm = 1f - Math.min(depth, 48) / 80f;
         float big = vnoise(wx / 34f, wz / 34f) - 0.5f;
         float mid = vnoise(wx / 9f + 17.3f, wz / 9f - 5.1f) - 0.5f;
-        float f = 1f + (big * 0.26f + mid * 0.12f) * (0.55f + calm * 0.45f);
+        float f = 1f + (big * 0.07f + mid * 0.03f) * (0.55f + calm * 0.45f);
         r *= f;
         g *= f;
         b *= f;
 
         // estrias de ondas na água rasa
-        if (depth < 22) {
+        if (false) {
             float wave = (float) Math.sin((wx * 0.55f + wz * 0.32f) * 0.9f + big * 9f);
             float streak = Math.max(0f, wave - 0.86f) / 0.14f * (1f - depth / 22f);
             r += 22f * streak;
@@ -356,12 +356,12 @@ final class MapStyle {
         }
         // espuma junto à costa
         if (depth <= 2) {
-            float foam = depth == 0 ? 0.40f : depth == 1 ? 0.24f : 0.10f;
+            float foam = depth == 0 ? 0.12f : depth == 1 ? 0.06f : 0.02f;
             r = lerpf(r, 0xB8, foam);
             g = lerpf(g, 0xE0, foam);
             b = lerpf(b, 0xEA, foam);
         }
-        float grain = ((hash(wx, wz) & 7) - 3.5f) * 0.55f;
+        float grain = ((hash(wx, wz) & 7) - 3.5f) * 0.18f;
         return pack(r + grain, g + grain, b + grain * 1.2f);
     }
 
