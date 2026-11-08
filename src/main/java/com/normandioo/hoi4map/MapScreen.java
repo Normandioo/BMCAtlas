@@ -509,20 +509,55 @@ public class MapScreen extends Screen {
         return d.zoneByKey.get(SiteTerritories.zoneKey(l.name, l.country));
     }
 
-    private static List<double[]> smoothed(SiteTerritories.Zone z) {
-        if (z.smooth == null) {
-            List<double[]> out = new ArrayList<>();
-            for (double[] ring : z.rings) out.add(smoothRing(ring));
-            z.smooth = out;
+    /**
+     * Contornos da zona simplificados para o zoom atual: pontos a pelo menos ~5 pixels um do outro
+     * (nível = potência de 2 em blocos) e, de perto, suavizados. Guardados por nível: o desenho de
+     * todas as cidades de uma vez fica com poucos segmentos.
+     */
+    @SuppressWarnings("unchecked")
+    private List<double[]> ringsFor(SiteTerritories.Zone z) {
+        int level = (int) Math.max(0, Math.min(7, Math.ceil(Math.log(Math.max(1.0, 5.0 / scale)) / Math.log(2))));
+        if (z.lods == null) z.lods = new Object[8];
+        Object cached = z.lods[level];
+        if (cached != null) return (List<double[]>) cached;
+        double minDist = 1 << level;
+        List<double[]> out = new ArrayList<>();
+        for (double[] ring : z.rings) {
+            double[] r = level == 0 ? ring : decimate(ring, minDist);
+            int passes = level == 0 ? 2 : level <= 2 ? 1 : 0;
+            out.add(passes == 0 ? r : smoothRing(r, passes));
         }
-        return z.smooth;
+        z.lods[level] = out;
+        return out;
+    }
+
+    private static double[] decimate(double[] ring, double minDist) {
+        int n = ring.length / 2;
+        if (n <= 4) return ring;
+        double[] out = new double[ring.length];
+        int k = 0;
+        double lx = ring[0], lz = ring[1];
+        out[k++] = lx;
+        out[k++] = lz;
+        double min2 = minDist * minDist;
+        for (int i = 1; i < n; i++) {
+            double x = ring[2 * i], zz = ring[2 * i + 1];
+            if ((x - lx) * (x - lx) + (zz - lz) * (zz - lz) >= min2) {
+                out[k++] = x;
+                out[k++] = zz;
+                lx = x;
+                lz = zz;
+            }
+        }
+        if (k < 6) return ring;
+        return Arrays.copyOf(out, k);
     }
 
     /** Suaviza o contorno em degraus de blocos (duas passadas de corte de cantos). */
-    private static double[] smoothRing(double[] ring) {
+    private static double[] smoothRing(double[] ring, int passes) {
         if (ring.length < 6) return ring;
         double[] cur = ring;
-        for (int pass = 0; pass < 2; pass++) {
+        for (int pass = 0; pass < passes; pass++) {
             int m = cur.length / 2;
             double[] nx = new double[m * 4];
             for (int i = 0; i < m; i++) {
@@ -560,7 +595,8 @@ public class MapScreen extends Screen {
             } else {
                 color = 0xE6F4F1E8;
             }
-            for (double[] ring : smoothed(z)) drawRing(g, ring, color, thick);
+            if ((box[2] - box[0]) * scale < 4 && (box[3] - box[1]) * scale < 4) continue; // pequena demais para uma linha
+            for (double[] ring : ringsFor(z)) drawRing(g, ring, color, thick);
         }
     }
 

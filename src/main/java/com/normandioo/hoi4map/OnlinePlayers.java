@@ -25,29 +25,46 @@ import java.util.concurrent.atomic.AtomicReference;
  * jogo e não altera nada. Se o dynmap não responder, usa os jogadores que o próprio jogo tem por perto.
  */
 final class OnlinePlayers {
-    /** Um jogador na tela: posição suavizada entre duas leituras. */
+    /**
+     * Um jogador na tela. A posição mostrada persegue, a cada quadro, uma previsão (última posição lida mais a
+     * velocidade estimada entre as duas últimas leituras): o movimento fica contínuo em vez de andar-e-parar
+     * a cada leitura do dynmap.
+     */
     static final class Entry {
         final String account;
         String name;
-        double fromX, fromZ, toX, toZ;
-        long since;
-        long duration = 2000;
+        double shownX, shownZ;      // o que se desenha
+        double toX, toZ;            // última posição lida
+        double vx, vz;              // blocos por milissegundo
+        long toTime;                // quando a posição mudou pela última vez
+        long lastFrame;
 
         Entry(String account) {
             this.account = account;
         }
 
+        /** Avança a posição mostrada até o instante now (uma vez por quadro). */
+        void step(long now, long every) {
+            double dtFrame = Math.max(0, Math.min(250, now - lastFrame));
+            lastFrame = now;
+            double ahead = Math.min(now - toTime, every + 400);
+            double px = toX + vx * ahead, pz = toZ + vz * ahead;
+            if (Math.abs(px - shownX) + Math.abs(pz - shownZ) > 96) {   // teleporte: não desliza pelo mapa
+                shownX = px;
+                shownZ = pz;
+                return;
+            }
+            double a = 1 - Math.exp(-dtFrame / 220.0);
+            shownX += (px - shownX) * a;
+            shownZ += (pz - shownZ) * a;
+        }
+
         double x(long now) {
-            return fromX + (toX - fromX) * progress(now);
+            return shownX;
         }
 
         double z(long now) {
-            return fromZ + (toZ - fromZ) * progress(now);
-        }
-
-        private double progress(long now) {
-            double t = (now - since) / (double) Math.max(1, duration);
-            return t >= 1 ? 1 : t <= 0 ? 0 : t;
+            return shownZ;
         }
     }
 
@@ -88,6 +105,20 @@ final class OnlinePlayers {
             }
         }
         int every = SiteTerritories.playersRefreshMs();
+        for (Entry en : ENTRIES.values()) en.step(now, every);
+        // quem está carregado perto de você tem posição exata no próprio jogo: vale por cima do dynmap
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null) {
+            for (AbstractClientPlayer p : mc.level.players()) {
+                if (p == mc.player) continue;
+                Entry en = ENTRIES.get(p.getName().getString().toLowerCase(Locale.ROOT));
+                if (en == null) continue;
+                en.shownX = en.toX = p.getX();
+                en.shownZ = en.toZ = p.getZ();
+                en.vx = en.vz = 0;
+                en.toTime = now;
+            }
+        }
         String base = SiteTerritories.dynmapUrl();
         if (base != null && !inFlight && now - lastPoll >= every) {
             lastPoll = now;
@@ -127,17 +158,27 @@ final class OnlinePlayers {
             Entry en = ENTRIES.get(e.getKey());
             if (en == null) {
                 en = new Entry(r.account);
-                en.fromX = en.toX = r.x;
-                en.fromZ = en.toZ = r.z;
-                en.since = now;
+                en.shownX = en.toX = r.x;
+                en.shownZ = en.toZ = r.z;
+                en.toTime = now;
+                en.lastFrame = now;
                 ENTRIES.put(e.getKey(), en);
             } else if (Math.abs(en.toX - r.x) > 0.01 || Math.abs(en.toZ - r.z) > 0.01) {
-                en.fromX = en.x(now);
-                en.fromZ = en.z(now);
+                long dt = now - en.toTime;
+                double nvx = 0, nvz = 0;
+                if (dt > 50 && dt < 6000) {
+                    nvx = (r.x - en.toX) / dt;
+                    nvz = (r.z - en.toZ) / dt;
+                }
+                // mistura com a velocidade anterior para não balançar
+                en.vx = en.vx * 0.4 + nvx * 0.6;
+                en.vz = en.vz * 0.4 + nvz * 0.6;
                 en.toX = r.x;
                 en.toZ = r.z;
-                en.since = now;
-                en.duration = every + 300;
+                en.toTime = now;
+            } else if (now - en.toTime > every * 1.6 + 200) {
+                en.vx = 0;     // parou: some a velocidade e a posição mostrada desliza até o ponto
+                en.vz = 0;
             }
             en.name = r.name;
         }

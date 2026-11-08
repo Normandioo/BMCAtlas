@@ -159,6 +159,13 @@ final class MapStyle {
                 int out;
                 if (raw != 0 && isWater(raw)) {
                     out = water(raw, baseX + x, baseZ + y);
+                    // a província escolhida vai até onde o território dela vai, também sobre a água
+                    if (p == selected && p != 0) {
+                        out = mix(out, 0xFFFFE27A, 0.30f);
+                        if (PROV_GRID[gi - 1] != p || PROV_GRID[gi + 1] != p || PROV_GRID[gi - W] != p || PROV_GRID[gi + W] != p) {
+                            out = mix(out, 0xFFFFE27A, 0.9f);
+                        }
+                    }
                 } else {
                     int c;
                     if (raw != 0) c = land(raw);

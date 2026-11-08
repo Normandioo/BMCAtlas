@@ -78,7 +78,7 @@ final class SiteTerritories {
         String name, country;
         List<double[]> rings;
         transient double[] box;   // minX, minZ, maxX, maxZ
-        transient List<double[]> smooth;   // contornos suavizados para desenhar (preenchido na tela)
+        transient Object[] lods;           // contornos simplificados por nível de zoom (preenchido na tela)
         transient int countryIdx = -1;
     }
 
@@ -163,7 +163,7 @@ final class SiteTerritories {
         String dynmapUrl = "https://bmcmc.online/dynmap/";
         String dynmapWorld = "world";
         /** Milissegundos entre perguntas ao dynmap (só com o mapa aberto). Mínimo 1000. */
-        int playersRefreshMs = 2000;
+        int playersRefreshMs = 1000;
         boolean showPlayers = true;
     }
 
