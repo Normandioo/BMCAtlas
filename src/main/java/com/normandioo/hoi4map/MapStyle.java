@@ -291,25 +291,27 @@ final class MapStyle {
 
     /** Terra: um pouco dessaturada, mais escura e com mais contraste. */
     private static int land(int raw) {
+        if (Prefs.get().mapStyle == 1) return 0xFF000000 | (raw & 0xFFFFFF);   // limpo: a cor do bloco como está
         float r = (raw >> 16) & 0xFF, g = (raw >> 8) & 0xFF, b = raw & 0xFF;
         float lum = 0.30f * r + 0.59f * g + 0.11f * b;
-        r = lum + (r - lum) * 0.78f;
-        g = lum + (g - lum) * 0.78f;
-        b = lum + (b - lum) * 0.78f;
-        r = (r - 128f) * 1.10f + 128f;
-        g = (g - 128f) * 1.10f + 128f;
-        b = (b - 128f) * 1.10f + 128f;
-        return pack(r * 0.88f, g * 0.90f, b * 0.92f);
+        r = lum + (r - lum) * 0.98f;
+        g = lum + (g - lum) * 0.98f;
+        b = lum + (b - lum) * 0.98f;
+        r = (r - 128f) * 1.06f + 128f;
+        g = (g - 128f) * 1.06f + 128f;
+        b = (b - 128f) * 1.06f + 128f;
+        return pack(r * 0.98f, g * 0.99f, b * 1.0f);
     }
 
     /** Terra sem dono: cinza-azulado apagado. */
     private static int muted(int c) {
         float r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
         float lum = 0.30f * r + 0.59f * g + 0.11f * b;
-        r = lum + (r - lum) * 0.35f;
-        g = lum + (g - lum) * 0.35f;
-        b = lum + (b - lum) * 0.35f;
-        return pack(r * 0.78f, g * 0.80f, b * 0.86f);
+        float keep = Prefs.get().mapStyle == 1 ? 0.75f : 0.62f;
+        r = lum + (r - lum) * keep;
+        g = lum + (g - lum) * keep;
+        b = lum + (b - lum) * keep;
+        return pack(r * 0.90f, g * 0.92f, b * 0.96f);
     }
 
     // profundidade (blocos abaixo da superfície) -> cor do mar: do turquesa raso ao azul-marinho profundo
@@ -320,6 +322,11 @@ final class MapStyle {
     private static int water(int raw, int wx, int wz) {
         int depth = Math.min(63, (raw >>> 24) - 0x80);
         if (depth < 0) depth = 0;
+        if (Prefs.get().mapStyle == 1) {
+            // limpo: azul liso, só escurece um pouco com a profundidade
+            float t = Math.min(1f, depth / 40f);
+            return pack(lerpf(0x4A, 0x24, t), lerpf(0x7E, 0x48, t), lerpf(0xC8, 0x9A, t));
+        }
         int k = 1;
         while (k < SEA_D.length - 1 && depth > SEA_D[k]) k++;
         float t = Math.max(0f, Math.min(1f, (depth - SEA_D[k - 1]) / (SEA_D[k] - SEA_D[k - 1])));

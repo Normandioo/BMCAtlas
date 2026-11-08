@@ -335,7 +335,7 @@ public class MapScreen extends Screen {
                 if (r == null) continue;
                 MapData.markUsed(r);
                 boolean stale = r.id == null || r.dirty || r.styledMode != mode || r.styledVer != MapStyle.overrideVersion;
-                if (stale && uploads < 3) {
+                if (stale && uploads < 2) {
                     r.ensureUploaded(mode);
                     uploads++;
                 }
@@ -425,16 +425,28 @@ public class MapScreen extends Screen {
         }
     }
 
+    private record LabelParts(Component[] comps, int[] widths, int total) {}
+
+    private static final Map<String, LabelParts> LABELS = new HashMap<>();
+
     private void drawLabel(GuiGraphics g, String text, float sx, float sy, float angle, float sc) {
         int spacing = 2;
-        int tw = 0;
-        int[] widths = new int[text.length()];
-        Component[] comps = new Component[text.length()];
-        for (int i = 0; i < text.length(); i++) {
-            comps[i] = Component.literal(String.valueOf(text.charAt(i))).withStyle(ChatFormatting.BOLD);
-            widths[i] = font.width(comps[i]);
-            tw += widths[i] + (i > 0 ? spacing : 0);
+        LabelParts parts = LABELS.get(text);
+        if (parts == null) {
+            int total = 0;
+            int[] w = new int[text.length()];
+            Component[] cs = new Component[text.length()];
+            for (int i = 0; i < text.length(); i++) {
+                cs[i] = Component.literal(String.valueOf(text.charAt(i))).withStyle(ChatFormatting.BOLD);
+                w[i] = font.width(cs[i]);
+                total += w[i] + (i > 0 ? spacing : 0);
+            }
+            parts = new LabelParts(cs, w, total);
+            LABELS.put(text, parts);
         }
+        int tw = parts.total();
+        int[] widths = parts.widths();
+        Component[] comps = parts.comps();
         g.pose().pushMatrix();
         g.pose().translate(sx, sy);
         g.pose().rotate(angle);
@@ -620,8 +632,10 @@ public class MapScreen extends Screen {
                     drawRing(g, ring, 0x90000000, 3.5f);
                     drawRingDashed(g, ring, color, 2f, 8, 5);
                 }
+            } else if (scale < 0.15) {
+                for (double[] ring : ringsFor(z)) drawRing(g, ring, color, thick);      // muito longe: linha contínua (mais barata)
             } else {
-                for (double[] ring : ringsFor(z)) drawRing(g, ring, color, thick);
+                for (double[] ring : ringsFor(z)) drawRingDashed(g, ring, color, thick, 8, 5);
             }
         }
     }
@@ -757,7 +771,7 @@ public class MapScreen extends Screen {
             }
             if ((Prefs.get().cityNames && scale >= NAME_MIN[l.tier] * 100.0 / Prefs.get().zoomBiasPct) || hot) {
                 String name = SiteTerritories.splitCamel(l.name);
-                int w = font.width(name) + 2;
+                int w = nameWidth(name) + 2;
                 int rx = sx + iconRadius(l) + 3, ry = sy - 5;
                 boolean clash = false;
                 for (int[] r : taken) {
@@ -786,6 +800,12 @@ public class MapScreen extends Screen {
             if (a < 8) continue;
             squareRing(g, sx, sy, base + 2 + (int) Math.round(ph * 22), (a << 24) | 0xFFE27A);
         }
+    }
+
+    private static final Map<String, Integer> NAME_W = new HashMap<>();
+
+    private int nameWidth(String s) {
+        return NAME_W.computeIfAbsent(s, k -> font.width(k));
     }
 
     /** Reserva: quadradinho colorido enquanto o ícone do site não chega. */
@@ -2486,6 +2506,10 @@ public class MapScreen extends Screen {
         });
         stepsRow(g, "Opacidade das bordas", p.borderPct + "%", 11, indexOfStep(p.borderPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.borderPct = i * 10;
+            Prefs.changed();
+        });
+        choiceRow(g, "Estilo do terreno", new String[]{"HOI4", "Limpo (Xaero's)"}, p.mapStyle, mouseX, mouseY, i -> {
+            p.mapStyle = i;
             Prefs.changed();
         });
         toggleRow(g, "Nomes das cidades", p.cityNames, mouseX, mouseY, () -> {

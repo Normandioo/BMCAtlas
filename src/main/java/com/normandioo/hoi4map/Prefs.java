@@ -22,6 +22,8 @@ final class Prefs {
         int fillPct = 100;
         /** Opacidade das bordas entre países/províncias (0-100%, de 10 em 10). */
         int borderPct = 100;
+        /** Estilo do terreno: 0 = HOI4 (contraste e ruído), 1 = limpo, como o do Xaero's. */
+        int mapStyle = 0;
         boolean cityNames = true;
         /** Marcadores simples (quadradinhos) em vez dos ícones do site. */
         boolean simpleMarkers = false;

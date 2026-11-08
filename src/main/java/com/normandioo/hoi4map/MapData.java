@@ -224,7 +224,7 @@ final class MapData {
         frame++;
         if (frame % 120 != 0) return;
         for (Region r : REGIONS.values()) {
-            if (r.id != null && frame - r.lastUsed > 240) r.release();
+            if (r.id != null && frame - r.lastUsed > 1500) r.release();
         }
     }
 

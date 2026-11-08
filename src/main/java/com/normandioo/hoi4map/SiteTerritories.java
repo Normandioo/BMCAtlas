@@ -755,7 +755,19 @@ final class SiteTerritories {
         return new int[]{minX, minZ, maxX, maxZ};
     }
 
+    private static final java.util.concurrent.ConcurrentHashMap<String, String> CAMEL = new java.util.concurrent.ConcurrentHashMap<>();
+
     static String splitCamel(String s) {
+        if (s == null) return null;
+        String c = CAMEL.get(s);
+        if (c == null) {
+            c = splitCamelSlow(s);
+            CAMEL.put(s, c);
+        }
+        return c;
+    }
+
+    private static String splitCamelSlow(String s) {
         return s.replaceAll("(?<=[a-z])(?=[A-Z0-9])|(?<=[0-9])(?=[A-Za-z])|(?<=[A-Z])(?=[A-Z][a-z])", " ").trim();
     }
 
