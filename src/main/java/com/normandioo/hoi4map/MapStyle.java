@@ -11,6 +11,20 @@ final class MapStyle {
     static final int MODE_PHYSICAL = 0;
     static final int MODE_POLITICAL = 1;
     static final int MODE_PROVINCES = 2;
+    static final int MODE_DIPLOMACY = 3;
+    static final int MODE_WAR = 4;
+
+    /** Modos que recolorem os países por relação (diplomacia/guerra). */
+    static boolean relational(int mode) {
+        return mode == MODE_DIPLOMACY || mode == MODE_WAR;
+    }
+
+    /** Por país: cor RGB, ou Relations.GREY (-1) para apagado. null = cores normais. */
+    static volatile int[] countryOverride;
+    /** Por província (índice no arquivo do site): cor que foge da cor do país. */
+    static volatile java.util.Map<Integer, Integer> provinceOverride;
+    /** Sobe a cada mudança das cores acima, para as regiões se repintarem. */
+    static volatile int overrideVersion;
 
     private static final int SPAN = MapData.PROV * 16;                 // blocos por província
     private static final int PROVS = MapData.REGION_PX / SPAN;         // províncias por lado da região
@@ -44,11 +58,18 @@ final class MapStyle {
     private static int[] paintSite(MapData.Region r, int mode, SiteTerritories.Data d) {
         int size = MapData.REGION_PX;
         SiteTerritories.raster(d, r.rx * size - M, r.rz * size - M, W, W, PROV_GRID);
-        boolean political = mode == MODE_POLITICAL;
+        boolean political = mode != MODE_PROVINCES;
+        boolean relational = relational(mode);
+        final int[] cOv = relational ? countryOverride : null;
+        final java.util.Map<Integer, Integer> pOv = relational ? provinceOverride : null;
 
-        // chave de comparação: país (político) ou província (modo províncias)
+        // chave de comparação: país (político) ou província (modo províncias; províncias recoloridas também têm borda)
         int[] key = new int[d.n + 1];
-        for (int i = 1; i <= d.n; i++) key[i] = political ? d.provCountry[i - 1] + 1 : i;
+        for (int i = 1; i <= d.n; i++) {
+            if (!political) key[i] = i;
+            else if (pOv != null && pOv.containsKey(i - 1)) key[i] = (d.provCountry[i - 1] + 1) | (i << 8);
+            else key[i] = d.provCountry[i - 1] + 1;
+        }
 
         final int inf = 1 << 20;
         java.util.Arrays.fill(DIST, inf);
@@ -114,9 +135,21 @@ final class MapStyle {
                         continue;
                     }
                     if (p != 0) {
-                        int country = d.rgb[d.provCountry[p - 1]] | 0xFF000000;
+                        int ci = d.provCountry[p - 1];
+                        int country = d.rgb[ci] | 0xFF000000;
+                        boolean grey = false;
+                        if (relational) {
+                            int ov = cOv != null && ci < cOv.length ? cOv[ci] : Relations.GREY;
+                            Integer po = pOv == null ? null : pOv.get(p - 1);
+                            if (po != null) ov = po;
+                            if (ov == Relations.GREY) grey = true;
+                            else country = ov | 0xFF000000;
+                        }
                         int dist = DIST[gi] / 3;
-                        if (political) {
+                        if (grey) {
+                            c = mix(muted(c), country, 0.10f);
+                            if (dist == 0) c = mix(c, 0xFF070B10, 0.6f);
+                        } else if (political) {
                             c = tint(c, country, 0.72f);
                             if (dist == 0) c = mix(c, 0xFF070B10, 0.85f);
                             else if (dist <= 8) c = mix(c, lighten(country, 1.45f), 0.5f * (1f - (dist - 1) / 7f));

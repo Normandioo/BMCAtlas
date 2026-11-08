@@ -17,7 +17,10 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
 
@@ -72,6 +75,7 @@ final class MapData {
         }
 
         int styledMode = -1;
+        int styledVer = -1;
 
         /** Garante a textura e (re)pinta os pixels no estilo do modo atual, se necessário. */
         boolean ensureUploaded(int mode) {
@@ -82,7 +86,8 @@ final class MapData {
                 Minecraft.getInstance().getTextureManager().register(id, texture);
                 dirty = true;
             }
-            if (dirty || styledMode != mode) {
+            int ver = MapStyle.relational(mode) ? MapStyle.overrideVersion : 0;
+            if (dirty || styledMode != mode || styledVer != ver) {
                 int[] out = MapStyle.paint(this, mode);
                 for (int y = 0; y < REGION_PX; y++) {
                     for (int x = 0; x < REGION_PX; x++) {
@@ -92,6 +97,7 @@ final class MapData {
                 texture.upload();
                 dirty = false;
                 styledMode = mode;
+                styledVer = ver;
             }
             return true;
         }
@@ -424,21 +430,59 @@ final class MapData {
             if (LAST_SCAN.containsKey(k) && tickCount - LAST_SCAN.get(k) < RESCAN_TICKS) continue;
             LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
             if (chunk == null) continue;
-            scanChunk(level, chunk, cx, cz);
+            applyChunk(cx, cz, computeChunk(level, chunk, cx, cz));
             LAST_SCAN.put(k, tickCount);
             scanned++;
         }
     }
 
-    private static void scanChunk(ClientLevel level, LevelChunk chunk, int cx, int cz) {
+    /** Escreve os pixels de um chunk (256 valores, linha a linha) na região dele. Só no thread do cliente. */
+    static void applyChunk(int cx, int cz, int[] px) {
+        if (px == null) return;
         Region reg = region(Math.floorDiv(cx, REGION_CHUNKS), Math.floorDiv(cz, REGION_CHUNKS), true);
         reg.writable();
         int ox = Math.floorMod(cx, REGION_CHUNKS) * 16;
         int oz = Math.floorMod(cz, REGION_CHUNKS) * 16;
+        for (int lz = 0; lz < 16; lz++) {
+            System.arraycopy(px, lz * 16, reg.px, (oz + lz) * REGION_PX + ox, 16);
+        }
+        reg.dirty = true;
+        dirty = true;
+    }
 
-        LevelChunk west = level.getChunkSource().getChunkNow(cx - 1, cz);
-        LevelChunk north = level.getChunkSource().getChunkNow(cx, cz - 1);
-        LevelChunk northWest = level.getChunkSource().getChunkNow(cx - 1, cz - 1);
+    /** Lê agora todos os chunks carregados no quadrado em volta (cx, cz); devolve quantos leu. */
+    static int scanAround(Minecraft mc, int pcx, int pcz, int radius, int limit) {
+        ClientLevel level = mc.level;
+        if (level == null) return 0;
+        int n = 0;
+        for (int dx = -radius; dx <= radius && n < limit; dx++) {
+            for (int dz = -radius; dz <= radius && n < limit; dz++) {
+                int cx = pcx + dx, cz = pcz + dz;
+                long k = key(cx, cz);
+                if (LAST_SCAN.containsKey(k) && tickCount - LAST_SCAN.get(k) < RESCAN_TICKS) continue;
+                LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
+                if (chunk == null) continue;
+                applyChunk(cx, cz, computeChunk(level, chunk, cx, cz));
+                LAST_SCAN.put(k, tickCount);
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static ChunkAccess neighbor(Level level, int cx, int cz) {
+        return level.getChunk(cx, cz, ChunkStatus.FULL, false);
+    }
+
+    /**
+     * Calcula as cores de um chunk (índice lz*16+lx). Não mexe em regiões: pode rodar fora do thread
+     * do cliente (o servidor interno usa para gerar o mapa sem o jogador estar perto).
+     */
+    static int[] computeChunk(Level level, ChunkAccess chunk, int cx, int cz) {
+        int[] result = new int[256];
+        ChunkAccess west = neighbor(level, cx - 1, cz);
+        ChunkAccess north = neighbor(level, cx, cz - 1);
+        ChunkAccess northWest = neighbor(level, cx - 1, cz - 1);
 
         // MOTION_BLOCKING ignora plantas/flores (sem colisão) mas inclui folhas, vidro e fluidos
         int[] heights = new int[256];
@@ -454,13 +498,12 @@ final class MapData {
                 int top = heights[lz * 16 + lx];
                 int wx = (cx << 4) + lx;
                 int wz = (cz << 4) + lz;
-                int outIndex = (oz + lz) * REGION_PX + (ox + lx);
+                int outIndex = lz * 16 + lx;
                 if (top < -63) {
-                    reg.px[outIndex] = 0;
+                    result[outIndex] = 0;
                     continue;
                 }
                 BlockState state = stateAtTop(chunk, pos, wx, top, wz);
-                int y = pos.getY();
                 FluidState fluid = state.getFluidState();
 
                 int color;
@@ -474,7 +517,7 @@ final class MapData {
                 } else {
                     int c = blockColor(level, state, pos);
                     if (c == 0) {
-                        reg.px[outIndex] = 0;
+                        result[outIndex] = 0;
                         continue;
                     }
                     int hW = neighborHeight(chunk, west, north, northWest, heights, lx - 1, lz, top);
@@ -483,18 +526,17 @@ final class MapData {
                     float shade = 1.0f + Math.max(-8, Math.min(8, slope)) * 0.055f;
                     color = shadeColor(c, shade);
                 }
-                reg.px[outIndex] = color;
+                result[outIndex] = color;
             }
         }
-        reg.dirty = true;
-        dirty = true;
+        return result;
     }
 
     /**
      * O heightmap devolve a altura do bloco mais alto (ou 1 a mais, conforme a versão):
      * lê em h e, se for ar, em h-1. Deixa pos no bloco lido.
      */
-    private static BlockState stateAtTop(LevelChunk chunk, BlockPos.MutableBlockPos pos, int wx, int h, int wz) {
+    private static BlockState stateAtTop(ChunkAccess chunk, BlockPos.MutableBlockPos pos, int wx, int h, int wz) {
         pos.set(wx, h, wz);
         BlockState s = chunk.getBlockState(pos);
         if (s.isAir()) {
@@ -504,10 +546,10 @@ final class MapData {
         return s;
     }
 
-    private static int neighborHeight(LevelChunk self, LevelChunk west, LevelChunk north, LevelChunk northWest,
+    private static int neighborHeight(ChunkAccess self, ChunkAccess west, ChunkAccess north, ChunkAccess northWest,
                                       int[] heights, int lx, int lz, int fallback) {
         if (lx >= 0 && lz >= 0) return heights[lz * 16 + lx];
-        LevelChunk c;
+        ChunkAccess c;
         int x = lx, z = lz;
         if (lx < 0 && lz < 0) {
             c = northWest;
@@ -534,14 +576,14 @@ final class MapData {
     }
 
     private static final Tex NO_TEX = new Tex();
-    private static final Map<Block, Tex> TEXTURES = new HashMap<>();
+    private static final Map<Block, Tex> TEXTURES = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static final String[] STRIP_SUFFIXES = {
             "_stairs", "_slab", "_wall", "_fence_gate", "_fence", "_button", "_pressure_plate"
     };
 
     /** Cor do bloco: textura (face de cima) com granulado, multiplicada pelo tint do bioma. */
-    private static int blockColor(ClientLevel level, BlockState state, BlockPos pos) {
+    private static int blockColor(Level level, BlockState state, BlockPos pos) {
         Block block = state.getBlock();
         Tex t = TEXTURES.get(block);
         if (t == null) {

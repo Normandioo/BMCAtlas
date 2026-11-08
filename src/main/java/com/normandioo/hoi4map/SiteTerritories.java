@@ -41,6 +41,10 @@ final class SiteTerritories {
         String generated;
         Map<String, CountryJson> countries;
         List<ProvinceJson> provinces;
+        List<Locality> localities;
+        List<Zone> zones;
+        Map<String, Player> players;
+        WarData war;
     }
 
     private static final class CountryJson {
@@ -60,6 +64,81 @@ final class SiteTerritories {
         List<WarRef> wars;
     }
 
+    /** Cidade/localidade do site. */
+    static final class Locality {
+        String name, country, kind, development, lord, ethnicity;
+        int x, z;
+        List<String> designations;
+        transient int idx, countryIdx = -1, tier;
+        transient String iconKind;
+    }
+
+    /** Limite de captura de uma cidade (anéis par-ímpar, x0,z0,x1,z1,... em blocos). */
+    static final class Zone {
+        String name, country;
+        List<double[]> rings;
+        transient double[] box;   // minX, minZ, maxX, maxZ
+        transient int countryIdx = -1;
+    }
+
+    static final class Purge {
+        String realm;
+        int population, days;
+    }
+
+    static final class Player {
+        String ign, country, lastJoined, notes, skin, immune;
+        List<String> current, affiliations;
+        Purge purge;
+    }
+
+    static final class Member {
+        String name, note;
+        List<String> countries;
+    }
+
+    static final class Side {
+        String name, color;
+        List<Member> members;
+    }
+
+    static final class Captured {
+        String name, country, state, holder, holderKey;
+        int x, z;
+    }
+
+    static final class WarInfo {
+        String id, name, type, started, ended, notes;
+        boolean live;
+        List<Side> sides;
+        List<Captured> captured;
+    }
+
+    static final class AllianceInfo {
+        String id, name, formed, officialName, color, notes, flag;
+        List<Member> members;
+    }
+
+    static final class Truce {
+        String a, b, from, until;
+    }
+
+    static final class Nap {
+        String a, b, until;
+    }
+
+    static final class Ultimatum {
+        String from, to, sent;
+    }
+
+    static final class WarData {
+        List<WarInfo> wars;
+        List<AllianceInfo> alliances;
+        List<Truce> truces;
+        List<Nap> naps;
+        List<Ultimatum> ultimatums;
+    }
+
     private static final class ProvinceJson {
         String id;
         String country;
@@ -71,6 +150,8 @@ final class SiteTerritories {
         String url = "https://bmcmc.online/gaia/territories.json";
         int refreshMinutes = 30;
         boolean enabled = true;
+        /** Metade do lado do mapa do servidor, em blocos (0 = deduzir dos territórios; 2500 = mapa de 5000x5000). */
+        int worldHalfSize = 0;
     }
 
     // ------------------------------------------------------------------- dados
@@ -94,6 +175,17 @@ final class SiteTerritories {
         // por país: centro e variâncias em blocos, para o nome no mapa
         double[][] shape; // {mx, mz, vxx, vzz, vxz, area}
         int minX, minZ, maxX, maxZ;
+        Map<String, Integer> index = Map.of();
+        // cidades, limites, jogadores e guerra
+        List<Locality> localities = List.of();
+        Locality[] cityOrder = new Locality[0];   // mais importantes primeiro
+        List<Zone> zones = List.of();
+        Map<String, Zone> zoneByKey = Map.of();
+        Map<String, Player> players = Map.of();
+        WarData war;
+        // posição do nome de cada país no mapa (calculada em segundo plano, ver LabelFit)
+        volatile double[][] fit;
+        boolean[] fitAsked;
 
         int countryOfProvince(int province) {
             return province < 0 ? -1 : provCountry[province];
@@ -126,6 +218,41 @@ final class SiteTerritories {
 
     static String status() {
         return status;
+    }
+
+    /** Pasta do territories.json (onde ficam flags/ e skins/). */
+    static String baseUrl() {
+        String u = settings.url == null ? "" : settings.url;
+        int i = u.lastIndexOf('/');
+        return i < 0 ? "" : u.substring(0, i + 1);
+    }
+
+    /** Raiz do site (para caminhos como "gaia/flags/SC.png"). */
+    static String rootUrl() {
+        try {
+            URI u = URI.create(settings.url);
+            return u.getScheme() + "://" + u.getAuthority() + "/";
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** Endereço completo de um arquivo citado pelo site; fromRoot = relativo à raiz do site, senão à pasta do arquivo. */
+    static String assetUrl(String rel, boolean fromRoot) {
+        if (rel == null || rel.isBlank()) return null;
+        if (rel.startsWith("http://") || rel.startsWith("https://")) return rel;
+        return (fromRoot ? rootUrl() : baseUrl()) + rel;
+    }
+
+    /** Limites do mapa do servidor em blocos {minX, minZ, maxX, maxZ}, ou null se não der para saber. */
+    static int[] worldLimit() {
+        int half = settings.worldHalfSize;
+        Data d = data;
+        if (half <= 0 && d != null) {
+            int m = Math.max(Math.max(Math.abs(d.minX), Math.abs(d.minZ)), Math.max(d.maxX + 1, d.maxZ + 1));
+            half = (int) Math.ceil(m / 100.0) * 100;
+        }
+        return half <= 0 ? null : new int[]{-half, -half, half - 1, half - 1};
     }
 
     /** Há dados do site e o jogador quer usá-los. */
@@ -301,7 +428,77 @@ final class SiteTerritories {
             d.shape[c] = new double[]{mx, mz, sxx[c] / w[c] - mx * mx, szz[c] / w[c] - mz * mz, sxz[c] / w[c] - mx * mz, w[c]};
         }
         if (n == 0) throw new IllegalArgumentException("sem províncias");
+        d.index = byId;
+        d.fit = new double[nc][];
+        d.fitAsked = new boolean[nc];
+        d.war = f.war;
+        parseExtras(d, f, byId);
         return d;
+    }
+
+    private static final java.util.regex.Pattern WAR_COLOUR = java.util.regex.Pattern.compile("(Red|Blue|Green|Contested|Uncontrolled)$");
+
+    static int tierOf(String kind) {
+        if (kind == null) return 0;
+        if (kind.endsWith("Capital")) return 4;
+        switch (kind) {
+            case "Large": return 3;
+            case "Medium": return 2;
+            case "Small":
+            case "Colonial":
+            case "Fort": return 1;
+            default: return 0;
+        }
+    }
+
+    static String zoneKey(String name, String country) {
+        return ((name == null ? "" : name) + "|" + (country == null ? "" : country)).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static void parseExtras(Data d, FileModel f, Map<String, Integer> byId) {
+        if (f.localities != null) {
+            List<Locality> list = new ArrayList<>();
+            for (Locality l : f.localities) {
+                if (l == null || l.name == null) continue;
+                if (l.kind != null) {
+                    l.iconKind = l.kind;
+                    l.kind = WAR_COLOUR.matcher(l.kind).replaceFirst("");
+                }
+                l.tier = tierOf(l.kind);
+                Integer ci = l.country == null ? null : byId.get(l.country);
+                l.countryIdx = ci == null ? -1 : ci;
+                l.idx = list.size();
+                list.add(l);
+            }
+            d.localities = list;
+            Locality[] order = list.toArray(new Locality[0]);
+            Arrays.sort(order, (a, b) -> a.tier != b.tier ? Integer.compare(b.tier, a.tier) : a.name.compareTo(b.name));
+            d.cityOrder = order;
+        }
+        if (f.zones != null) {
+            List<Zone> list = new ArrayList<>();
+            Map<String, Zone> byKey = new HashMap<>();
+            for (Zone z : f.zones) {
+                if (z == null || z.rings == null || z.rings.isEmpty()) continue;
+                double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+                for (double[] r : z.rings) {
+                    for (int i = 0; i + 1 < r.length; i += 2) {
+                        minX = Math.min(minX, r[i]);
+                        maxX = Math.max(maxX, r[i]);
+                        minZ = Math.min(minZ, r[i + 1]);
+                        maxZ = Math.max(maxZ, r[i + 1]);
+                    }
+                }
+                z.box = new double[]{minX, minZ, maxX, maxZ};
+                Integer ci = z.country == null ? null : byId.get(z.country);
+                z.countryIdx = ci == null ? -1 : ci;
+                list.add(z);
+                byKey.put(zoneKey(z.name, z.country), z);
+            }
+            d.zones = list;
+            d.zoneByKey = byKey;
+        }
+        if (f.players != null) d.players = f.players;
     }
 
     private static double signedArea(List<int[]> rings) {
@@ -330,7 +527,7 @@ final class SiteTerritories {
         return new int[]{minX, minZ, maxX, maxZ};
     }
 
-    private static String splitCamel(String s) {
+    static String splitCamel(String s) {
         return s.replaceAll("(?<=[a-z])(?=[A-Z0-9])|(?<=[0-9])(?=[A-Za-z])|(?<=[A-Z])(?=[A-Z][a-z])", " ").trim();
     }
 

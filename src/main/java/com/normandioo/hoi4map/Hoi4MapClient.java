@@ -28,14 +28,19 @@ public class Hoi4MapClient implements ClientModInitializer {
         SiteTerritories.init();
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            ChunkGen.tick(mc);
             if (mc.level == null || mc.player == null) return;
             while (OPEN_KEY.consumeClick()) {
                 if (mc.screen == null) mc.setScreen(new MapScreen());
             }
             MapData.tick(mc);
+            RemoteImages.pump();
             if (++ticks % 6000 == 0 && MapData.isDirty()) MapData.save();
         });
 
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> MapData.unload());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
+            ChunkGen.reset();
+            MapData.unload();
+        });
     }
 }
