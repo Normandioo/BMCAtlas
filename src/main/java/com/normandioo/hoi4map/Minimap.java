@@ -111,10 +111,8 @@ final class Minimap {
         if (d != null && !expanded) {
             SiteTerritories.WarInfo watched = MapScreen.minimapWar(d);
             if (watched != null) CaptureNotice.observe(d, watched);
-            if (CaptureNotice.active()) {
-                boolean above = p.minimapCorner >= 2;
-                CaptureNotice.draw(g, font, d, x - 3, above ? y - 3 : y + size + 26, size + 6, above);
-            }
+            boolean noticeUp = p.minimapCorner >= 2;
+            CaptureNotice.render(g, font, mc, x, size, noticeUp ? y - 3 : y + size + 26, noticeUp, sw);
         }
         if (d != null) {
             int prov = SiteTerritories.provinceAt(d, (int) Math.floor(cx), (int) Math.floor(cz));

@@ -1,29 +1,33 @@
 package com.normandioo.hoi4map;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.screens.ChatScreen;
 
 import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
- * Aviso de captura no minimapa: quando uma cidade da guerra acompanhada muda de lado, uma faixa desce do minimapa
- * dizendo quem tomou de quem. Só olha quem segura cada cidade (o mesmo cálculo do placar); nada vai ao site.
+ * Aviso de cidade tomada: uma caixa que sai de trás do minimapa, com a cidade e quem tomou de quem.
+ * Com o chat aberto (cursor visível), clicar nela abre o mapa na cidade.
  */
 final class CaptureNotice {
     private CaptureNotice() {}
 
-    private record Event(String city, String by, int byRgb, String from, int fromRgb, int byCountry) {}
+    private static final long IN = 350, HOLD = 4400, OUT = 320;
+    private static final long QUIET = 10_000;      // a mesma cidade de novo neste intervalo: sem aviso
+    private static final int MAX_QUEUE = 5, GROUP_FROM = 4, BOX_H = 26;
 
-    private static final long IN = 360, HOLD = 4400, OUT = 320;
-    private static final int HEIGHT = 34;
+    record Item(SiteTerritories.Locality city, String key, String title, String by, int byRgb, String from, int fromRgb) {}
 
-    private static final Deque<Event> QUEUE = new ArrayDeque<>();
-    private static Event current;
+    private static final ArrayDeque<Item> QUEUE = new ArrayDeque<>();
+    private static final Map<String, Long> LAST = new HashMap<>();
+    private static Item current;
     private static long startedAt;
+    private static boolean wasDown;
 
     private static String warId;
     private static WarScore.Result lastScore;
@@ -39,20 +43,16 @@ final class CaptureNotice {
         if (first) HOLDER.clear();
         warId = id;
         lastScore = score;
+        List<Item> changes = new java.util.ArrayList<>();
         for (WarScore.Holding h : score.holdings()) {
             String key = WarScore.key(h.locality().name, h.locality().country);
             int now = h.holder();
             Integer before = HOLDER.put(key, now);
             if (first || before == null || before < 0 || now < 0 || before == now) continue;
-            QUEUE.add(new Event(SiteTerritories.splitCamel(h.locality().name), sideLabel(d, w, now), MapScreen.minimapCtlColor(d, now) & 0xFFFFFF,
-                    sideLabel(d, w, before), MapScreen.minimapCtlColor(d, before) & 0xFFFFFF, firstCountry(d, w, now)));
+            changes.add(new Item(h.locality(), key, SiteTerritories.splitCamel(h.locality().name), sideLabel(d, w, now), MapScreen.minimapCtlColor(d, now) & 0xFFFFFF,
+                    sideLabel(d, w, before), MapScreen.minimapCtlColor(d, before) & 0xFFFFFF));
         }
-        while (QUEUE.size() > 4) QUEUE.poll();
-    }
-
-    private static int firstCountry(SiteTerritories.Data d, SiteTerritories.WarInfo w, int side) {
-        java.util.Iterator<Integer> it = Relations.countriesOf(d, w.sides.get(side)).iterator();
-        return it.hasNext() ? it.next() : -1;
+        pushAll(changes, System.currentTimeMillis());
     }
 
     private static String sideLabel(SiteTerritories.Data d, SiteTerritories.WarInfo w, int side) {
@@ -64,18 +64,68 @@ final class CaptureNotice {
         return n == null || n.isBlank() ? "Lado " + (side + 1) : n;
     }
 
-    static boolean active() {
-        return current != null || !QUEUE.isEmpty();
+    static void clear() {
+        warId = null;
+        lastScore = null;
+        HOLDER.clear();
+        QUEUE.clear();
+        LAST.clear();
+        current = null;
     }
 
-    /** Desenha a faixa na área x..x+w; above = a faixa fica acima do ponto y (minimapa no canto de baixo). */
-    static void draw(GuiGraphics g, Font font, SiteTerritories.Data d, int x, int y, int w, boolean above) {
-        long now = System.currentTimeMillis();
-        if (current == null) {
-            current = QUEUE.poll();
-            startedAt = now;
-            if (current == null) return;
+    /** Recebe as cidades que mudaram de lado numa mesma leitura. */
+    static void pushAll(List<Item> changes, long now) {
+        if (changes.isEmpty()) return;
+        List<Item> fresh = new java.util.ArrayList<>();
+        for (Item it : changes) {
+            Long last = LAST.put(it.key(), now);
+            if (last != null && now - last < QUIET) {       // vai e vem: tira o aviso anterior e não repete
+                QUEUE.removeIf(q -> q.key().equals(it.key()));
+                if (current != null && current.key().equals(it.key())) current = null;
+                continue;
+            }
+            fresh.add(it);
         }
+        if (fresh.size() >= GROUP_FROM) {       // muitas de uma vez (capitulação): um aviso só
+            Map<String, Integer> count = new HashMap<>();
+            Item top = fresh.get(0);
+            for (Item it : fresh) {
+                int n = count.merge(it.by(), 1, Integer::sum);
+                if (n > count.getOrDefault(top.by(), 0)) top = it;
+            }
+            offer(new Item(top.city(), top.key(), fresh.size() + " cidades tomadas", top.by(), top.byRgb(), "", 0));
+            return;
+        }
+        for (Item it : fresh) offer(it);
+    }
+
+    private static void offer(Item it) {
+        if (QUEUE.size() >= MAX_QUEUE) QUEUE.pollFirst();
+        QUEUE.addLast(it);
+    }
+
+    private static int light(int rgb) {
+        int r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+        return 0xFF000000 | (r + (255 - r) * 2 / 5) << 16 | (g + (255 - g) * 2 / 5) << 8 | (b + (255 - b) * 2 / 5);
+    }
+
+    /**
+     * Desenha o aviso colado na borda do minimapa. edgeY é a borda de onde a caixa sai: a de baixo da faixa de
+     * coordenadas, ou a de cima do minimapa quando ele está num canto inferior (upward).
+     */
+    static void render(GuiGraphics g, Font font, Minecraft mc, int mapX, int mapW, int edgeY, boolean upward, int screenW) {
+        long now = System.currentTimeMillis();
+        if (current != null && now - startedAt >= IN + HOLD + OUT) current = null;
+        if (current == null && !QUEUE.isEmpty()) {
+            current = QUEUE.pollFirst();
+            startedAt = now;
+        }
+        boolean down = mc.mouseHandler.isLeftPressed();
+        if (current == null) {
+            wasDown = down;
+            return;
+        }
+        Item it = current;
         long t = now - startedAt;
         double shown;
         if (t < IN) {
@@ -83,47 +133,43 @@ final class CaptureNotice {
             shown = 1 - (1 - u) * (1 - u);
         } else if (t < IN + HOLD) {
             shown = 1;
-        } else if (t < IN + HOLD + OUT) {
+        } else {
             double u = (t - IN - HOLD) / (double) OUT;
             shown = 1 - u * u;
-        } else {
-            current = null;
-            return;
         }
-        int top = above ? y - HEIGHT : y;
-        g.enableScissor(x, top, x + w, top + HEIGHT);
-        int off = (int) Math.round((1 - shown) * HEIGHT * (above ? 1 : -1));
-        int by0 = top + off;
-        g.fill(x, by0, x + w, by0 + HEIGHT, 0xF21E2123);
-        g.fill(x, by0 + HEIGHT - 2, x + w, by0 + HEIGHT, 0xFF3E4245);
-        int fx = x + 6, fy = by0 + 7;
-        g.fill(fx, fy, fx + 24, fy + 18, 0xFF0A0B08);
-        RemoteImages.Img flag = current.byCountry() >= 0 ? MapScreen.noticeFlag(d, current.byCountry()) : null;
-        if (flag != null) {
-            g.blit(RenderPipelines.GUI_TEXTURED, flag.id(), fx + 1, fy + 1, 0f, 0f, 22, 16, flag.w(), flag.h(), flag.w(), flag.h());
-        } else {
-            g.fill(fx + 1, fy + 1, fx + 23, fy + 17, 0xFF000000 | current.byRgb());
-        }
-        int tx = x + 36, room = w - 42;
-        String city = fit(font, current.city(), room);
-        g.drawString(font, city, tx, by0 + 6, 0xFFECEBE4, false);
-        String by = current.by(), mid = " tomou de ", from = current.from();
-        int avail = room - font.width(mid);
-        int half = Math.max(8, avail / 2);
-        by = fit(font, by, Math.max(half, avail - font.width(from)));
-        from = fit(font, from, Math.max(8, avail - font.width(by)));
-        int cx = tx;
-        g.drawString(font, by, cx, by0 + 18, 0xFF000000 | current.byRgb(), false);
-        cx += font.width(by);
-        g.drawString(font, mid, cx, by0 + 18, 0xFFBFC2C2, false);
-        cx += font.width(mid);
-        g.drawString(font, from, cx, by0 + 18, 0xFF000000 | current.fromRgb(), false);
-        g.disableScissor();
-    }
 
-    private static String fit(Font font, String s, int max) {
-        if (font.width(s) <= max) return s;
-        while (s.length() > 1 && font.width(s + "..") > max) s = s.substring(0, s.length() - 1);
-        return s + "..";
+        String middle = it.from().isEmpty() ? " avançou" : " tomou de ";
+        int textW = Math.max(font.width(it.title()), font.width(it.by()) + font.width(middle) + font.width(it.from()));
+        int w = Math.max(mapW + 6, textW + 34);
+        int left = Math.max(2, Math.min(screenW - w - 2, mapX - 3 - (w - mapW - 6) / 2));
+        int clipTop = upward ? edgeY - BOX_H : edgeY;
+        int top = upward ? edgeY - BOX_H + (int) Math.round((1 - shown) * BOX_H) : edgeY - (int) Math.round((1 - shown) * BOX_H);
+
+        boolean chat = mc.screen instanceof ChatScreen;
+        double gs = Math.max(1.0, mc.getWindow().getGuiScale());
+        double mx = mc.mouseHandler.xpos() / gs, my = mc.mouseHandler.ypos() / gs;
+        boolean hover = chat && mx >= left && mx < left + w && my >= clipTop && my < clipTop + BOX_H;
+
+        g.enableScissor(left, clipTop, left + w, clipTop + BOX_H);
+        g.fill(left, top, left + w, top + BOX_H, hover ? 0xF22C3236 : 0xF21E2123);
+        g.fill(left, top + BOX_H - 1, left + w, top + BOX_H, hover ? 0xFF7E8387 : 0xFF3E4245);
+        g.fill(left + 6, top + 8, left + 22, top + 18, 0xFF0A0B08);
+        g.fill(left + 7, top + 9, left + 21, top + 17, 0xFF000000 | it.byRgb());
+        g.drawString(font, it.title(), left + 28, top + 4, 0xFFECEBE4, false);
+        int tx = left + 28, ty = top + 15;
+        g.drawString(font, it.by(), tx, ty, light(it.byRgb()), false);
+        tx += font.width(it.by());
+        g.drawString(font, middle, tx, ty, 0xFFBFC2C2, false);
+        if (!it.from().isEmpty()) {
+            tx += font.width(middle);
+            g.drawString(font, it.from(), tx, ty, light(it.fromRgb()), false);
+        }
+        g.disableScissor();
+
+        if (hover && down && !wasDown) {
+            current = null;
+            MapScreen.openAt(it.city());
+        }
+        wasDown = down;
     }
 }
