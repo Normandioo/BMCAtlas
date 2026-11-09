@@ -176,7 +176,13 @@ final class Map3D {
                 if (tt == null) {
                     int topRowsFlat = Math.max(1, (int) (pxb * 0.55));
                     int cTop = fog <= 0.01f ? color : mixFog(color, fog);
-                    int wallC = shade(color, wallShade);
+                    int wc = color;
+                    if (reg.wall != null && (reg.px[idx] >>> 24) == 0xFF) {       // de longe a parede tem a cor da fachada, não a do telhado
+                        int wid = (reg.wall[idx * MapData.WALL_R] & 0xFFFF) >> 5;
+                        MapData.Tex wt = wid > 0 ? MapData.sideTexture(wid - 1) : null;
+                        if (wt != null) wc = 0xFF000000 | (wt.avg & 0xFFFFFF);
+                    }
+                    int wallC = shade(wc, wallShade);
                     int cWall = fog <= 0.01f ? wallC : mixFog(wallC, fog);
                     for (int y = ys; y < top; y++) frame[y * rw + col] = (y - ys0) < topRowsFlat ? cTop : cWall;
                 } else {
