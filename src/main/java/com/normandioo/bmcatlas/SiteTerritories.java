@@ -443,7 +443,9 @@ final class SiteTerritories {
         for (Path p : candidates) {
             try {
                 if (Files.exists(p)) {
-                    apply(parse(Files.readString(p, StandardCharsets.UTF_8)), "cache");
+                    String text = Files.readString(p, StandardCharsets.UTF_8);
+                    apply(parse(text), "cache");
+                    remember(text);
                     return;
                 }
             } catch (IOException | RuntimeException e) {
@@ -478,6 +480,7 @@ final class SiteTerritories {
         active = e;
         cacheFile = cacheFileFor(e);
         data = null;
+        appliedLen = -1;
         version++;
         status = "loading " + (e == null ? "" : e.name) + "...";
         OnlinePlayers.reset();
@@ -513,18 +516,43 @@ final class SiteTerritories {
         if (url == null || url.isBlank() || url.equals(loadingUrl)) return;
         loadingUrl = url;
         Path cf = cacheFile;
-        HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url))
-                                .timeout(Duration.ofSeconds(30))
-                                .header("User-Agent", "bmcatlas-fabric-mod")
-                                .GET().build(),
-                        HttpResponse.BodyHandlers.ofString())
+        Path meta = cf == null ? null : cf.resolveSibling(cf.getFileName() + ".meta");
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(30))
+                .header("User-Agent", "bmcatlas-fabric-mod")
+                .GET();
+        // with a copy already in use, ask the site only for what changed (it answers "not modified" with no body)
+        if (data != null && appliedLen >= 0 && meta != null) {
+            try {
+                if (Files.exists(meta) && Files.exists(cf)) {
+                    List<String> lines = Files.readAllLines(meta, StandardCharsets.UTF_8);
+                    if (lines.size() >= 3 && lines.get(0).equals(url)) {
+                        if (!lines.get(1).isBlank()) request.header("If-None-Match", lines.get(1));
+                        else if (!lines.get(2).isBlank()) request.header("If-Modified-Since", lines.get(2));
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                // no saved headers: plain request
+            }
+        }
+        HTTP.sendAsync(request.build(), HttpResponse.BodyHandlers.ofString())
                 .whenComplete((response, failure) -> {
                     try {
                         if (failure != null) throw new IOException(failure);
+                        if (response.statusCode() == 304 && data != null) return;      // nothing changed on the site
                         if (response.statusCode() != 200) throw new IOException("HTTP " + response.statusCode());
-                        Data d = parse(response.body());
+                        String body = response.body();
                         if (!url.equals(url())) return;      // o jogador trocou de mapa no meio do download
-                        if (cf != null) Files.writeString(cf, response.body(), StandardCharsets.UTF_8);
+                        // same content as the one in use: the map is not repainted for nothing
+                        if (data != null && body.length() == appliedLen && body.hashCode() == appliedHash) return;
+                        Data d = parse(body);
+                        if (cf != null) {
+                            Files.writeString(cf, body, StandardCharsets.UTF_8);
+                            String etag = response.headers().firstValue("ETag").orElse("");
+                            String modified = response.headers().firstValue("Last-Modified").orElse("");
+                            Files.writeString(meta, url + "\n" + etag + "\n" + modified + "\n", StandardCharsets.UTF_8);
+                        }
+                        remember(body);
                         apply(d, "site");
                     } catch (IOException | RuntimeException e) {
                         if (data == null) status = "failed: " + e;
@@ -533,6 +561,15 @@ final class SiteTerritories {
                         if (url.equals(loadingUrl)) loadingUrl = null;
                     }
                 });
+    }
+
+    private static volatile int appliedHash;
+    private static volatile int appliedLen = -1;
+
+    /** The text of the territories in use, to notice when a download brings nothing new. */
+    private static void remember(String text) {
+        appliedHash = text.hashCode();
+        appliedLen = text.length();
     }
 
     private static void apply(Data d, String source) {

@@ -41,6 +41,14 @@ import java.util.Map;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.nio.file.StandardCopyOption;
 
 /**
  * Dados do mundo atual: terreno explorado (1 pixel por bloco, em regiões de 16x16 chunks)
@@ -77,8 +85,23 @@ final class MapData {
         int styledMode = -1;
         int styledVer = -1;
 
+        /** One bit per chunk already read (16x16), kept in memory even while the pixels are only on disk. */
+        final long[] known = new long[4];
+        /** The pixels have a file on disk (they may or may not be in memory right now). */
+        boolean onDisk;
+        /** A background read of the file is on its way. */
+        boolean loading;
+        /** Pixels changed since the last write. */
+        boolean unsaved;
+        /** Tick of the last read or write of the pixels (least recently used go back to disk first). */
+        long pxUsed;
+
         /** Garante a textura e (re)pinta os pixels no estilo do modo atual, se necessário. */
         boolean ensureUploaded(int mode) {
+            if (px == EMPTY_PX && onDisk) {      // pixels are on disk: ask for them and paint when they arrive
+                requestLoad(this, false);
+                return false;
+            }
             if (texture == null) {
                 image = new NativeImage(NativeImage.Format.RGBA, REGION_PX, REGION_PX, true);
                 texture = new DynamicTexture(() -> "bmcatlas region", image);
@@ -98,18 +121,23 @@ final class MapData {
                 dirty = false;
                 styledMode = mode;
                 styledVer = ver;
+                pxUsed = tickCount;
+                return true;
             }
-            return true;
+            return false;
         }
 
         /** Dá à região o seu próprio array de pixels (ao ler chunks ou carregar do disco). */
         int[] writable() {
-            if (px == EMPTY_PX) px = new int[REGION_PX * REGION_PX];
+            if (px == EMPTY_PX) {
+                px = new int[REGION_PX * REGION_PX];
+                inMemory++;
+            }
             return px;
         }
 
         boolean hasData() {
-            return px != EMPTY_PX;
+            return px != EMPTY_PX || onDisk;
         }
 
         void release() {
@@ -142,6 +170,7 @@ final class MapData {
     private static String worldKey;
     private static int ownersVersion;
     private static boolean dirty;
+    private static boolean ownersDirty;
 
     private MapData() {}
 
@@ -167,6 +196,7 @@ final class MapData {
     static void ownersChanged() {
         ownersVersion++;
         dirty = true;
+        ownersDirty = true;
         for (Region r : REGIONS.values()) r.styledMode = -1;
     }
 
@@ -177,6 +207,7 @@ final class MapData {
         else OWNERS.put(key(px, pz), id);
         ownersVersion++;
         dirty = true;
+        ownersDirty = true;
         // repinta só a região da província e as vizinhas (o brilho da fronteira cruza regiões)
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
@@ -221,6 +252,7 @@ final class MapData {
     }
 
     static void nextFrame() {
+        pumpLoads();
         frame++;
         if (frame % 120 != 0) return;
         for (Region r : REGIONS.values()) {
@@ -243,9 +275,8 @@ final class MapData {
     static boolean chunkKnown(int cx, int cz) {
         Region r = region(Math.floorDiv(cx, REGION_CHUNKS), Math.floorDiv(cz, REGION_CHUNKS), false);
         if (r == null) return false;
-        int ox = Math.floorMod(cx, REGION_CHUNKS) * 16 + 8;
-        int oz = Math.floorMod(cz, REGION_CHUNKS) * 16 + 8;
-        return r.px[oz * REGION_PX + ox] != 0;
+        int bit = Math.floorMod(cz, REGION_CHUNKS) * REGION_CHUNKS + Math.floorMod(cx, REGION_CHUNKS);
+        return (r.known[bit >> 6] & (1L << (bit & 63))) != 0;
     }
 
     // --------------------------------------------------------------------- mundo
@@ -276,7 +307,7 @@ final class MapData {
         }
         String k = computeKey(mc);
         if (k.equals(worldKey)) return;
-        save();
+        flush(true);
         clear();
         worldKey = k;
         load();
@@ -287,37 +318,212 @@ final class MapData {
         REGIONS.clear();
         OWNERS.clear();
         LAST_SCAN.clear();
+        LOADED.clear();
+        loadingCount = 0;
+        inMemory = 0;
         cursor = 0;
         ownersVersion++;
         dirty = false;
+        ownersDirty = false;
     }
 
     static void unload() {
-        save();
+        flush(true);
         clear();
         worldKey = null;
     }
 
-    // ---------------------------------------------------------------- persistência
+    // ---------------------------------------------------------------- persistence
+
+    // One file per region (<world>.regions/r.<rx>.<rz>.bmr): magic, 4 longs with the chunks already read, then the
+    // pixels deflated. Files are read and written on a background thread; only changed regions are written, and the
+    // pixels of regions not used for a while go back to disk, so memory does not grow with the explored world.
+
+    private static final int MAGIC = 0x424D5231;       // "BMR1"
+    private static final int HEADER = 4 + 4 * 8;
+    private static final int MAX_LOADING = 8;
+    private static final int MAX_IN_MEMORY = 96;        // regions with pixels in memory (about 1 MB each)
+
+    private record Loaded(Region r, int[] px) {}
+
+    private static final ExecutorService IO = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "bmcatlas-io");
+        t.setDaemon(true);
+        return t;
+    });
+    private static final Queue<Loaded> LOADED = new ConcurrentLinkedQueue<>();
+    private static final AtomicInteger pendingWrites = new AtomicInteger();
+    private static int loadingCount;
+    private static int inMemory;
+
+    static {
+        // writes still in the queue are finished before the game exits
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            IO.shutdown();
+            try {
+                IO.awaitTermination(15, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                // leaving anyway
+            }
+        }, "bmcatlas-io-flush"));
+    }
+
+    private static void exec(Runnable task) {
+        try {
+            IO.execute(task);
+        } catch (RejectedExecutionException e) {
+            task.run();      // game is closing: do it right here
+        }
+    }
+
+    private static Path regionsDir() {
+        return dir().resolve(worldKey + ".regions");
+    }
+
+    private static Path regionFile(Path regionsDir, int rx, int rz) {
+        return regionsDir.resolve("r." + rx + "." + rz + ".bmr");
+    }
+
+    private static void computeKnown(int[] px, long[] known) {
+        java.util.Arrays.fill(known, 0L);
+        for (int cz = 0; cz < REGION_CHUNKS; cz++) {
+            for (int cx = 0; cx < REGION_CHUNKS; cx++) {
+                if (px[(cz * 16 + 8) * REGION_PX + cx * 16 + 8] == 0) continue;
+                int bit = cz * REGION_CHUNKS + cx;
+                known[bit >> 6] |= 1L << (bit & 63);
+            }
+        }
+    }
+
+    private static void writeAtomic(Path file, java.util.function.Consumer<DataOutputStream> body) throws IOException {
+        Files.createDirectories(file.getParent());
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(tmp)))) {
+            try {
+                body.accept(out);
+            } catch (java.io.UncheckedIOException e) {
+                throw e.getCause();
+            }
+        }
+        try {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException e) {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static void writeRegion(Path file, long[] known, byte[] comp, int len) throws IOException {
+        writeAtomic(file, out -> {
+            try {
+                out.writeInt(MAGIC);
+                for (long k : known) out.writeLong(k);
+                out.write(comp, 0, len);
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
+    }
+
+    private static int[] readRegion(Path file) throws IOException, DataFormatException {
+        byte[] all = Files.readAllBytes(file);
+        if (all.length <= HEADER || ByteBuffer.wrap(all).getInt() != MAGIC) throw new IOException("not a region file");
+        int[] px = new int[REGION_PX * REGION_PX];
+        inflateInto(all, HEADER, all.length - HEADER, px);
+        return px;
+    }
+
+    /** Asks for the pixels of a region that is only on disk; they arrive a moment later (see pumpLoads). */
+    private static void requestLoad(Region r, boolean force) {
+        if (r.loading || !r.onDisk || worldKey == null) return;
+        if (!force && (loadingCount >= MAX_LOADING || inMemory >= MAX_IN_MEMORY + 32)) return;
+        r.loading = true;
+        loadingCount++;
+        Path file = regionFile(regionsDir(), r.rx, r.rz);
+        exec(() -> {
+            int[] px = null;
+            try {
+                px = readRegion(file);
+            } catch (IOException | DataFormatException | RuntimeException e) {
+                BmcAtlasClient.LOG.warn("Unreadable region file: {}", file, e);
+            }
+            LOADED.add(new Loaded(r, px));
+        });
+    }
+
+    private static void merge(Region r, int[] disk) {
+        if (r.px == EMPTY_PX) {
+            r.px = disk;
+            inMemory++;
+        } else {
+            int[] px = r.px;      // chunks read while the file was on its way stay on top
+            for (int i = 0; i < px.length; i++) if (px[i] == 0) px[i] = disk[i];
+        }
+        r.dirty = true;
+        r.pxUsed = tickCount;
+    }
+
+    /** Client thread: takes the regions that finished reading. */
+    private static void pumpLoads() {
+        Loaded l;
+        while ((l = LOADED.poll()) != null) {
+            Region r = l.r;
+            if (REGIONS.get(key(r.rx, r.rz)) != r || !r.loading) continue;   // another world, or already merged
+            r.loading = false;
+            loadingCount = Math.max(0, loadingCount - 1);
+            if (l.px == null) {
+                r.onDisk = false;
+                continue;
+            }
+            merge(r, l.px);
+        }
+    }
+
+    /** Pixels of regions not used lately go back to disk (their textures stay). */
+    private static void evict() {
+        if (inMemory <= MAX_IN_MEMORY) return;
+        List<Region> candidates = new ArrayList<>();
+        int ver = MapStyle.overrideVersion;
+        for (Region r : REGIONS.values()) {
+            if (r.px == EMPTY_PX || !r.onDisk || r.unsaved || r.loading) continue;
+            boolean painted = r.id != null && !r.dirty && r.styledVer == ver;
+            if (painted ? tickCount - r.pxUsed > 20 : tickCount - r.pxUsed > 200) candidates.add(r);
+        }
+        candidates.sort(Comparator.comparingLong(r -> r.pxUsed));
+        for (Region r : candidates) {
+            if (inMemory <= MAX_IN_MEMORY) break;
+            r.px = EMPTY_PX;
+            inMemory--;
+        }
+    }
 
     private static void load() {
         if (worldKey == null) return;
-        Path regions = dir().resolve(worldKey + ".regions5");
-        if (Files.exists(regions)) {
-            try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(regions)))) {
-                int n = in.readInt();
-                for (int i = 0; i < n; i++) {
-                    int rx = in.readInt();
-                    int rz = in.readInt();
-                    int len = in.readInt();
-                    byte[] comp = new byte[len];
-                    in.readFully(comp);
-                    Region r = new Region(rx, rz);
-                    inflateInto(comp, r.writable());
-                    REGIONS.put(key(rx, rz), r);
+        try {
+            IO.submit(() -> {}).get(20, TimeUnit.SECONDS);     // writes of the previous world first
+        } catch (Exception ignored) {
+            // carry on with what is on disk
+        }
+        Path rd = regionsDir();
+        Path old = dir().resolve(worldKey + ".regions5");
+        if (!Files.isDirectory(rd) && Files.exists(old)) migrate(old, rd);
+        if (Files.isDirectory(rd)) {
+            try (java.nio.file.DirectoryStream<Path> files = Files.newDirectoryStream(rd, "r.*.bmr")) {
+                for (Path f : files) {
+                    String[] parts = f.getFileName().toString().split("\\.");
+                    if (parts.length != 4) continue;
+                    try (DataInputStream in = new DataInputStream(Files.newInputStream(f))) {
+                        int rx = Integer.parseInt(parts[1]), rz = Integer.parseInt(parts[2]);
+                        if (in.readInt() != MAGIC) continue;
+                        Region r = new Region(rx, rz);
+                        for (int i = 0; i < r.known.length; i++) r.known[i] = in.readLong();
+                        r.onDisk = true;
+                        REGIONS.put(key(rx, rz), r);
+                    } catch (IOException | RuntimeException e) {
+                        BmcAtlasClient.LOG.warn("Unreadable region file: {}", f, e);
+                    }
                 }
-            } catch (IOException | DataFormatException e) {
-                BmcAtlasClient.LOG.warn("Cache de terreno ilegível: {}", regions, e);
+            } catch (IOException e) {
+                BmcAtlasClient.LOG.warn("Could not list {}", rd, e);
             }
         }
         Path owners = dir().resolve(worldKey + ".owners.json");
@@ -331,43 +537,107 @@ final class MapData {
                     }
                 }
             } catch (IOException | RuntimeException e) {
-                BmcAtlasClient.LOG.warn("Donos de províncias ilegíveis: {}", owners, e);
+                BmcAtlasClient.LOG.warn("Unreadable province owners: {}", owners, e);
             }
         }
         ownersVersion++;
         dirty = false;
+        ownersDirty = false;
     }
 
-    static void save() {
-        if (worldKey == null || (REGIONS.isEmpty() && OWNERS.isEmpty())) return;
+    /** One time: splits the old single file (<world>.regions5) into one file per region. The old file is kept as .old. */
+    private static void migrate(Path old, Path rd) {
+        Path tmp = rd.resolveSibling(rd.getFileName() + ".migrating");
         try {
-            Files.createDirectories(dir());
-            Path regions = dir().resolve(worldKey + ".regions5");
-            try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(regions)))) {
-                int count = 0;
-                for (Region r : REGIONS.values()) if (r.hasData()) count++;
-                out.writeInt(count);
-                for (Region r : REGIONS.values()) {
-                    if (!r.hasData()) continue;
-                    byte[] comp = deflate(r.px);
-                    out.writeInt(r.rx);
-                    out.writeInt(r.rz);
-                    out.writeInt(comp.length);
-                    out.write(comp);
+            if (Files.isDirectory(tmp)) {
+                try (java.util.stream.Stream<Path> left = Files.list(tmp)) {
+                    for (Path f : (Iterable<Path>) left::iterator) Files.deleteIfExists(f);
                 }
             }
+            Files.createDirectories(tmp);
+            int[] px = new int[REGION_PX * REGION_PX];
+            long[] known = new long[4];
+            int n;
+            try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(old)))) {
+                n = in.readInt();
+                for (int i = 0; i < n; i++) {
+                    int rx = in.readInt(), rz = in.readInt(), len = in.readInt();
+                    byte[] comp = new byte[len];
+                    in.readFully(comp);
+                    java.util.Arrays.fill(px, 0);
+                    inflateInto(comp, 0, len, px);
+                    computeKnown(px, known);
+                    writeRegion(regionFile(tmp, rx, rz), known, comp, len);
+                }
+            }
+            Files.move(tmp, rd);
+            Files.move(old, old.resolveSibling(old.getFileName() + ".old"), StandardCopyOption.REPLACE_EXISTING);
+            BmcAtlasClient.LOG.info("Terrain cache converted to one file per region ({} regions)", n);
+        } catch (IOException | DataFormatException | RuntimeException e) {
+            BmcAtlasClient.LOG.warn("Could not convert the old terrain cache {}", old, e);
+        }
+    }
+
+    /** Writes what changed, in the background. Cheap: safe to call often. */
+    static void save() {
+        flush(false);
+    }
+
+    /**
+     * Hands the changed regions to the writer thread. all = leaving this world: nothing may be left behind, so a
+     * region still waiting for its file is read right here before it is written.
+     */
+    private static void flush(boolean all) {
+        if (worldKey == null) return;
+        Path rd = regionsDir();
+        for (Region r : REGIONS.values()) {
+            if (!r.unsaved || r.px == EMPTY_PX) continue;
+            if (r.loading) {
+                if (!all) continue;
+                try {
+                    merge(r, readRegion(regionFile(rd, r.rx, r.rz)));
+                } catch (IOException | DataFormatException | RuntimeException e) {
+                    BmcAtlasClient.LOG.warn("Unreadable region file r.{}.{}", r.rx, r.rz, e);
+                }
+                r.loading = false;
+            }
+            if (!all && pendingWrites.get() >= 24) break;       // the writer is busy: the rest goes next time
+            int[] snapshot = r.px.clone();
+            long[] known = r.known.clone();
+            Path file = regionFile(rd, r.rx, r.rz);
+            r.unsaved = false;
+            r.onDisk = true;
+            pendingWrites.incrementAndGet();
+            exec(() -> {
+                try {
+                    byte[] comp = deflate(snapshot);
+                    writeRegion(file, known, comp, comp.length);
+                } catch (IOException | RuntimeException e) {
+                    BmcAtlasClient.LOG.warn("Could not write {}", file, e);
+                } finally {
+                    pendingWrites.decrementAndGet();
+                }
+            });
+        }
+        if (ownersDirty) {
             Map<String, String> m = new HashMap<>();
             for (Map.Entry<Long, String> e : OWNERS.entrySet()) {
                 m.put(keyA(e.getKey()) + "," + keyB(e.getKey()), e.getValue());
             }
             Path owners = dir().resolve(worldKey + ".owners.json");
-            try (Writer w = Files.newBufferedWriter(owners, StandardCharsets.UTF_8)) {
-                GSON.toJson(m, w);
+            try {
+                Files.createDirectories(owners.getParent());
+                Path tmp = owners.resolveSibling(owners.getFileName() + ".tmp");
+                try (Writer w = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
+                    GSON.toJson(m, w);
+                }
+                Files.move(tmp, owners, StandardCopyOption.REPLACE_EXISTING);
+                ownersDirty = false;
+            } catch (IOException | RuntimeException e) {
+                BmcAtlasClient.LOG.warn("Could not save province owners", e);
             }
-            dirty = false;
-        } catch (IOException e) {
-            BmcAtlasClient.LOG.warn("Falha ao salvar o mapa", e);
         }
+        dirty = false;
     }
 
     private static byte[] deflate(int[] px) {
@@ -382,9 +652,9 @@ final class MapData {
         return java.util.Arrays.copyOf(buf, n);
     }
 
-    private static void inflateInto(byte[] comp, int[] px) throws DataFormatException {
+    private static void inflateInto(byte[] comp, int offset, int len, int[] px) throws DataFormatException {
         Inflater inf = new Inflater();
-        inf.setInput(comp);
+        inf.setInput(comp, offset, len);
         byte[] raw = new byte[px.length * 4];
         int off = 0;
         while (off < raw.length && !inf.finished()) {
@@ -395,6 +665,7 @@ final class MapData {
         inf.end();
         ByteBuffer.wrap(raw).asIntBuffer().get(px);
     }
+
 
     // ----------------------------------------------------------------------- scan
 
@@ -416,6 +687,9 @@ final class MapData {
         if (level == null || mc.player == null) return;
         ensureWorld(mc);
         tickCount++;
+        pumpLoads();
+        if (tickCount % 100 == 0) flush(false);
+        if (tickCount % 10 == 5) evict();
 
         int radius = Math.max(4, Math.min(mc.options.renderDistance().get(), 24));
         if (radius != spiralRadius) buildSpiral(radius);
@@ -442,13 +716,36 @@ final class MapData {
     static void applyChunk(int cx, int cz, int[] px) {
         if (px == null) return;
         Region reg = region(Math.floorDiv(cx, REGION_CHUNKS), Math.floorDiv(cz, REGION_CHUNKS), true);
-        reg.writable();
-        int ox = Math.floorMod(cx, REGION_CHUNKS) * 16;
-        int oz = Math.floorMod(cz, REGION_CHUNKS) * 16;
+        if (reg.px == EMPTY_PX && reg.onDisk) requestLoad(reg, true);   // the rest of the region comes from disk and is merged in
+        int[] dst = reg.writable();
+        int lcx = Math.floorMod(cx, REGION_CHUNKS), lcz = Math.floorMod(cz, REGION_CHUNKS);
+        int ox = lcx * 16, oz = lcz * 16;
+        // only a chunk that really changed repaints the region and goes back to disk
+        boolean changed = false;
         for (int lz = 0; lz < 16; lz++) {
-            System.arraycopy(px, lz * 16, reg.px, (oz + lz) * REGION_PX + ox, 16);
+            int off = (oz + lz) * REGION_PX + ox;
+            if (!changed) {
+                for (int k = 0; k < 16; k++) {
+                    if (dst[off + k] != px[lz * 16 + k]) {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+            if (changed) System.arraycopy(px, lz * 16, dst, off, 16);
         }
+        int bit = lcz * REGION_CHUNKS + lcx;
+        long mask = 1L << (bit & 63);
+        boolean isKnown = px[8 * 16 + 8] != 0;
+        if (((reg.known[bit >> 6] & mask) != 0) != isKnown) {
+            if (isKnown) reg.known[bit >> 6] |= mask;
+            else reg.known[bit >> 6] &= ~mask;
+            changed = true;
+        }
+        reg.pxUsed = tickCount;
+        if (!changed) return;
         reg.dirty = true;
+        reg.unsaved = true;
         dirty = true;
     }
 

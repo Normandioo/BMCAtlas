@@ -496,8 +496,7 @@ public class MapScreen extends Screen {
                 MapData.markUsed(r);
                 boolean stale = r.id == null || r.dirty || r.styledMode != mode || r.styledVer != MapStyle.overrideVersion;
                 if (stale && uploads < 2) {
-                    r.ensureUploaded(mode);
-                    uploads++;
+                    if (r.ensureUploaded(mode)) uploads++;
                 }
                 if (r.id == null) continue; // ainda sem textura: espera o próximo quadro
                 int sx0 = (int) Math.floor(toScreenX(rx * (double) MapData.REGION_PX));
