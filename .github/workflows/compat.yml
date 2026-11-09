@@ -32,12 +32,10 @@ jobs:
       - name: Inspect APIs
         if: always()
         run: |
-          J=$(find ~/.gradle ~/.cache -name 'minecraft-clientOnly*.jar' -o -name 'minecraft-merged*.jar' -o -name 'minecraft-client*.jar' 2>/dev/null | head -3); echo "$J"
-          for j in $J; do
-            for c in net.minecraft.client.Minecraft net.minecraft.client.Options net.minecraft.client.gui.Gui; do
-              echo "#### $c"; javap -cp $j -public $c | grep -iE "screen|hideGui|overlay|Gui\b|actionbar" | head -20
-            done
-            unzip -l $j | grep -iE "glfw|sdl|MouseHandler|InputConstants" | head
-            javap -cp $j -public com.mojang.blaze3d.platform.InputConstants | head -40
-          done
-          find ~/.gradle -name '*.jar' | grep -iE "lwjgl|sdl" | head -20
+          j=$(ls ~/.gradle/caches/fabric-loom/${{ matrix.mc }}/minecraft-merged.jar)
+          javap -cp $j -public net.minecraft.client.gui.Hud | grep -iE "overlay|message|actionbar"
+          echo ---OPTS; javap -cp $j -public net.minecraft.client.Options | grep -iE "hide|gui"
+          echo ---MC; javap -cp $j -public net.minecraft.client.Minecraft | grep -E "getWindow|window|mouseHandler|setScreen|getInstance"
+          echo ---MOUSE; javap -cp $j -public net.minecraft.client.MouseHandler | grep -iE "press|left|xpos|ypos|handle|button"
+          echo ---WIN; javap -cp $j -public com.mojang.blaze3d.platform.Window | grep -iE "handle|window\(|getWindow"
+          echo ---LWJGL; unzip -l $j | grep -iE "org/lwjgl" | head -3; find ~/.gradle -name '*.jar' | grep -iE "lwjgl-(glfw|sdl)|lwjgl-3" | head; find ~/.gradle -name 'lwjgl*' | head -5
