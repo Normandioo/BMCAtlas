@@ -60,6 +60,8 @@ final class MapData {
     private static final Gson GSON = new Gson();
 
     /** Uma região de terreno. */
+    static final int WALL_K = 5;
+
     static final class Region {
         final int rx, rz;
         int[] px = EMPTY_PX; // ARGB; 0 = desconhecido. Compartilhado até a região ser lida de verdade.
@@ -67,6 +69,8 @@ final class MapData {
         short[] hgt;
         /** Bloco do topo de cada coluna (id no registro + 1); 0 = desconhecido. */
         short[] blk;
+        /** Blocos abaixo do topo (WALL_K-1 por coluna: profundidade 1..): textura das paredes no 3D; 0 = desconhecido. */
+        short[] wall;
         /** Cópia das cores já pintadas no estilo atual (o modo 3D lê daqui); null até a região ser pintada. */
         int[] styledCpu;
         long lastUsed;
@@ -371,6 +375,22 @@ final class MapData {
                 Hoi4MapClient.LOG.warn("Blocos ilegíveis: {}", blocks, e);
             }
         }
+        Path walls = dir().resolve(worldKey + ".walls1");
+        if (Files.exists(walls)) {
+            try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(walls)))) {
+                int n = in.readInt();
+                for (int i = 0; i < n; i++) {
+                    int rx = in.readInt();
+                    int rz = in.readInt();
+                    int len = in.readInt();
+                    short[] data = readShorts(in, len, REGION_PX * REGION_PX * (WALL_K - 1));
+                    Region r = REGIONS.get(key(rx, rz));
+                    if (r != null) r.wall = data;
+                }
+            } catch (IOException | DataFormatException e) {
+                Hoi4MapClient.LOG.warn("Paredes ilegíveis: {}", walls, e);
+            }
+        }
         Path owners = dir().resolve(worldKey + ".owners.json");
         if (Files.exists(owners)) {
             try (Reader r = Files.newBufferedReader(owners, StandardCharsets.UTF_8)) {
@@ -390,15 +410,19 @@ final class MapData {
     }
 
     private static short[] readShorts(DataInputStream in, int len) throws IOException, DataFormatException {
+        return readShorts(in, len, REGION_PX * REGION_PX);
+    }
+
+    private static short[] readShorts(DataInputStream in, int len, int count) throws IOException, DataFormatException {
         byte[] comp = new byte[len];
         in.readFully(comp);
         java.util.zip.Inflater inf = new java.util.zip.Inflater();
         inf.setInput(comp);
-        byte[] raw = new byte[REGION_PX * REGION_PX * 2];
+        byte[] raw = new byte[count * 2];
         int got = 0;
         while (got < raw.length && !inf.finished()) got += inf.inflate(raw, got, raw.length - got);
         inf.end();
-        short[] h = new short[REGION_PX * REGION_PX];
+        short[] h = new short[count];
         for (int k = 0; k < h.length; k++) h[k] = (short) (((raw[2 * k] & 0xFF) << 8) | (raw[2 * k + 1] & 0xFF));
         return h;
     }
@@ -469,6 +493,13 @@ final class MapData {
                 for (Region r : REGIONS.values()) if (r.blk != null) count++;
                 out.writeInt(count);
                 for (Region r : REGIONS.values()) if (r.blk != null) writeShorts(out, r, r.blk);
+            }
+            Path walls = dir().resolve(worldKey + ".walls1");
+            try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(walls)))) {
+                int count = 0;
+                for (Region r : REGIONS.values()) if (r.wall != null) count++;
+                out.writeInt(count);
+                for (Region r : REGIONS.values()) if (r.wall != null) writeShorts(out, r, r.wall);
             }
             Map<String, String> m = new HashMap<>();
             for (Map.Entry<Long, String> e : OWNERS.entrySet()) {
@@ -578,6 +609,17 @@ final class MapData {
                 }
             }
         }
+        if (px.length >= 768 + 256 * (WALL_K - 1)) {
+            if (reg.wall == null) reg.wall = new short[REGION_PX * REGION_PX * (WALL_K - 1)];
+            for (int lz = 0; lz < 16; lz++) {
+                for (int lx = 0; lx < 16; lx++) {
+                    int col = (oz + lz) * REGION_PX + ox + lx;
+                    for (int d = 0; d < WALL_K - 1; d++) {
+                        reg.wall[col * (WALL_K - 1) + d] = (short) px[768 + (lz * 16 + lx) * (WALL_K - 1) + d];
+                    }
+                }
+            }
+        }
         reg.dirty = true;
         dirty = true;
     }
@@ -611,7 +653,7 @@ final class MapData {
      * do cliente (o servidor interno usa para gerar o mapa sem o jogador estar perto).
      */
     static int[] computeChunk(Level level, ChunkAccess chunk, int cx, int cz) {
-        int[] result = new int[768];       // 0..255 cores; 256..511 alturas (y + 64); 512..767 blocos (id + 1)
+        int[] result = new int[768 + 256 * (WALL_K - 1)];       // 0..255 cores; 256..511 alturas (y + 64); 512..767 blocos (id + 1)
         ChunkAccess west = neighbor(level, cx - 1, cz);
         ChunkAccess north = neighbor(level, cx, cz - 1);
         ChunkAccess northWest = neighbor(level, cx - 1, cz - 1);
@@ -638,6 +680,17 @@ final class MapData {
                 result[256 + outIndex] = Math.max(1, top + 64);
                 BlockState state = stateAtTop(chunk, pos, wx, top, wz);
                 result[512 + outIndex] = BuiltInRegistries.BLOCK.getId(state.getBlock()) + 1;
+                {
+                    int topY = pos.getY();
+                    int last = result[512 + outIndex];
+                    BlockPos.MutableBlockPos wp = new BlockPos.MutableBlockPos();
+                    for (int d = 1; d < WALL_K; d++) {
+                        wp.set(wx, topY - d, wz);
+                        BlockState ws = chunk.getBlockState(wp);
+                        if (!ws.isAir() && ws.getFluidState().isEmpty()) last = BuiltInRegistries.BLOCK.getId(ws.getBlock()) + 1;
+                        result[768 + outIndex * (WALL_K - 1) + d - 1] = last;
+                    }
+                }
                 FluidState fluid = state.getFluidState();
 
                 int color;

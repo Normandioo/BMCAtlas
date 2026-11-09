@@ -187,6 +187,8 @@ final class Map3D {
                     int topRows = Math.max(1, (int) (pxb * 0.55));
                     int len = top - ys0;
                     double pdx = (prevX - wx), pdz = (prevZ - wz);
+                    int lastDi = -1;
+                    MapData.Tex lastTex = null;
                     for (int y = ys; y < top; y++) {
                         int rowIdx = y - ys0;
                         int out;
@@ -198,12 +200,26 @@ final class Map3D {
                             if ((tc >>> 24) < 32) out = color;
                             else out = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
                         } else {
+                            double depth = (rowIdx - topRows) / pxb;
+                            int di = (int) depth;
                             MapData.Tex sx = st == null ? tt : st;
-                            int tx = Math.min(sx.w - 1, (int) ((wx - Math.floor(wx)) * sx.w));
-                            int ty = Math.floorMod((int) ((rowIdx - topRows) / pxb * sx.w), sx.w);
+                            boolean deep = false;
+                            if (di >= 1 && reg.wall != null) {
+                                if (di != lastDi) {
+                                    int wid = reg.wall[idx * (MapData.WALL_K - 1) + Math.min(di, MapData.WALL_K - 1) - 1];
+                                    MapData.Tex w2 = wid > 0 ? MapData.sideTexture(wid - 1) : null;
+                                    lastTex = w2;
+                                    lastDi = di;
+                                }
+                                if (lastTex != null) { sx = lastTex; deep = true; }
+                            }
+                            double along = Math.abs(dirx) > Math.abs(dirz) ? wz : wx;
+                            int tx = Math.min(sx.w - 1, (int) ((along - Math.floor(along)) * sx.w));
+                            int ty = Math.min(sx.w - 1, (int) ((depth - di) * sx.w));
                             int tc = sx.px[ty * sx.w + tx];
                             int base;
                             if ((tc >>> 24) < 32) base = color;
+                            else if (deep) base = tc | 0xFF000000;
                             else if (sameTex) base = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
                             else base = mixRgb(tc, color, 0.3f);
                             out = shade(base, wallShade);
