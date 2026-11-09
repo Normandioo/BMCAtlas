@@ -168,7 +168,7 @@ final class MapStyle {
                     }
                 } else {
                     int c;
-                    if (raw != 0) c = land(raw);
+                    if (raw != 0) c = land(raw, baseX + x, baseZ + y);
                     else if (p != 0) c = 0xFF39424C;     // terra do país ainda não explorada
                     else {
                         OUT[y * size + x] = 0;
@@ -256,7 +256,7 @@ final class MapStyle {
                     OUT[y * size + x] = water(raw, baseX + x, baseZ + y);
                     continue;
                 }
-                int c = land(raw);
+                int c = land(raw, baseX + x, baseZ + y);
                 if (political || provinces) {
                     int idx = ((y / SPAN) + 1) * N + ((x / SPAN) + 1);
                     int country = rgb[idx];
@@ -290,7 +290,29 @@ final class MapStyle {
     // ------------------------------------------------------------------- cores
 
     /** Terra: um pouco dessaturada, mais escura e com mais contraste. */
-    private static int land(int raw) {
+    /** Terra: cor base do estilo + realce do relevo (contraste) + granulado por bloco, ambos ajustáveis. */
+    private static int land(int raw, int wx, int wz) {
+        int c = landBase(raw);
+        Prefs.Data p = Prefs.get();
+        float k = p.reliefPct / 100f;
+        float grain = p.grainPct / 100f;
+        if (k == 1f && grain == 0f) return c;
+        float r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+        if (k != 1f) {
+            r = 96f + (r - 96f) * k;
+            g = 96f + (g - 96f) * k;
+            b = 96f + (b - 96f) * k;
+        }
+        if (grain > 0f) {
+            float n = ((hash(wx, wz) & 15) - 7.5f) * 0.9f * grain;
+            r += n;
+            g += n;
+            b += n;
+        }
+        return pack(r, g, b);
+    }
+
+    private static int landBase(int raw) {
         if (Prefs.get().mapStyle == 1) return 0xFF000000 | (raw & 0xFFFFFF);   // limpo: a cor do bloco como está
         float r = (raw >> 16) & 0xFF, g = (raw >> 8) & 0xFF, b = raw & 0xFF;
         float lum = 0.30f * r + 0.59f * g + 0.11f * b;
@@ -320,6 +342,15 @@ final class MapStyle {
 
     /** Mar com degradê de profundidade, ondas suaves de brilho, espuma na costa e um grão fino. */
     private static int water(int raw, int wx, int wz) {
+        int c = waterBase(raw, wx, wz);
+        float sat = Prefs.get().waterSatPct / 100f;
+        if (sat >= 0.999f) return c;
+        float r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+        float lum = 0.30f * r + 0.59f * g + 0.11f * b;
+        return pack(lum + (r - lum) * sat, lum + (g - lum) * sat, lum + (b - lum) * sat);
+    }
+
+    private static int waterBase(int raw, int wx, int wz) {
         int depth = Math.min(63, (raw >>> 24) - 0x80);
         if (depth < 0) depth = 0;
         if (Prefs.get().mapStyle == 1) {

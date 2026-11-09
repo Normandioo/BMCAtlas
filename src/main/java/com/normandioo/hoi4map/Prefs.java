@@ -24,6 +24,12 @@ final class Prefs {
         int borderPct = 100;
         /** Estilo do terreno: 0 = HOI4 (contraste e ruído), 1 = limpo, como o do Xaero's. */
         int mapStyle = 0;
+        /** Realce do relevo (100-300%). */
+        int reliefPct = 150;
+        /** Granulado por bloco (0-100%). */
+        int grainPct = 30;
+        /** Saturação da água (0-100%). */
+        int waterSatPct = 60;
         boolean cityNames = true;
         /** Marcadores simples (quadradinhos) em vez dos ícones do site. */
         boolean simpleMarkers = false;
@@ -85,6 +91,9 @@ final class Prefs {
     private static void clamp() {
         data.fillPct = Math.max(0, Math.min(100, data.fillPct));
         data.borderPct = Math.max(0, Math.min(100, data.borderPct));
+        data.reliefPct = Math.max(100, Math.min(300, data.reliefPct));
+        data.grainPct = Math.max(0, Math.min(100, data.grainPct));
+        data.waterSatPct = Math.max(0, Math.min(100, data.waterSatPct));
         data.playerIconPct = Math.max(100, Math.min(400, data.playerIconPct));
         data.zoomBiasPct = Math.max(50, Math.min(200, data.zoomBiasPct));
         data.minimapSize = Math.max(64, Math.min(256, data.minimapSize));

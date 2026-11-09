@@ -2518,6 +2518,18 @@ public class MapScreen extends Screen {
             p.mapStyle = i;
             Prefs.changed();
         });
+        stepsRow(g, "Realce do relevo", p.reliefPct + "%", 9, indexOfStep(p.reliefPct, 100, 25, 9), mouseX, mouseY, i -> {
+            p.reliefPct = 100 + i * 25;
+            Prefs.changed();
+        });
+        stepsRow(g, "Granulado do terreno", p.grainPct + "%", 11, indexOfStep(p.grainPct, 0, 10, 11), mouseX, mouseY, i -> {
+            p.grainPct = i * 10;
+            Prefs.changed();
+        });
+        stepsRow(g, "Saturação da água", p.waterSatPct + "%", 11, indexOfStep(p.waterSatPct, 0, 10, 11), mouseX, mouseY, i -> {
+            p.waterSatPct = i * 10;
+            Prefs.changed();
+        });
         toggleRow(g, "Nomes das cidades", p.cityNames, mouseX, mouseY, () -> {
             p.cityNames = !p.cityNames;
             Prefs.save();
