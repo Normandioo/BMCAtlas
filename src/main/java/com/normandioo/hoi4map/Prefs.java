@@ -16,6 +16,12 @@ import java.nio.file.Path;
 final class Prefs {
     private Prefs() {}
 
+    /** Um ponto marcado no mapa. */
+    static final class Mark {
+        String map, name;
+        int x, z;
+    }
+
     /** Os valores salvos em disco. */
     static final class Data {
         /** Intensidade da cor dos países sobre o terreno (0-100%). */
@@ -49,6 +55,8 @@ final class Prefs {
         boolean minimapPlayers = true;
         /** Limites das cidades desenhados no terreno (mapa e minimapa). */
         boolean limits = true;
+        /** Pontos marcados pelo jogador no mapa (só neste computador). */
+        java.util.List<Mark> marks = new java.util.ArrayList<>();
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
