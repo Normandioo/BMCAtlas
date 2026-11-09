@@ -170,9 +170,14 @@ final class Map3D {
                     tt = MapData.topTexture(blk - 1);
                     st = tt == null ? null : MapData.sideTexture(blk - 1);
                 }
+                // paredes dos cubos: tom diferente para cada eixo, como nas faces do Minecraft
+                float wallShade = Math.abs(dirx) > Math.abs(dirz) ? 0.64f : 0.80f;
                 if (tt == null) {
-                    int c = fog <= 0.01f ? color : mixFog(color, fog);
-                    for (int y = ys; y < top; y++) frame[y * rw + col] = c;
+                    int topRowsFlat = Math.max(1, (int) (pxb * 0.55));
+                    int cTop = fog <= 0.01f ? color : mixFog(color, fog);
+                    int wallC = shade(color, wallShade);
+                    int cWall = fog <= 0.01f ? wallC : mixFog(wallC, fog);
+                    for (int y = ys; y < top; y++) frame[y * rw + col] = (y - ys0) < topRowsFlat ? cTop : cWall;
                 } else {
                     // textura de verdade: cima com a cor/tint do mapa, lados escurecidos
                     int cr = (color >> 16) & 0xFF, cg = (color >> 8) & 0xFF, cb = color & 0xFF;
@@ -200,7 +205,7 @@ final class Map3D {
                             if ((tc >>> 24) < 32) base = color;
                             else if (sameTex) base = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
                             else base = mixRgb(tc, color, 0.3f);
-                            out = shade(base, 0.78f);
+                            out = shade(base, wallShade);
                         }
                         frame[y * rw + col] = fog <= 0.01f ? out : mixFog(out, fog);
                     }
