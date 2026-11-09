@@ -57,6 +57,7 @@ public class MapScreen extends Screen {
     private static double viewX, viewZ;
     private static double scale = 1.0;
     private static boolean viewInit;
+    private static SiteTerritories.Locality pendingFocus;     // cidade a focar ao abrir (aviso de captura)
     private static int mode = MODE_POLITICAL;
     private static int tab = TAB_NONE;
     private static String lastWaveKey;     // guerra e mapa da última leitura de cores
@@ -290,6 +291,11 @@ public class MapScreen extends Screen {
         tickWar();
         Perf.end("tick");
         layoutBar();
+        if (pendingFocus != null) {
+            focusCity(pendingFocus);
+            tab = TAB_CITY;
+            pendingFocus = null;
+        }
         List<Hit> t = prevHits;
         prevHits = hits;
         hits = t;
@@ -353,6 +359,13 @@ public class MapScreen extends Screen {
     static void liveTick() {
         tickWar();
         if (mode == MODE_WAR) refreshOverrides();
+    }
+
+    /** Abre o mapa na cidade, no modo guerra, com o destaque pulsante. */
+    static void openAt(SiteTerritories.Locality city) {
+        pendingFocus = city;
+        mode = MODE_WAR;
+        Minecraft.getInstance().setScreen(new MapScreen());
     }
 
     /** A guerra que o minimapa acompanha (a escolhida no mapa, senão a primeira em andamento). */
