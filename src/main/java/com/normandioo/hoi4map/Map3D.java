@@ -175,12 +175,20 @@ final class Map3D {
                 double zc = vx * fx + vy * fy + vz * fz;
                 if (zc < 1) continue;
                 double yc = vx * ux + vy * uy + vz * uz;
-                int ys = (int) Math.floor(halfY - focal * yc / zc);
-                if (ys >= top) {
+                int ysC = (int) Math.floor(halfY - focal * yc / zc);      // linha do topo no centro da célula
+                // borda de trás do cubo: de lá até a de frente é a face de cima
+                double fvx = vx + dirx * 1.45, fvz = vz + dirz * 1.45;
+                double zcF = fvx * fx + vy * fy + fvz * fz;
+                int ys = zcF >= 1 ? (int) Math.floor(halfY - focal * (fvx * ux + vy * uy + fvz * uz) / zcF) : ysC - 2;
+                double nvx = vx + dirx * 0.55, nvz = vz + dirz * 0.55;
+                double zcN = nvx * fx + vy * fy + nvz * fz;
+                int ysTop = zcN >= 1 ? (int) Math.floor(halfY - focal * (nvx * ux + vy * uy + nvz * uz) / zcN) : ysC;
+                if (ysTop >= top) {
                     continue;
                 }
                 int ys0 = ys;
                 if (ys < 0) ys = 0;
+                if (ysTop < 0) ysTop = 0;
                 double pxb = focal * uy / zc;                 // pixels da imagem por bloco, na vertical
                 int yEnd = top;
                 if (botPlane != 0) {
@@ -204,7 +212,7 @@ final class Map3D {
                     colorS = fl == null ? 0xFF707070 : (0xFF000000 | (fl.avg & 0xFFFFFF));
                 }
                 // paredes dos cubos: tom diferente para cada eixo, como nas faces do Minecraft
-                float wallShade = Math.abs(dirx) > Math.abs(dirz) ? (dirx > 0 ? 0.72f : 0.56f) : (dirz > 0 ? 0.86f : 0.68f);
+                float wallShade = (float) (((dirx > 0 ? 0.72 : 0.56) * Math.abs(dirx) + (dirz > 0 ? 0.86 : 0.68) * Math.abs(dirz)) / (Math.abs(dirx) + Math.abs(dirz)));
                 if (tt == null) {
                     int topRowsFlat = Math.max(1, (int) (pxb * 0.55));
                     int cTop = fog <= 0.01f ? colorS : mixFog(colorS, fog);
@@ -228,26 +236,36 @@ final class Map3D {
                     double mip = Math.max(0.0, Math.min(1.0, (pxb - 2.5) / 6.0));   // longe: cor média, perto: textura nítida
                     int avgC = 0xFF000000 | ((int) Math.min(255, ((tt.avg >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tt.avg >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tt.avg & 0xFF) * rb);
                     double dcx = fx * focal + rx * (col - halfX), dcy = fy * focal, dcz = fz * focal + rz * (col - halfX);
-                    boolean alongZ = Math.abs(dirx) > Math.abs(dirz);
-                    double planeC = alongZ ? (dirx > 0 ? ix : ix + 1) : (dirz > 0 ? iz : iz + 1);
+                    double boxBot = botPlane == 0 ? -1.0e4 : botPlane - 64.0;
+                    double bx0 = ix, bx1 = ix + 1.0, bz0 = iz, bz1 = iz + 1.0;
                     int lastDi = -1;
                     MapData.Tex lastTex = null;
                     for (int y = ys; y < yEnd; y++) {
                         if (frame[y * rw + col] != 0) continue;
                         double vv = halfY - y;
                         double ddx = dcx + ux * vv, ddy = dcy + uy * vv, ddz = dcz + uz * vv;
-                        boolean topHit = false;
-                        double hx = 0, hz = 0;
-                        if (ddy < -1e-9) {
-                            double tt0 = (by - cy) / ddy;
-                            if (tt0 > 0) {
-                                hx = camX + ddx * tt0;
-                                hz = camZ + ddz * tt0;
-                                topHit = hx >= ix - 0.02 && hx < ix + 1.02 && hz >= iz - 0.02 && hz < iz + 1.02;
+                        // raio contra o cubo (método das lajes): acha a face tocada e o ponto exato
+                        double tmin = 0, tmax = 1.0e9;
+                        int face = -1;
+                        boolean miss = false;
+                        for (int ax = 0; ax < 3 && !miss; ax++) {
+                            double o = ax == 0 ? camX : ax == 1 ? cy : camZ;
+                            double dd = ax == 0 ? ddx : ax == 1 ? ddy : ddz;
+                            double lo = ax == 0 ? bx0 : ax == 1 ? boxBot : bz0, hi = ax == 0 ? bx1 : ax == 1 ? by : bz1;
+                            if (Math.abs(dd) < 1e-12) {
+                                if (o < lo || o > hi) miss = true;
+                                continue;
                             }
+                            double t1 = (lo - o) / dd, t2 = (hi - o) / dd;
+                            double near = Math.min(t1, t2), far = Math.max(t1, t2);
+                            if (near > tmin) { tmin = near; face = ax; }
+                            if (far < tmax) tmax = far;
                         }
+                        if (miss || face < 0 || tmin > tmax) continue;
+                        double hx = camX + ddx * tmin, hy = cy + ddy * tmin, hz = camZ + ddz * tmin;
                         int out;
-                        if (topHit) {
+                        if (face == 1) {
+                            if (ddy > 0) continue;       // face de baixo: não aparece vista de cima
                             int tx = Math.max(0, Math.min(tt.w - 1, (int) ((hx - ix) * tt.w))), tz = Math.max(0, Math.min(tt.w - 1, (int) ((hz - iz) * tt.w)));
                             int tc = tt.px[tz * tt.w + tx];
                             int tcol;
@@ -255,16 +273,10 @@ final class Map3D {
                             else tcol = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
                             out = shade(mip >= 0.999 ? tcol : mixRgb(avgC, tcol, (float) mip), topLight);
                         } else {
-                            double along, depth;
-                            double den = alongZ ? ddx : ddz;
-                            if (Math.abs(den) < 1e-9) { along = alongZ ? wz : wx; depth = 0; }
-                            else {
-                                double t2 = ((alongZ ? planeC - camX : planeC - camZ)) / den;
-                                along = alongZ ? camZ + ddz * t2 : camX + ddx * t2;
-                                depth = by - (cy + ddy * t2);
-                                if (depth < 0) depth = 0;
-                                if (depth > thick) continue;       // o raio passa por baixo desta camada (vão)
-                            }
+                            double along = face == 0 ? hz : hx;
+                            double depth = by - hy;
+                            if (depth < 0) depth = 0;
+                            float faceShade = face == 0 ? (ddx > 0 ? 0.72f : 0.56f) : (ddz > 0 ? 0.86f : 0.68f);
                             int di = (int) depth;
                             MapData.Tex sx = st == null ? tt : st;
                             boolean deep = false;
@@ -293,12 +305,12 @@ final class Map3D {
                             else if (sameTex) base = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
                             else base = mixRgb(tc, colorS, 0.3f);
                             if (mip < 0.999) base = mixRgb(shade(avgC, 1f), base, (float) mip);
-                            out = shade(base, (float) (wallShade * Math.max(0.6, 1.0 - depth * 0.010)));
+                            out = shade(base, (float) (faceShade * Math.max(0.6, 1.0 - depth * 0.010)));
                         }
                         frame[y * rw + col] = fog <= 0.01f ? out : mixFog(out, fog);
                     }
                 }
-                if (botPlane == 0 && ys < newTop) newTop = ys;
+                if (botPlane == 0 && ysTop < newTop) newTop = ysTop;
                 }
                 top = newTop;
             }
