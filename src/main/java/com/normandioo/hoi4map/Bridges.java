@@ -1,5 +1,6 @@
 package com.normandioo.hoi4map;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,17 +31,24 @@ final class Bridges {
         return drawnOpen;
     }
 
-    private static Boolean liveState(String lowerKey) {
-        for (DynmapMarkers.Marker m : DynmapMarkers.markers()) {
-            boolean same = m.id().toLowerCase(Locale.ROOT).equals(lowerKey);
-            if (!same) {
+    private static List<DynmapMarkers.Marker> stateFrom;
+    private static final java.util.Map<String, Boolean> STATES = new java.util.HashMap<>();
+
+    /** Estado das pontes lido dos marcadores, indexado uma vez por leitura (antes cada ponte varria todos os marcadores). */
+    private static synchronized Boolean liveState(String lowerKey) {
+        List<DynmapMarkers.Marker> markers = DynmapMarkers.markers();
+        if (stateFrom != markers) {
+            STATES.clear();
+            for (DynmapMarkers.Marker m : markers) {
+                Matcher icon = STATE.matcher(m.icon() == null ? "" : m.icon());
+                if (!icon.find()) continue;
+                Boolean open = icon.group(1).equalsIgnoreCase("open");
+                STATES.putIfAbsent(m.id().toLowerCase(Locale.ROOT), open);
                 Matcher mid = MAP_ID.matcher(m.id());
-                same = mid.matches() && (mid.group(1) + "(" + mid.group(2) + ")").toLowerCase(Locale.ROOT).equals(lowerKey);
+                if (mid.matches()) STATES.putIfAbsent((mid.group(1) + "(" + mid.group(2) + ")").toLowerCase(Locale.ROOT), open);
             }
-            if (!same) continue;
-            Matcher icon = STATE.matcher(m.icon() == null ? "" : m.icon());
-            if (icon.find()) return icon.group(1).equalsIgnoreCase("open");
+            stateFrom = markers;
         }
-        return null;
+        return STATES.get(lowerKey);
     }
 }
