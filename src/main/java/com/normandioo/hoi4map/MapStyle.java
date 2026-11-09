@@ -168,7 +168,7 @@ final class MapStyle {
                     }
                 } else {
                     int c;
-                    if (raw != 0) c = land(raw, baseX + x, baseZ + y);
+                    if (raw != 0) c = land(r.px, size, x, y, raw);
                     else if (p != 0) c = 0xFF39424C;     // terra do país ainda não explorada
                     else {
                         OUT[y * size + x] = 0;
@@ -256,7 +256,7 @@ final class MapStyle {
                     OUT[y * size + x] = water(raw, baseX + x, baseZ + y);
                     continue;
                 }
-                int c = land(raw, baseX + x, baseZ + y);
+                int c = land(r.px, size, x, y, raw);
                 if (political || provinces) {
                     int idx = ((y / SPAN) + 1) * N + ((x / SPAN) + 1);
                     int country = rgb[idx];
@@ -290,26 +290,32 @@ final class MapStyle {
     // ------------------------------------------------------------------- cores
 
     /** Terra: um pouco dessaturada, mais escura e com mais contraste. */
-    /** Terra: cor base do estilo + realce do relevo (contraste) + granulado por bloco, ambos ajustáveis. */
-    private static int land(int raw, int wx, int wz) {
-        int c = landBase(raw);
+    /** Terra: suaviza o ruído entre blocos vizinhos (menos granulado, como no Xaero's) e aplica o realce do relevo. */
+    private static int land(int[] px, int size, int x, int y, int raw) {
         Prefs.Data p = Prefs.get();
+        float w = p.smoothPct / 100f * 0.65f;
+        if (w > 0f) {
+            int sr = 0, sg = 0, sb = 0, n = 0;
+            for (int d = 0; d < 4; d++) {
+                int nx = x + (d == 0 ? -1 : d == 1 ? 1 : 0), ny = y + (d == 2 ? -1 : d == 3 ? 1 : 0);
+                if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+                int q = px[ny * size + nx];
+                if (q == 0 || isWater(q)) continue;
+                sr += (q >> 16) & 0xFF;
+                sg += (q >> 8) & 0xFF;
+                sb += q & 0xFF;
+                n++;
+            }
+            if (n > 0) {
+                float r0 = (raw >> 16) & 0xFF, g0 = (raw >> 8) & 0xFF, b0 = raw & 0xFF;
+                raw = pack(r0 + (sr / (float) n - r0) * w, g0 + (sg / (float) n - g0) * w, b0 + (sb / (float) n - b0) * w);
+            }
+        }
+        int c = landBase(raw);
         float k = p.reliefPct / 100f;
-        float grain = p.grainPct / 100f;
-        if (k == 1f && grain == 0f) return c;
+        if (k == 1f) return c;
         float r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
-        if (k != 1f) {
-            r = 96f + (r - 96f) * k;
-            g = 96f + (g - 96f) * k;
-            b = 96f + (b - 96f) * k;
-        }
-        if (grain > 0f) {
-            float n = ((hash(wx, wz) & 15) - 7.5f) * 0.9f * grain;
-            r += n;
-            g += n;
-            b += n;
-        }
-        return pack(r, g, b);
+        return pack(96f + (r - 96f) * k, 96f + (g - 96f) * k, 96f + (b - 96f) * k);
     }
 
     private static int landBase(int raw) {
@@ -392,7 +398,7 @@ final class MapStyle {
             g = lerpf(g, 0xE0, foam);
             b = lerpf(b, 0xEA, foam);
         }
-        float grain = ((hash(wx, wz) & 7) - 3.5f) * 0.18f;
+        float grain = ((hash(wx, wz) & 7) - 3.5f) * 0.06f;
         return pack(r + grain, g + grain, b + grain * 1.2f);
     }
 

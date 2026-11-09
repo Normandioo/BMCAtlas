@@ -1307,7 +1307,8 @@ public class MapScreen extends Screen {
         for (Btn b : barButtons()) {
             switch (b.glyph()) {
                 case "list", "treaty" -> top.add(b);
-                case "source", "reload", "maps", "settings" -> right.add(b);
+                case "source", "reload", "maps", "settings", "gen" -> right.add(b);
+                case "diplomacy", "war" -> { }      // continuam nas teclas 4 e 5 e nos painéis
                 default -> dock.add(b);
             }
         }
@@ -2759,8 +2760,8 @@ public class MapScreen extends Screen {
             p.reliefPct = 100 + i * 25;
             Prefs.changed();
         });
-        stepsRow(g, "Granulado do terreno", p.grainPct + "%", 11, indexOfStep(p.grainPct, 0, 10, 11), mouseX, mouseY, i -> {
-            p.grainPct = i * 10;
+        stepsRow(g, "Suavização do terreno (menos granulado)", p.smoothPct + "%", 11, indexOfStep(p.smoothPct, 0, 10, 11), mouseX, mouseY, i -> {
+            p.smoothPct = i * 10;
             Prefs.changed();
         });
         stepsRow(g, "Saturação da água", p.waterSatPct + "%", 11, indexOfStep(p.waterSatPct, 0, 10, 11), mouseX, mouseY, i -> {

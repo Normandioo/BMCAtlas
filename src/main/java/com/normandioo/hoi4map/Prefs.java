@@ -26,8 +26,8 @@ final class Prefs {
         int mapStyle = 0;
         /** Realce do relevo (100-300%). */
         int reliefPct = 150;
-        /** Granulado por bloco (0-100%). */
-        int grainPct = 30;
+        /** Suavização do terreno: menos ruído entre blocos (0-100%). */
+        int smoothPct = 60;
         /** Saturação da água (0-100%). */
         int waterSatPct = 60;
         boolean cityNames = true;
@@ -93,7 +93,7 @@ final class Prefs {
         data.fillPct = Math.max(0, Math.min(100, data.fillPct));
         data.borderPct = Math.max(0, Math.min(100, data.borderPct));
         data.reliefPct = Math.max(100, Math.min(300, data.reliefPct));
-        data.grainPct = Math.max(0, Math.min(100, data.grainPct));
+        data.smoothPct = Math.max(0, Math.min(100, data.smoothPct));
         data.waterSatPct = Math.max(0, Math.min(100, data.waterSatPct));
         data.playerIconPct = Math.max(100, Math.min(400, data.playerIconPct));
         data.zoomBiasPct = Math.max(50, Math.min(200, data.zoomBiasPct));
