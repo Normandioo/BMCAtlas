@@ -49,6 +49,8 @@ final class Prefs {
         boolean minimapPlayers = true;
         /** Limites das cidades desenhados no terreno (mapa e minimapa). */
         boolean limits = true;
+        /** Mapa grande inclinado (visão 3D). */
+        boolean view3d = false;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

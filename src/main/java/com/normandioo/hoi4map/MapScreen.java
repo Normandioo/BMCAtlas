@@ -217,8 +217,13 @@ public class MapScreen extends Screen {
         return areaCx() + (blockX - viewX) * scale;
     }
 
+    /** Visão 3D: o mapa fica inclinado (o eixo norte-sul encurta), como um tabuleiro visto de cima e de lado. */
+    private static double tilt() {
+        return Prefs.get().view3d ? 0.58 : 1.0;
+    }
+
     private double toScreenY(double blockZ) {
-        return areaCy() + (blockZ - viewZ) * scale;
+        return areaCy() + (blockZ - viewZ) * scale * tilt();
     }
 
     private double toBlockX(double sx) {
@@ -226,7 +231,7 @@ public class MapScreen extends Screen {
     }
 
     private double toBlockZ(double sy) {
-        return viewZ + (sy - areaCy()) / scale;
+        return viewZ + (sy - areaCy()) / (scale * tilt());
     }
 
     private boolean blockedAt(List<Hit> list, double mx, double my) {
@@ -1279,6 +1284,10 @@ public class MapScreen extends Screen {
                 : OnlinePlayers.error() != null ? "Ligado (dynmap sem resposta: só quem está por perto)" : "Ligado (carregando...)");
         b.add(new Btn("players", showPlayers && dyn, dyn, playersTip, () -> showPlayers = !showPlayers, false));
 
+        b.add(new Btn("view3d", Prefs.get().view3d, true, "Visão 3D\n" + (Prefs.get().view3d ? "Ligada (mapa inclinado). (T)" : "Desligada. (T)"), () -> {
+            Prefs.get().view3d = !Prefs.get().view3d;
+            Prefs.save();
+        }, false));
         b.add(new Btn("center", false, true, "Centralizar em você", this::centerOnPlayer, true));
         String sourceTip = !haveSite ? "Fonte: manual\nSem dados do site."
                 : SiteTerritories.useSite ? "Fonte: site\nClique para usar o modo manual." : "Fonte: manual\nClique para usar o site.";
@@ -3670,7 +3679,7 @@ public class MapScreen extends Screen {
             if (Math.abs(event.x() - pressX) > 3 || Math.abs(event.y() - pressY) > 3) moved = true;
             if (moved) {
                 viewX -= dx / scale;
-                viewZ -= dy / scale;
+                viewZ -= dy / (scale * tilt());
             }
             return true;
         }
@@ -3744,7 +3753,7 @@ public class MapScreen extends Screen {
         double bzz = toBlockZ(mouseY);
         scale = Math.max(0.03, Math.min(8.0, scale * Math.pow(1.2, scrollY)));
         viewX = bxx - (mouseX - areaCx()) / scale;
-        viewZ = bzz - (mouseY - areaCy()) / scale;
+        viewZ = bzz - (mouseY - areaCy()) / (scale * tilt());
         return true;
     }
 
@@ -3773,6 +3782,11 @@ public class MapScreen extends Screen {
         }
         if (k == GLFW.GLFW_KEY_5 && siteMode()) {
             enterWar();
+            return true;
+        }
+        if (k == GLFW.GLFW_KEY_T) {
+            Prefs.get().view3d = !Prefs.get().view3d;
+            Prefs.save();
             return true;
         }
         return super.keyPressed(event);
