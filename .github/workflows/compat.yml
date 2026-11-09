@@ -33,9 +33,6 @@ jobs:
         if: always()
         run: |
           j=$(ls ~/.gradle/caches/fabric-loom/${{ matrix.mc }}/minecraft-merged.jar)
-          javap -cp $j -public net.minecraft.client.gui.Hud | grep -iE "overlay|message|actionbar"
-          echo ---OPTS; javap -cp $j -public net.minecraft.client.Options | grep -iE "hide|gui"
-          echo ---MC; javap -cp $j -public net.minecraft.client.Minecraft | grep -E "getWindow|window|mouseHandler|setScreen|getInstance"
-          echo ---MOUSE; javap -cp $j -public net.minecraft.client.MouseHandler | grep -iE "press|left|xpos|ypos|handle|button"
-          echo ---WIN; javap -cp $j -public com.mojang.blaze3d.platform.Window | grep -iE "handle|window\(|getWindow"
-          echo ---LWJGL; unzip -l $j | grep -iE "org/lwjgl" | head -3; find ~/.gradle -name '*.jar' | grep -iE "lwjgl-(glfw|sdl)|lwjgl-3" | head; find ~/.gradle -name 'lwjgl*' | head -5
+          for c in net.minecraft.client.gui.Hud net.minecraft.client.gui.Gui net.minecraft.client.Options net.minecraft.client.Minecraft; do echo "## $c"; javap -cp $j -public $c | grep -iE "hide|hidden|visible|showHud|toggleGui"; done
+          echo "## SDL"; find ~/.gradle -iname '*lwjgl*sdl*' | head -3
+          javap -cp $j -public net.minecraft.client.Minecraft | grep -E " screen|Screen\(\)"
