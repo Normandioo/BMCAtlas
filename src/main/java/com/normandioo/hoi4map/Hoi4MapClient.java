@@ -17,6 +17,7 @@ public class Hoi4MapClient implements ClientModInitializer {
     public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
 
     public static KeyMapping OPEN_KEY;
+    public static KeyMapping MINIMAP_KEY;
     private int ticks;
 
     @Override
@@ -24,6 +25,9 @@ public class Hoi4MapClient implements ClientModInitializer {
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
         OPEN_KEY = KeyBindingHelper.registerKeyBinding(
                 new KeyMapping("key.hoi4map.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
+
+        MINIMAP_KEY = KeyBindingHelper.registerKeyBinding(
+                new KeyMapping("key.hoi4map.minimap", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 
         Prefs.load();
         Countries.load();
@@ -36,6 +40,9 @@ public class Hoi4MapClient implements ClientModInitializer {
             if (mc.level == null || mc.player == null) return;
             while (OPEN_KEY.consumeClick()) {
                 if (mc.screen == null) mc.setScreen(new MapScreen());
+            }
+            while (MINIMAP_KEY.consumeClick()) {
+                if (mc.screen == null) Minimap.expanded = !Minimap.expanded;
             }
             MapData.tick(mc);
             RemoteImages.pump();

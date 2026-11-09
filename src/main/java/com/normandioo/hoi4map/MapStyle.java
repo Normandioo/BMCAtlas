@@ -52,6 +52,7 @@ final class MapStyle {
      * por dentro; 0 = não tinge. null = sem camada de zonas. Mude junto com overrideVersion.
      */
     static volatile int[] zoneTint;
+    private static int[] LINE_RGB = new int[0];
 
     private static final short[] ZONE_GRID = new short[MapData.REGION_PX * MapData.REGION_PX];
 
@@ -78,12 +79,31 @@ final class MapStyle {
         }
         if (!anyZone) return;
         int size = MapData.REGION_PX;
+        if (LINE_RGB.length < tint.length) LINE_RGB = new int[tint.length];
+        for (int i = 0; i < tint.length; i++) LINE_RGB[i] = tint[i] == 0 ? 0 : (tint[i] & 0xFFFFFF) == 0xFFFFFF ? 0xF4F1E8 : tint[i] & 0xFFFFFF;
         if (!SiteTerritories.rasterZones(d, r.rx * size, r.rz * size, size, size, ZONE_GRID, include)) return;
-        for (int i = 0; i < size * size; i++) {
-            int z = ZONE_GRID[i];
-            if (z == 0 || out[i] == 0) continue;
-            int t = tint[z - 1];
-            out[i] = mix(out[i], 0xFF000000 | t, (t >>> 24) / 255f);
+        int bx = r.rx * size, bz = r.rz * size;
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                int i = y * size + x;
+                int z = ZONE_GRID[i];
+                if (z != 0 && out[i] != 0) {
+                    int t = tint[z - 1];
+                    out[i] = mix(out[i], 0xFF000000 | t, (t >>> 24) / 255f);
+                }
+                // linha do limite gravada no próprio terreno (como no outro mod): fica parada, tem tamanho de bloco e
+                // passa por cima da água; tracejada em trechos de 8 blocos
+                int lz = z;
+                boolean edge = false;
+                if (x > 0 && ZONE_GRID[i - 1] != z) { edge = true; if (lz == 0) lz = ZONE_GRID[i - 1]; }
+                if (x < size - 1 && ZONE_GRID[i + 1] != z) { edge = true; if (lz == 0) lz = ZONE_GRID[i + 1]; }
+                if (y > 0 && ZONE_GRID[i - size] != z) { edge = true; if (lz == 0) lz = ZONE_GRID[i - size]; }
+                if (y < size - 1 && ZONE_GRID[i + size] != z) { edge = true; if (lz == 0) lz = ZONE_GRID[i + size]; }
+                if (!edge || lz == 0 || (((bx + x) >> 3) + ((bz + y) >> 3) & 1) != 0) continue;
+                int lc = LINE_RGB[lz - 1 < LINE_RGB.length ? lz - 1 : 0];
+                if (lc == 0) continue;
+                out[i] = out[i] == 0 ? 0xFF000000 | (lc & 0xFFFFFF) : mix(out[i], 0xFF000000 | (lc & 0xFFFFFF), 0.92f);
+            }
         }
     }
 

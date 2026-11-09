@@ -62,7 +62,7 @@ public class MapScreen extends Screen {
     private static final double[] SCROLL = new double[10];
     private static double cardScroll;
     private static boolean showCities = true;
-    private static boolean showLimits = false;
+    private static boolean showLimits = Prefs.get().limits;
     private static boolean showPlayers = true;
     private static int dmTab;               // aba do menu diplomático: 0 alianças, 1 NAP, 2 purge, 3 diplolock
     private static boolean dmAllPurge;
@@ -142,7 +142,23 @@ public class MapScreen extends Screen {
 
     /** O modo com que o minimapa pinta o terreno: o do mapa grande, mas os de relações viram o político. */
     static int minimapMode() {
-        return MapStyle.relational(mode) ? MODE_POLITICAL : mode;
+        // guerra/diplomacia ativas no mapa também pintam o minimapa (as cores ficam guardadas em MapStyle)
+        return mode;
+    }
+
+    /** Camada de limites quando a tela do mapa está fechada (o minimapa usa as mesmas texturas). */
+    static void idleTint() {
+        SiteTerritories.Data d = SiteTerritories.data();
+        int[] t = null;
+        if (d != null && siteMode() && !d.zones.isEmpty() && showLimits) {
+            t = new int[d.zones.size()];
+            Arrays.fill(t, 0x1AFFFFFF);
+        }
+        if (!Arrays.equals(t, lastTint)) {
+            lastTint = t;
+            MapStyle.zoneTint = t;
+            MapStyle.overrideVersion++;
+        }
     }
 
     private static boolean siteMode() {
@@ -313,9 +329,12 @@ public class MapScreen extends Screen {
             List<SiteTerritories.WarInfo> wars = Relations.wars(d);
             r = Relations.war(d, warSel >= 0 ? wars.get(warSel) : null);
         }
+        // só repinta o mapa se as cores realmente mudaram (a leitura do dynmap chega a cada poucos segundos)
+        boolean same = Arrays.equals(MapStyle.countryOverride, r.country()) && Objects.equals(MapStyle.provinceOverride, r.provinces())
+                && Objects.equals(zoneColors, r.zones());
         MapStyle.countryOverride = r.country();
         MapStyle.provinceOverride = r.provinces();
-        MapStyle.overrideVersion++;
+        if (!same) MapStyle.overrideVersion++;
         legend = r.legend();
         zoneColors = r.zones();
     }
@@ -368,7 +387,6 @@ public class MapScreen extends Screen {
             drawManualSelection(g);
         } else if (d != null) {
             if (mode == MODE_POLITICAL || rel) drawSiteNames(g, d);
-            drawZones(g, d);
             drawWarFront(g, d);
             drawCities(g, d, mouseX, mouseY);
             drawWarMarkers(g, d);
@@ -1250,7 +1268,11 @@ public class MapScreen extends Screen {
                     SCROLL[TAB_DIPLOMENU] = 0;
                 }, false));
         b.add(new Btn("cities", showCities, site, "Cidades\n" + (showCities ? "Ligado" : "Desligado") + (site ? "" : needSite), () -> showCities = !showCities, true));
-        b.add(new Btn("limits", showLimits, site, "Limites das cidades\n" + (showLimits ? "Ligado" : "Desligado") + (site ? "" : needSite), () -> showLimits = !showLimits, false));
+        b.add(new Btn("limits", showLimits, site, "Limites das cidades\n" + (showLimits ? "Ligado" : "Desligado") + (site ? "" : needSite), () -> {
+            showLimits = !showLimits;
+            Prefs.get().limits = showLimits;
+            Prefs.save();
+        }, false));
         boolean dyn = SiteTerritories.showPlayers();
         String playersTip = "Jogadores online\n" + (!dyn ? "Desativado em site.json" : !showPlayers ? "Desligado"
                 : OnlinePlayers.live() ? "Ligado (" + OnlinePlayers.list().size() + " no mapa, via dynmap)"
@@ -1308,7 +1330,7 @@ public class MapScreen extends Screen {
             switch (b.glyph()) {
                 case "list", "treaty" -> top.add(b);
                 case "source", "reload", "maps", "settings", "gen" -> right.add(b);
-                case "diplomacy", "war" -> { }      // continuam nas teclas 4 e 5 e nos painéis
+                case "diplomacy" -> { }      // continua na tecla 4 e no painel
                 default -> dock.add(b);
             }
         }
@@ -2828,10 +2850,6 @@ public class MapScreen extends Screen {
         });
         toggleRow(g, "Cidades no minimapa", p.minimapCities, mouseX, mouseY, () -> {
             p.minimapCities = !p.minimapCities;
-            Prefs.save();
-        });
-        toggleRow(g, "Limites no minimapa", p.minimapLimits, mouseX, mouseY, () -> {
-            p.minimapLimits = !p.minimapLimits;
             Prefs.save();
         });
         toggleRow(g, "Jogadores no minimapa", p.minimapPlayers, mouseX, mouseY, () -> {

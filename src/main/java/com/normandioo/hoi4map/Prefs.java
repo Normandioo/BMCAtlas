@@ -47,7 +47,8 @@ final class Prefs {
         int minimapCorner = 1;       // 0 sup. esq., 1 sup. dir., 2 inf. esq., 3 inf. dir.
         boolean minimapCities = true;
         boolean minimapPlayers = true;
-        boolean minimapLimits = true;
+        /** Limites das cidades desenhados no terreno (mapa e minimapa). */
+        boolean limits = true;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

@@ -5,6 +5,13 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.RenderPipelines;
 
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.gui.components.PlayerFaceRenderer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.monster.Enemy;
+
 import java.util.List;
 import java.util.Locale;
 
@@ -17,19 +24,30 @@ final class Minimap {
 
     private static final int MARGIN = 6;
 
+    /** Z alterna o minimapa ampliado (centro da tela). */
+    static boolean expanded;
+    private static final String[] HEADING = {"S", "SO", "O", "NO", "N", "NE", "L", "SE"};
+
     static void render(GuiGraphics g, float partial) {
         Prefs.Data p = Prefs.get();
         Minecraft mc = Minecraft.getInstance();
         if (!p.minimap || mc.player == null || mc.level == null || mc.options.hideGui) return;
         if (mc.screen instanceof MapScreen) return;       // o mapa grande já está na tela
         if (debugShown(mc)) return;                      // F3 aberto: não cobrir as informações
+        MapScreen.idleTint();                             // limites das cidades gravados no terreno
         Font font = mc.font;
-        int size = p.minimapSize;
         int sw = g.guiWidth(), sh = g.guiHeight();
-        int x = (p.minimapCorner & 1) == 0 ? MARGIN : sw - size - MARGIN;
-        int y = p.minimapCorner < 2 ? MARGIN : sh - size - MARGIN - 22;
-        // o vanilla ocupa o canto superior direito (efeitos); desce um pouco
-        if (p.minimapCorner == 1) y += 24;
+        int size = expanded ? Math.max(p.minimapSize, Math.min(sh - 70, (int) (sw * 0.6))) : p.minimapSize;
+        int x, y;
+        if (expanded) {
+            x = (sw - size) / 2;
+            y = (sh - size) / 2 - 8;
+        } else {
+            x = (p.minimapCorner & 1) == 0 ? MARGIN : sw - size - MARGIN;
+            y = p.minimapCorner < 2 ? MARGIN : sh - size - MARGIN - 22;
+            // o vanilla ocupa o canto superior direito (efeitos); desce um pouco
+            if (p.minimapCorner == 1) y += 24;
+        }
 
         // escala e posição alinhadas aos pixels físicos: o terreno desliza sem tremer
         double gs = Math.max(1.0, mc.getWindow().getGuiScale());
@@ -55,7 +73,8 @@ final class Minimap {
         SiteTerritories.Data d = MapData.siteApplies() && SiteTerritories.active() ? SiteTerritories.data() : null;
         int uploads = 0;
         g.pose().pushMatrix();
-        g.pose().translate((float) (Math.round((ox - cx * scale) * gs) / gs), (float) (Math.round((oy - cz * scale) * gs) / gs));
+        final double tx = Math.round((ox - cx * scale) * gs) / gs, ty = Math.round((oy - cz * scale) * gs) / gs;
+        g.pose().translate((float) tx, (float) ty);
         g.pose().scale((float) scale, (float) scale);
         for (int rx = rx0; rx <= rx1; rx++) {
             for (int rz = rz0; rz <= rz1; rz++) {
@@ -75,9 +94,9 @@ final class Minimap {
         }
         g.pose().popMatrix();
 
-        if (d != null && p.minimapLimits) drawLimits(g, d, ox, oy, cx, cz, scale, size);
-        if (d != null && p.minimapCities) drawCities(g, d, ox, oy, cx, cz, scale, size);
-        if (p.minimapPlayers && SiteTerritories.showPlayers()) drawPlayers(g, d, mc, ox, oy, cx, cz, scale, size);
+        if (d != null && p.minimapCities) drawCities(g, d, tx, ty, ox, oy, scale, size, gs);
+        if (mc.options.keyPlayerList.isDown()) drawMobs(g, mc, ox, oy, cx, cz, scale, size, partial, gs);
+        if (p.minimapPlayers) drawPlayers(g, d, mc, ox, oy, cx, cz, scale, size, partial, gs);
         drawSelf(g, mc, ox, oy, partial);
         g.disableScissor();
 
@@ -106,52 +125,20 @@ final class Minimap {
         }
     }
 
-    /** Limites de captura das cidades como linhas finas (tracejadas), na cor do país. */
-    private static void drawLimits(GuiGraphics g, SiteTerritories.Data d, int ox, int oy, double cx, double cz, double scale, int size) {
-        if (d.zones == null) return;
-        double half = size / 2.0 / scale + 8;
-        double l = cx - half, r = cx + half, t = cz - half, b = cz + half;
-        for (SiteTerritories.Zone z : d.zones) {
-            double[] box = z.box;
-            if (box == null || box[2] < l || box[0] > r || box[3] < t || box[1] > b) continue;
-            int rgb = z.countryIdx >= 0 ? (d.rgb[z.countryIdx] | 0xFF000000) : 0xFFF4F1E8;
-            for (double[] ring : z.rings) {
-                int n = ring.length / 2;
-                if (n < 2) continue;
-                double px = ox + (ring[0] - cx) * scale, py = oy + (ring[1] - cz) * scale;
-                double fx = px, fy = py;
-                for (int i = 1; i <= n; i++) {
-                    double x = i == n ? fx : ox + (ring[2 * i] - cx) * scale, y = i == n ? fy : oy + (ring[2 * i + 1] - cz) * scale;
-                    double dx = x - px, dy = y - py, len = Math.hypot(dx, dy);
-                    if (len < 3 && i < n) continue;
-                    if (!((px < ox - half * scale && x < ox - half * scale) || (px > ox + half * scale && x > ox + half * scale)
-                            || (py < oy - half * scale && y < oy - half * scale) || (py > oy + half * scale && y > oy + half * scale))) {
-                        g.pose().pushMatrix();
-                        g.pose().translate((float) px, (float) py);
-                        g.pose().rotate((float) Math.atan2(dy, dx));
-                        g.fill(0, 0, (int) Math.ceil(len) + 1, 1, rgb);
-                        g.pose().popMatrix();
-                    }
-                    px = x;
-                    py = y;
-                }
-            }
-        }
-    }
-
     private static boolean touchesSite(SiteTerritories.Data d, int rx, int rz) {
         int x0 = rx * MapData.REGION_PX, z0 = rz * MapData.REGION_PX;
         return x0 + MapData.REGION_PX > d.minX && x0 <= d.maxX && z0 + MapData.REGION_PX > d.minZ && z0 <= d.maxZ;
     }
 
-    private static void drawCities(GuiGraphics g, SiteTerritories.Data d, int ox, int oy, double cx, double cz, double scale, int size) {
-        int half = size / 2 + 4;
+    private static void drawCities(GuiGraphics g, SiteTerritories.Data d, double tx, double ty, int ox, int oy, double scale, int size, double gs) {
+        int half = size / 2 + 6;
         for (SiteTerritories.Locality l : d.cityOrder) {
             // só as maiores quando o zoom é pequeno
             if (l.tier < 1 && scale < 1.0) continue;
             if (l.tier < 2 && scale < 0.6) continue;
             if (l.tier < 3 && scale < 0.35) continue;
-            double sx = ox + (l.x + 0.5 - cx) * scale, sy = oy + (l.z + 0.5 - cz) * scale;
+            // mesma grade de pixels físicos do terreno: o símbolo não balança quando você anda
+            double sx = Math.round((tx + (l.x + 0.5) * scale) * gs) / gs, sy = Math.round((ty + (l.z + 0.5) * scale) * gs) / gs;
             if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
             int isz = l.tier >= 3 ? 12 : l.tier == 2 ? 10 : 8;
             RemoteImages.Img img = cityImage(l, isz);
@@ -183,15 +170,47 @@ final class Minimap {
         return null;
     }
 
-    private static void drawPlayers(GuiGraphics g, SiteTerritories.Data d, Minecraft mc, int ox, int oy, double cx, double cz, double scale, int size) {
-        OnlinePlayers.tick();
+    /** Mobs por perto (segurando TAB): vermelho = hostil, verde = os outros. */
+    private static void drawMobs(GuiGraphics g, Minecraft mc, int ox, int oy, double cx, double cz, double scale, int size, float partial, double gs) {
+        double half = size / 2.0 + 4;
+        for (Entity e : mc.level.entitiesForRendering()) {
+            if (!(e instanceof Mob) || !e.isAlive()) continue;
+            double ex = net.minecraft.util.Mth.lerp(partial, e.xo, e.getX()), ez = net.minecraft.util.Mth.lerp(partial, e.zo, e.getZ());
+            double sx = Math.round((ox + (ex - cx) * scale) * gs) / gs, sy = Math.round((oy + (ez - cz) * scale) * gs) / gs;
+            if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
+            int rgb = e instanceof Enemy ? 0xFFE0453C : 0xFF5CCB5F;
+            g.pose().pushMatrix();
+            g.pose().translate((float) sx, (float) sy);
+            g.fill(-2, -2, 3, 3, 0xFF05080C);
+            g.fill(-1, -1, 2, 2, rgb);
+            g.pose().popMatrix();
+        }
+    }
+
+    /** Cabeças dos jogadores: quem está carregado por perto usa a skin real; o resto, a cabeça do dynmap. */
+    private static void drawPlayers(GuiGraphics g, SiteTerritories.Data d, Minecraft mc, int ox, int oy, double cx, double cz, double scale, int size, float partial, double gs) {
         String self = mc.player.getName().getString();
+        double half = size / 2.0 + 6;
+        java.util.Set<String> drawn = new java.util.HashSet<>();
+        for (AbstractClientPlayer pl : mc.level.players()) {
+            if (pl == mc.player) continue;
+            drawn.add(pl.getName().getString().toLowerCase(Locale.ROOT));
+            double px = net.minecraft.util.Mth.lerp(partial, pl.xo, pl.getX()), pz = net.minecraft.util.Mth.lerp(partial, pl.zo, pl.getZ());
+            double sx = Math.round((ox + (px - cx) * scale) * gs) / gs, sy = Math.round((oy + (pz - cz) * scale) * gs) / gs;
+            if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
+            g.pose().pushMatrix();
+            g.pose().translate((float) sx, (float) sy);
+            g.fill(-6, -6, 6, 6, 0xFF05080C);
+            PlayerFaceRenderer.draw(g, pl.getSkin(), -5, -5, 10);
+            g.pose().popMatrix();
+        }
+        if (!SiteTerritories.showPlayers()) return;
+        OnlinePlayers.tick();
         long now = System.currentTimeMillis();
-        List<OnlinePlayers.Entry> list = OnlinePlayers.list();
-        int half = size / 2 + 4;
-        for (OnlinePlayers.Entry e : list) {
-            if (e.account.equalsIgnoreCase(self)) continue;
-            double sx = ox + (e.x(now) - cx) * scale, sy = oy + (e.z(now) - cz) * scale;
+        String dyn = SiteTerritories.dynmapUrl();
+        for (OnlinePlayers.Entry e : OnlinePlayers.list()) {
+            if (e.account.equalsIgnoreCase(self) || drawn.contains(e.account.toLowerCase(Locale.ROOT))) continue;
+            double sx = Math.round((ox + (e.x(now) - cx) * scale) * gs) / gs, sy = Math.round((oy + (e.z(now) - cz) * scale) * gs) / gs;
             if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
             int rgb = 0xFFFFFFFF;
             if (d != null) {
@@ -199,10 +218,16 @@ final class Minimap {
                 Integer ci = d.countryOfPlayer.get(site != null ? site.toLowerCase(Locale.ROOT) : e.account.toLowerCase(Locale.ROOT));
                 if (ci != null) rgb = d.rgb[ci] | 0xFF000000;
             }
+            RemoteImages.Img face = dyn == null ? null : RemoteImages.icon(dyn + "tiles/faces/32x32/" + e.account + ".png", 10);
             g.pose().pushMatrix();
             g.pose().translate((float) sx, (float) sy);
-            g.fill(-2, -2, 3, 3, 0xFF05080C);
-            g.fill(-1, -1, 2, 2, rgb);
+            if (face != null) {
+                g.fill(-6, -6, 6, 6, rgb);
+                g.blit(RenderPipelines.GUI_TEXTURED, face.id(), -5, -5, 0f, 0f, 10, 10, face.w(), face.h(), face.w(), face.h());
+            } else {
+                g.fill(-2, -2, 3, 3, 0xFF05080C);
+                g.fill(-1, -1, 2, 2, rgb);
+            }
             g.pose().popMatrix();
         }
     }
