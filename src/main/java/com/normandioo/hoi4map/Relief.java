@@ -205,9 +205,10 @@ final class Relief {
                 int rx = Math.floorDiv(wx, REGION);
                 if (rx != lastRx || rz != lastRz) { hs = src.hgt(rx, rz, lh); lastRx = rx; lastRz = rz; }
                 int v = hs == null ? 0 : hs[(Math.floorMod(wz, REGION) >> lh) * hw + (Math.floorMod(wx, REGION) >> lh)];
-                hy[j * nx + i] = (v == 0 ? UNKNOWN_H : v) - 64f;
+                hy[j * nx + i] = v == 0 ? Float.NaN : v - 64f;
             }
         }
+        cleanHeights(hy, nx, nz, step);
         double ll = Math.sqrt(LIGHT_X * LIGHT_X + LIGHT_Y * LIGHT_Y + LIGHT_Z * LIGHT_Z);
         double dot0 = LIGHT_Y / ll;
         double[] p = new double[3];
@@ -260,6 +261,66 @@ final class Relief {
                 }
             }
         });
+    }
+
+
+    /** Preenche alturas desconhecidas pelos vizinhos, tira torres finas (prédios, árvores) e limita a inclinação. */
+    private static void cleanHeights(float[] hy, int nx, int nz, int step) {
+        int n = nx * nz;
+        // 1) desconhecidos: média dos vizinhos conhecidos, espalhando
+        for (int pass = 0; pass < 24; pass++) {
+            boolean any = false;
+            for (int j = 0; j < nz; j++) for (int i = 0; i < nx; i++) {
+                int k = j * nx + i;
+                if (!Float.isNaN(hy[k])) continue;
+                float sum = 0; int c = 0;
+                if (i > 0 && !Float.isNaN(hy[k - 1])) { sum += hy[k - 1]; c++; }
+                if (i < nx - 1 && !Float.isNaN(hy[k + 1])) { sum += hy[k + 1]; c++; }
+                if (j > 0 && !Float.isNaN(hy[k - nx])) { sum += hy[k - nx]; c++; }
+                if (j < nz - 1 && !Float.isNaN(hy[k + nx])) { sum += hy[k + nx]; c++; }
+                if (c > 0) hy[k] = sum / c; else any = true;
+            }
+            if (!any) break;
+        }
+        for (int k = 0; k < n; k++) if (Float.isNaN(hy[k])) hy[k] = UNKNOWN_H - 64f;
+        // 2) abertura (erode + dilata): some o que for mais estreito que ~5 blocos
+        int r = Math.max(1, (int) Math.ceil(2.5 / step));
+        float[] t = new float[n];
+        morph(hy, t, nx, nz, r, true);
+        morph(t, hy, nx, nz, r, false);
+        // 3) inclinação máxima entre vértices vizinhos
+        float d = 1.6f * step;
+        for (int pass = 0; pass < 2; pass++) {
+            for (int j = 0; j < nz; j++) for (int i = 0; i < nx; i++) {
+                int k = j * nx + i;
+                float m = hy[k];
+                if (i > 0) m = Math.min(m, hy[k - 1] + d);
+                if (j > 0) m = Math.min(m, hy[k - nx] + d);
+                hy[k] = m;
+            }
+            for (int j = nz - 1; j >= 0; j--) for (int i = nx - 1; i >= 0; i--) {
+                int k = j * nx + i;
+                float m = hy[k];
+                if (i < nx - 1) m = Math.min(m, hy[k + 1] + d);
+                if (j < nz - 1) m = Math.min(m, hy[k + nx] + d);
+                hy[k] = m;
+            }
+        }
+    }
+
+    /** Mínimo (erode) ou máximo (dilata) numa janela quadrada de raio r, em duas passadas. */
+    private static void morph(float[] in, float[] out, int nx, int nz, int r, boolean min) {
+        float[] tmp = new float[in.length];
+        for (int j = 0; j < nz; j++) for (int i = 0; i < nx; i++) {
+            float m = in[j * nx + i];
+            for (int a = Math.max(0, i - r); a <= Math.min(nx - 1, i + r); a++) { float v = in[j * nx + a]; m = min ? Math.min(m, v) : Math.max(m, v); }
+            tmp[j * nx + i] = m;
+        }
+        for (int j = 0; j < nz; j++) for (int i = 0; i < nx; i++) {
+            float m = tmp[j * nx + i];
+            for (int b = Math.max(0, j - r); b <= Math.min(nz - 1, j + r); b++) { float v = tmp[b * nx + i]; m = min ? Math.min(m, v) : Math.max(m, v); }
+            out[j * nx + i] = m;
+        }
     }
 
     /** Um triângulo com textura, luz e teste de profundidade, nas linhas [ya, yb). */
