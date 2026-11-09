@@ -31,6 +31,7 @@ final class Prefs {
         /** Saturação da água (0-100%). */
         int waterSatPct = 60;
         boolean cityNames = true;
+        boolean countryNames = true;
         /** Marcadores simples (quadradinhos) em vez dos ícones do site. */
         boolean simpleMarkers = false;
         /** Tamanho dos ícones dos jogadores online (100-400%). */

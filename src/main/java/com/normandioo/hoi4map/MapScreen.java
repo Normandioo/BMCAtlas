@@ -402,7 +402,7 @@ public class MapScreen extends Screen {
 
     /** Nomes dos países: cada um cabe inteiro dentro do território (posição calculada por LabelFit). */
     private void drawSiteNames(GuiGraphics g, SiteTerritories.Data d) {
-        if (scale > 1.2) return; // muito perto: os nomes só atrapalham
+        if (!Prefs.get().countryNames || scale > 1.2) return; // desligado, ou muito perto: os nomes só atrapalham
         for (int c = 0; c < d.ids.length; c++) {
             if (d.shape[c] == null) continue;
             String text = d.labels[c].toUpperCase();
@@ -480,6 +480,7 @@ public class MapScreen extends Screen {
 
     /** Modo manual: nome no centro do país, com o tamanho limitado pela área real. */
     private void drawManualNames(GuiGraphics g) {
+        if (!Prefs.get().countryNames) return;
         refreshStats();
         int span = MapData.PROV * 16;
         for (Map.Entry<String, double[]> e : stats.entrySet()) {
@@ -2529,6 +2530,10 @@ public class MapScreen extends Screen {
         stepsRow(g, "Saturação da água", p.waterSatPct + "%", 11, indexOfStep(p.waterSatPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.waterSatPct = i * 10;
             Prefs.changed();
+        });
+        toggleRow(g, "Nomes dos países", p.countryNames, mouseX, mouseY, () -> {
+            p.countryNames = !p.countryNames;
+            Prefs.save();
         });
         toggleRow(g, "Nomes das cidades", p.cityNames, mouseX, mouseY, () -> {
             p.cityNames = !p.cityNames;
