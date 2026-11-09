@@ -94,6 +94,7 @@ final class LiveControl {
             out.add(c);
         }
         for (SiteTerritories.Locality l : d.localities) {
+            if (WarScore.sideOfCountry(war, l.country) < 0) continue;   // só cidades de quem está na guerra
             DynmapMarkers.Marker m = markerFor(l, markers);
             if (m == null) continue;
             Matcher icon = ICON.matcher(m.icon() == null ? "" : m.icon());
