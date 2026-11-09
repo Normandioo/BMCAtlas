@@ -2767,6 +2767,18 @@ public class MapScreen extends Screen {
     private static final int CHEVRON_STEP = 7;         // distância entre as setas, em pixels da interface
 
     /** Setas ">" de tamanho fixo na tela, deslizando de (x0, y0) para (x1, y1) e ganhando força no caminho. */
+    private static WarArt.Tex chevronTex(int tone, int half, int level) {
+        int w = half + 2, h = 2 * half + 1;
+        int argb = (int) Math.round(255 * level / 7.0) << 24 | tone;
+        int[] px = new int[w * h];
+        for (int k = -half; k <= half; k++) {
+            int c = half - Math.abs(k);
+            px[(k + half) * w + c] = argb;
+            px[(k + half) * w + c + 1] = argb;
+        }
+        return WarArt.texture(new WarArt.Art(w, h, px), "chev" + tone + "_" + half + "_" + level);
+    }
+
     private void chevrons(GuiGraphics g, double x0, double y0, double x1, double y1, int color, float thick, long now) {
         double len = Math.hypot(x1 - x0, y1 - y0);
         if (len < 10) return;
@@ -2789,12 +2801,11 @@ public class MapScreen extends Screen {
                 g.pose().rotate(angle);
                 pushed = true;
             }
-            int argb = (int) Math.round(255 * Math.min(1, alpha)) << 24 | tone;
+            // uma seta é uma só textura (a cor e 8 níveis de opacidade ficam em cache): antes eram até 7 retângulos por seta
+            int level = Math.max(1, (int) Math.round(7 * Math.min(1, alpha)));
+            WarArt.Tex tex = chevronTex(tone, half, level);
             int cx = (int) Math.round(s);
-            for (int k = -half; k <= half; k++) {
-                int ax = cx - Math.abs(k);
-                g.fill(ax - 1, k, ax + 1, k + 1, argb);
-            }
+            g.blit(RenderPipelines.GUI_TEXTURED, tex.id(), cx - half - 1, -half, 0f, 0f, tex.w(), tex.h(), tex.w(), tex.h(), tex.w(), tex.h());
         }
         if (pushed) g.pose().popMatrix();
     }
@@ -2918,7 +2929,7 @@ public class MapScreen extends Screen {
             }
         }
         if (t0 >= t1) return;
-        int steps = (int) Math.min(len / 6, 4000);
+        int steps = (int) Math.min(len / 8, 4000);
         if (steps == 0) return;
         int from = (int) Math.ceil(t0 * steps), to = (int) Math.floor(t1 * steps);
         for (int i = from; i <= to; i++) {
