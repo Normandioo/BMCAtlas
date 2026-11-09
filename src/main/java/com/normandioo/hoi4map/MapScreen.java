@@ -2730,21 +2730,27 @@ public class MapScreen extends Screen {
         int tone = (r + (255 - r) * 3 / 5) << 16 | (gr + (255 - gr) * 3 / 5) << 8 | (b + (255 - b) * 3 / 5);
         int half = Math.max(1, ((int) thick - 3) / 2);
         double offset = (now / 300.0) % CHEVRON_STEP;
+        // um só giro da matriz para a linha inteira; cada seta é desenhada ao longo do eixo x
+        boolean pushed = false;
         for (double s = 4 + offset; s <= len - 3; s += CHEVRON_STEP) {
             double x = x0 + ux * s, y = y0 + uy * s;
             if (x < -8 || x > width + 8 || y < -8 || y > height + 8) continue;
             double alpha = Math.min(0.3 + 0.7 * s / len, (len - s) / 6.0);
             if (alpha <= 0.02) continue;
+            if (!pushed) {
+                g.pose().pushMatrix();
+                g.pose().translate((float) x0, (float) y0);
+                g.pose().rotate(angle);
+                pushed = true;
+            }
             int argb = (int) Math.round(255 * Math.min(1, alpha)) << 24 | tone;
-            g.pose().pushMatrix();
-            g.pose().translate((float) x, (float) y);
-            g.pose().rotate(angle);
+            int cx = (int) Math.round(s);
             for (int k = -half; k <= half; k++) {
-                int ax = -Math.abs(k);
+                int ax = cx - Math.abs(k);
                 g.fill(ax - 1, k, ax + 1, k + 1, argb);
             }
-            g.pose().popMatrix();
         }
+        if (pushed) g.pose().popMatrix();
     }
 
     /** Onda de conquista: cobre com a cor antiga o que ela ainda não alcançou e pinta a frente em vermelho claro. */
@@ -2851,14 +2857,27 @@ public class MapScreen extends Screen {
     }
 
     private void dottedLine(GuiGraphics g, double x0, double y0, double x1, double y1, int color) {
-        if ((x0 < 0 && x1 < 0) || (x0 > width && x1 > width) || (y0 < 0 && y1 < 0) || (y0 > height && y1 > height)) return;
         double dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
         if (len < 4) return;
-        int steps = (int) Math.min(len / 6, 400);
-        for (int i = 0; i <= steps; i++) {
-            double t = steps == 0 ? 0 : (double) i / steps;
+        // só a parte da linha que cabe na tela (Liang-Barsky); o resto não gera nenhum desenho
+        double t0 = 0, t1 = 1;
+        double[] p = {-dx, dx, -dy, dy}, q = {x0, width - x0, y0, height - y0};
+        for (int i = 0; i < 4; i++) {
+            if (p[i] == 0) {
+                if (q[i] < 0) return;
+            } else {
+                double r = q[i] / p[i];
+                if (p[i] < 0) t0 = Math.max(t0, r);
+                else t1 = Math.min(t1, r);
+            }
+        }
+        if (t0 >= t1) return;
+        int steps = (int) Math.min(len / 6, 4000);
+        if (steps == 0) return;
+        int from = (int) Math.ceil(t0 * steps), to = (int) Math.floor(t1 * steps);
+        for (int i = from; i <= to; i++) {
+            double t = (double) i / steps;
             int x = (int) Math.round(x0 + dx * t), y = (int) Math.round(y0 + dy * t);
-            if (x < 0 || x >= width || y < 0 || y >= height) continue;
             g.fill(x, y, x + 2, y + 2, color);
         }
     }
