@@ -27,6 +27,7 @@ final class DynmapMarkers {
     private static volatile List<Marker> markers = List.of();
     private static volatile long markersAt;
     private static long lastPoll;
+    private static volatile int failures;
     private static volatile long wanted;
 
     private DynmapMarkers() {}
@@ -52,7 +53,10 @@ final class DynmapMarkers {
     /** Chamado a cada quadro da tela do mapa. */
     static void tick() {
         long now = System.currentTimeMillis();
-        if (now - wanted > 3000 || now - lastPoll < 3000) return;
+        // 3 s with the map open, 6 s for the minimap; doubles after each error (up to 1 min); nothing while unfocused
+        long every = now - OnlinePlayers.mapOpenAt < 1000 ? 3000 : 6000;
+        if (failures > 0) every = Math.min(60_000L, every << Math.min(failures, 4));
+        if (now - wanted > 3000 || now - lastPoll < every || !net.minecraft.client.Minecraft.getInstance().isWindowActive()) return;
         String base = SiteTerritories.dynmapUrl();
         if (base == null || !BUSY.compareAndSet(false, true)) return;
         lastPoll = now;
@@ -64,7 +68,9 @@ final class DynmapMarkers {
                 if (err != null || response.statusCode() != 200) throw new RuntimeException(err != null ? err.toString() : "HTTP " + response.statusCode());
                 markers = parse(response.body());
                 markersAt = System.currentTimeMillis();
+                failures = 0;
             } catch (RuntimeException e) {
+                failures++;
                 BmcAtlasClient.LOG.debug("Marcadores do dynmap sem resposta: {}", e.toString());
             } finally {
                 BUSY.set(false);
@@ -77,6 +83,7 @@ final class DynmapMarkers {
         markersAt = 0;
         lastPoll = 0;
         wanted = 0;
+        failures = 0;
     }
 
     static String clean(String raw) {

@@ -1,3 +1,8 @@
+## 1.0.1
+
+- Far fewer requests to the server website: online players are refreshed every 2 s with the map open and every 5 s for the minimap (was every second), war markers every 3 s / 6 s
+- Requests back off after errors and pause while the game window is not focused
+
 ## 1.0.0
 
 First stable release.

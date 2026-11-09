@@ -231,7 +231,7 @@ public class MapScreen extends Screen {
     public void onClose() {
         MapData.save();
         // os marcadores da guerra ficam na memória: ao reabrir o mapa o estado atual aparece na hora
-        OnlinePlayers.reset();
+        // online players stay in memory: the minimap keeps using them, with no extra request
         super.onClose();
     }
 
@@ -287,6 +287,7 @@ public class MapScreen extends Screen {
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
         MapData.nextFrame();
+        OnlinePlayers.mapOpenAt = System.currentTimeMillis();
         RemoteImages.pump();
         if (SiteTerritories.showPlayers()) OnlinePlayers.tick();
         Perf.begin("tick");

@@ -78,6 +78,16 @@ final class OnlinePlayers {
     private static final Map<String, Entry> ENTRIES = new HashMap<>();
     private static boolean inFlight;
     private static long lastPoll, lastNear;
+    /** Last frame in which the full-screen map asked for players (it polls faster than the minimap). */
+    static long mapOpenAt;
+    private static int failures;
+
+    /** Milliseconds between dynmap requests: 2 s with the map open, 5 s for the minimap; longer after errors. */
+    static int interval() {
+        boolean open = System.currentTimeMillis() - mapOpenAt < 1000;
+        int base = Math.max(open ? 2000 : 5000, SiteTerritories.playersRefreshMs());
+        return failures == 0 ? base : (int) Math.min(60_000L, (long) base << Math.min(failures, 4));
+    }
     private static String error;
     private static boolean fromDynmap;
 
@@ -94,6 +104,7 @@ final class OnlinePlayers {
         if (res != null) {
             inFlight = false;
             error = res.error;
+            failures = res.error == null ? 0 : failures + 1;
             fromDynmap = res.error == null;
             apply(res.players, now);
         }
@@ -104,7 +115,7 @@ final class OnlinePlayers {
                 apply(nearby(), now);
             }
         }
-        int every = SiteTerritories.playersRefreshMs();
+        int every = interval();
         for (Entry en : ENTRIES.values()) en.step(now, every);
         // quem está carregado perto de você tem posição exata no próprio jogo: vale por cima do dynmap
         Minecraft mc = Minecraft.getInstance();
@@ -120,7 +131,7 @@ final class OnlinePlayers {
             }
         }
         String base = SiteTerritories.dynmapUrl();
-        if (base != null && !inFlight && now - lastPoll >= every) {
+        if (base != null && !inFlight && now - lastPoll >= every && mc.isWindowActive()) {
             lastPoll = now;
             inFlight = true;
             poll(base, SiteTerritories.dynmapWorld());
@@ -146,13 +157,14 @@ final class OnlinePlayers {
         INBOX.set(null);
         inFlight = false;
         lastPoll = 0;
+        failures = 0;
     }
 
     private static void apply(List<Raw> raw, long now) {
         Map<String, Raw> seen = new HashMap<>();
         for (Raw r : raw) seen.put(r.account.toLowerCase(Locale.ROOT), r);
         ENTRIES.keySet().removeIf(k -> !seen.containsKey(k));
-        long every = SiteTerritories.playersRefreshMs();
+        long every = interval();
         for (Map.Entry<String, Raw> e : seen.entrySet()) {
             Raw r = e.getValue();
             Entry en = ENTRIES.get(e.getKey());
