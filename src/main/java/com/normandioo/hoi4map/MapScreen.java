@@ -170,6 +170,7 @@ public class MapScreen extends Screen {
 
     /** Camada de limites quando a tela do mapa está fechada (o minimapa usa as mesmas texturas). */
     static void idleTint() {
+        if (mode == MODE_WAR) return;     // no modo guerra quem pinta as zonas é o liveTick; os dois brigavam e repintavam o minimapa a cada quadro
         SiteTerritories.Data d = SiteTerritories.data();
         int[] t = null;
         if (d != null && siteMode() && !d.zones.isEmpty() && showLimits) {
@@ -350,9 +351,20 @@ public class MapScreen extends Screen {
 
     /** Chamado pelo minimapa a cada quadro: mantém a guerra atualizada mesmo com o mapa grande fechado. */
     static void liveTick() {
-        if (mode != MODE_WAR) return;
         tickWar();
-        refreshOverrides();
+        if (mode == MODE_WAR) refreshOverrides();
+    }
+
+    /** A guerra que o minimapa acompanha (a escolhida no mapa, senão a primeira em andamento). */
+    static SiteTerritories.WarInfo minimapWar(SiteTerritories.Data d) {
+        List<SiteTerritories.WarInfo> wars = Relations.wars(d);
+        SiteTerritories.WarInfo w = warSel >= 0 && warSel < wars.size() ? wars.get(warSel) : WarMarkers.followed(d, null);
+        return w != null && w.sides != null && w.sides.size() >= 2 && WarMarkers.running(w) ? w : null;
+    }
+
+    static RemoteImages.Img noticeFlag(SiteTerritories.Data d, int country) {
+        if (country < 0 || d.info[country] == null) return null;
+        return RemoteImages.flag(SiteTerritories.assetUrl(d.info[country].get("flag"), false));
     }
 
     private static int[] lastTint;
@@ -2710,7 +2722,8 @@ public class MapScreen extends Screen {
         SiteTerritories.Data d = SiteTerritories.data();
         if (d == null || !siteMode()) return;
         SiteTerritories.WarInfo viewed = viewedWar(d);
-        if (viewed != null && viewed.live && viewed.ended == null && SiteTerritories.liveWar()) DynmapMarkers.want();
+        SiteTerritories.WarInfo watched = viewed != null ? viewed : minimapWar(d);   // sem guerra escolhida, segue a primeira em andamento
+        if (watched != null && watched.live && watched.ended == null && SiteTerritories.liveWar()) DynmapMarkers.want();
         DynmapMarkers.tick();
         if (SiteTerritories.warMarkers()) {
             SiteTerritories.WarInfo f = WarMarkers.followed(d, viewed == null ? null : viewed.id);

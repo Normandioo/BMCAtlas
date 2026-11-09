@@ -108,6 +108,14 @@ final class Minimap {
         int dir = Math.floorMod(Math.round(net.minecraft.util.Mth.wrapDegrees(mc.player.getYRot()) / 45f), 8);
         String coords = (int) Math.floor(cx) + ", " + (int) Math.floor(cz) + "  " + HEADING[dir];
         g.drawString(font, coords, x + (size - font.width(coords)) / 2, y + size + 5, 0xFFE8E2D0, true);
+        if (d != null && !expanded) {
+            SiteTerritories.WarInfo watched = MapScreen.minimapWar(d);
+            if (watched != null) CaptureNotice.observe(d, watched);
+            if (CaptureNotice.active()) {
+                boolean above = p.minimapCorner >= 2;
+                CaptureNotice.draw(g, font, d, x - 3, above ? y - 3 : y + size + 26, size + 6, above);
+            }
+        }
         if (d != null) {
             int prov = SiteTerritories.provinceAt(d, (int) Math.floor(cx), (int) Math.floor(cz));
             if (prov >= 0) {
