@@ -64,6 +64,8 @@ final class MapData {
     static final int WALL_R = 8;
     /** Segundas e terceiras camadas de sólido numa coluna (vãos de 3+ blocos de ar): (topo, fundo, bloco) x 2. */
     static final int SP_N = 6;
+    /** camadas extras (beirais/vãos) no 3D; H alterna. Desligado = colunas sólidas até o fundo. */
+    static boolean layers = false;
     private static final int CHUNK_EXTRA = 256 + 256 * SP_N;
 
     static final class Region {
@@ -214,6 +216,8 @@ final class MapData {
     private static int dataVer;
 
     /** Muda sempre que o terreno lido muda (o 3D da GPU refaz a malha). */
+    static void bumpData() { dataVer++; }
+
     static int dataVersion() {
         return dataVer;
     }

@@ -159,10 +159,10 @@ final class Map3D {
                 int blk;
                 if (si == 0) {
                     topPlane = hv == 0 ? UNKNOWN_H : hv;
-                    botPlane = hv == 0 ? UNKNOWN_H - 3 : (reg.bot0 == null ? 0 : reg.bot0[idx]);
+                    botPlane = hv == 0 ? UNKNOWN_H - 3 : (reg.bot0 == null || !MapData.layers ? 0 : reg.bot0[idx]);
                     blk = reg.blk == null ? 0 : reg.blk[idx];
                 } else {
-                    if (reg.sp == null) break;
+                    if (reg.sp == null || !MapData.layers) break;
                     int sb = idx * MapData.SP_N + (si - 1) * 3;
                     topPlane = reg.sp[sb];
                     if (topPlane <= 0) break;

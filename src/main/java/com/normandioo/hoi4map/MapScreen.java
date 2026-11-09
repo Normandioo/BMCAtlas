@@ -4001,6 +4001,11 @@ public class MapScreen extends Screen {
             enterWar();
             return true;
         }
+        if (on3d() && k == GLFW.GLFW_KEY_H) {
+            MapData.layers = !MapData.layers;
+            MapData.bumpData();
+            return true;
+        }
         if (on3d() && k == GLFW.GLFW_KEY_G) {
             Map3DGpu.enabled = !Map3DGpu.enabled;
             return true;

@@ -144,11 +144,11 @@ final class Map3DGpu {
         int hv = reg.hgt == null ? 0 : reg.hgt[idx];
         if (hv == 0) return 0;
         hi[0] = hv - 64.0;
-        int b0 = reg.bot0 == null ? 0 : reg.bot0[idx];
+        int b0 = reg.bot0 == null || !MapData.layers ? 0 : reg.bot0[idx];
         lo[0] = b0 == 0 ? -64.0 : b0 - 64.0;
         blk[0] = reg.blk == null ? 0 : reg.blk[idx];
         n = 1;
-        if (reg.sp != null) {
+        if (reg.sp != null && MapData.layers) {
             for (int s = 0; s < 2; s++) {
                 int base = idx * MapData.SP_N + s * 3;
                 int t = reg.sp[base];
