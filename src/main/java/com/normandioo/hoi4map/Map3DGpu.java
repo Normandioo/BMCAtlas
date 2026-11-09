@@ -207,6 +207,71 @@ final class Map3DGpu {
                 }
             }
         }
+        lod(vc, pose, x0, x1, z0, z1, cx, cz, 4, radius + 400);
+        lod(vc, pose, x0, x1, z0, z1, cx, cz, 16, radius + 1900);
+    }
+
+    // ------------------------------------------------------------------ longe: colunas grandes de uma cor só
+
+    private static Face white;
+
+    private static int cellColor(int wx, int wz, int[] hOut) {
+        MapData.Region r = Map3D.regionAt(wx, wz);
+        if (r == null || r.hgt == null || r.styledCpu == null) return 0;
+        int idx = Math.floorMod(wz, MapData.REGION_PX) * MapData.REGION_PX + Math.floorMod(wx, MapData.REGION_PX);
+        int h = r.hgt[idx];
+        int c = r.styledCpu[idx];
+        if (h == 0 || c == 0) return 0;
+        hOut[0] = h;
+        return c;
+    }
+
+    /** Anel de colunas de st×st blocos, de fora da malha detalhada até o raio rOut (blocos). */
+    private static void lod(VertexConsumer vc, PoseStack.Pose pose, int nx0, int nx1, int nz0, int nz1, double cx, double cz, int st, int rOut) {
+        if (white == null) {
+            Face[] fc = faces(BuiltInRegistries.BLOCK.getId(net.minecraft.world.level.block.Blocks.WHITE_CONCRETE));
+            white = fc[0];
+        }
+        if (white == null) return;
+        int xa = Math.floorDiv((int) Math.floor(cx) - rOut, st) * st, xb = (int) Math.floor(cx) + rOut;
+        int za = Math.floorDiv((int) Math.floor(cz) - rOut, st) * st, zb = (int) Math.floor(cz) + rOut;
+        int[] h = new int[1], hn = new int[1];
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int z = za; z <= zb; z += st) {
+            for (int x = xa; x <= xb; x += st) {
+                // inteira dentro da malha detalhada (ou do anel de dentro): pula
+                if (x >= nx0 && x + st <= nx1 + 1 && z >= nz0 && z + st <= nz1 + 1) continue;
+                if (st == 16 && Math.abs(x + st / 2.0 - cx) < (nx1 - nx0) / 2.0 + 400 && Math.abs(z + st / 2.0 - cz) < (nx1 - nx0) / 2.0 + 400) continue;
+                int c = cellColor(x + st / 2, z + st / 2, h);
+                if (c == 0) continue;
+                double top = h[0] - 64.0;
+                int col = 0xFF000000 | (c & 0xFFFFFF);
+                lodQuad(vc, pose, x, top, z, x, top, z + st, x + st, top, z + st, x + st, top, z, col, 1.0f, 0, 1, 0);
+                for (int[] d : dirs) {
+                    int ncol = cellColor(x + st / 2 + d[0] * st, z + st / 2 + d[1] * st, hn);
+                    double nb = ncol == 0 ? top - 6 : hn[0] - 64.0;
+                    if (nb >= top - 1e-6) continue;
+                    nb = Math.max(nb, top - 80);
+                    float sh = d[0] != 0 ? 0.62f : 0.8f;
+                    double xa2, za2, xb2, zb2;
+                    if (d[0] == 1) { xa2 = x + st; xb2 = x + st; za2 = z; zb2 = z + st; }
+                    else if (d[0] == -1) { xa2 = x; xb2 = x; za2 = z + st; zb2 = z; }
+                    else if (d[1] == 1) { xa2 = x + st; xb2 = x; za2 = z + st; zb2 = z + st; }
+                    else { xa2 = x; xb2 = x + st; za2 = z; zb2 = z; }
+                    lodQuad(vc, pose, xa2, top, za2, xb2, top, zb2, xb2, nb, zb2, xa2, nb, za2, col, sh, d[0], 0, d[1]);
+                }
+            }
+        }
+    }
+
+    private static void lodQuad(VertexConsumer vc, PoseStack.Pose pose, double ax, double ay, double az, double bx, double by, double bz,
+                                double cx, double cy, double cz, double dx, double dy, double dz, int argb, float shade, float nx, float ny, float nz) {
+        int c = 0xFF000000 | ((int) (((argb >> 16) & 255) * shade) << 16) | ((int) (((argb >> 8) & 255) * shade) << 8) | (int) ((argb & 255) * shade);
+        float um = (white.u0 + white.u1) * 0.5f, vm = (white.v0 + white.v1) * 0.5f;     // um ponto do meio do sprite: cor lisa
+        v(vc, pose, dx, dy, dz, c, um, vm, nx, ny, nz);
+        v(vc, pose, cx, cy, cz, c, um, vm, nx, ny, nz);
+        v(vc, pose, bx, by, bz, c, um, vm, nx, ny, nz);
+        v(vc, pose, ax, ay, az, c, um, vm, nx, ny, nz);
     }
 
     private static void wall(VertexConsumer vc, PoseStack.Pose pose, MapData.Region reg, int idx, int span, int x, int z, int[] d,
