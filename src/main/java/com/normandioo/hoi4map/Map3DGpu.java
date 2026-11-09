@@ -79,7 +79,7 @@ final class Map3DGpu {
             pose.mulPose(Axis.XP.rotationDegrees(st.pitch()));
             pose.mulPose(Axis.YP.rotationDegrees(st.yaw()));
             pose.scale((float) px, (float) px, (float) px);
-            pose.translate((float) -st.cx(), 0f, (float) -st.cz());
+            pose.translate((float) -st.cx(), (float) -Map3D.targetY, (float) -st.cz());
             VertexConsumer vc = bufferSource.getBuffer(RenderTypes.cutoutMovingBlock());
             int radius = (int) Math.min(150, Math.max(40, Math.max(st.x1(), st.y1()) * 0.9 / Math.max(0.2, st.zoom())));
             build(vc, pose.last(), st.cx(), st.cz(), radius);

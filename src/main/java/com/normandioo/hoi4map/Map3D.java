@@ -32,7 +32,8 @@ final class Map3D {
 
     // câmera deste quadro
     private static double camX, camY, camZ, fx, fy, fz, rx, rz, ux, uy, uz, focalGui, guiW, guiH;
-    private static double targetY, camDistH;
+    static double targetY;
+    private static double camDistH;
     private static MapData.Region[] cache = new MapData.Region[(2 * GRID + 1) * (2 * GRID + 1)];
     private static int cacheRx, cacheRz;
 
