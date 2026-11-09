@@ -2858,6 +2858,10 @@ public class MapScreen extends Screen {
             p.waterSatPct = i * 10;
             Prefs.changed();
         });
+        stepsRow(g, "Resolução do 3D", p.quality3dPct + "%", 8, indexOfStep(p.quality3dPct, 30, 10, 8), mouseX, mouseY, i -> {
+            p.quality3dPct = 30 + i * 10;
+            Prefs.save();
+        });
         toggleRow(g, "Nomes dos países", p.countryNames, mouseX, mouseY, () -> {
             p.countryNames = !p.countryNames;
             Prefs.save();

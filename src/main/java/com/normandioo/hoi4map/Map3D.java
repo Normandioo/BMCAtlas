@@ -18,7 +18,6 @@ final class Map3D {
     /** Giro (rad; 0 = olhando para o norte) e inclinação (rad; 0 = horizontal, 1.57 = de cima). */
     static double yaw = 0.0, pitch = 0.95;
 
-    private static final double QUALITY = 0.4;     // pixels da imagem por pixel da tela
     private static final int GRID = 5;             // regiões em cada direção do alvo que entram no desenho
     private static final int BG = 0xFF0B1628;
     /** Usa as texturas dos blocos do jogo (e do pacote de texturas) nos blocos próximos. */
@@ -120,7 +119,8 @@ final class Map3D {
 
     /** Desenha o terreno em 3D na tela inteira. */
     static void render(GuiGraphics g, int guiWidth, int guiHeight) {
-        int w = Math.max(64, (int) (guiWidth * QUALITY)), h = Math.max(64, (int) (guiHeight * QUALITY));
+        double q = Prefs.get().quality3dPct / 100.0 * Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale());
+        int w = Math.max(64, (int) (guiWidth * q)), h = Math.max(64, (int) (guiHeight * q));
         if (img == null || w != rw || h != rh) {
             if (tex != null) Minecraft.getInstance().getTextureManager().release(id);
             rw = w;
@@ -135,13 +135,14 @@ final class Map3D {
         double focal = 0.9 * rw;
         double halfX = rw / 2.0, halfY = rh / 2.0;
         double cy = camY;
-        for (int col = 0; col < rw; col++) {
+        final int rwF = rw, rhF = rh;
+        java.util.stream.IntStream.range(0, rw).parallel().forEach(col -> {
             double a = Math.atan((col - halfX) / focal);
             double dirx = Math.sin(yaw + a), dirz = -Math.cos(yaw + a);
             int top = rh;
             double r0 = Math.max(1, camDistH - 1500), rEnd = camDistH + 1500;
             double prevX = camX + dirx * r0, prevZ = camZ + dirz * r0;
-            for (double r = r0; r < rEnd && top > 0; r += Math.max(1.5, 2.0 * r / focal)) {
+            for (double r = r0; r < rEnd && top > 0; r += Math.max(0.7, 3.0 * r / focal)) {
                 double wx = camX + dirx * r, wz = camZ + dirz * r;
                 int ix = (int) Math.floor(wx), iz = (int) Math.floor(wz);
                 MapData.Region reg = regionAt(ix, iz);
@@ -214,10 +215,10 @@ final class Map3D {
                 prevZ = wz;
                 top = ys;
             }
-        }
-        for (int y = 0; y < rh; y++) {
-            for (int x = 0; x < rw; x++) img.setPixel(x, y, frame[y * rw + x]);
-        }
+        });
+        java.util.stream.IntStream.range(0, rh).parallel().forEach(y -> {
+            for (int x = 0; x < rwF; x++) img.setPixel(x, y, frame[y * rwF + x]);
+        });
         tex.upload();
         g.blit(RenderPipelines.GUI_TEXTURED, id, 0, 0, 0f, 0f, guiWidth, guiHeight, rw, rh, rw, rh);
     }
