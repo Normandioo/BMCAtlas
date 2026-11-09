@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.renderer.RenderPipelines;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -21,7 +22,7 @@ final class CaptureNotice {
     private static final long QUIET = 10_000;      // a mesma cidade de novo neste intervalo: sem aviso
     private static final int MAX_QUEUE = 5, GROUP_FROM = 4, BOX_H = 26;
 
-    record Item(SiteTerritories.Locality city, String key, String title, String by, int byRgb, String from, int fromRgb) {}
+    record Item(SiteTerritories.Locality city, String key, String title, String by, int byRgb, String from, int fromRgb, int country) {}
 
     private static final ArrayDeque<Item> QUEUE = new ArrayDeque<>();
     private static final Map<String, Long> LAST = new HashMap<>();
@@ -50,9 +51,14 @@ final class CaptureNotice {
             Integer before = HOLDER.put(key, now);
             if (first || before == null || before < 0 || now < 0 || before == now) continue;
             changes.add(new Item(h.locality(), key, SiteTerritories.splitCamel(h.locality().name), sideLabel(d, w, now), MapScreen.minimapCtlColor(d, now) & 0xFFFFFF,
-                    sideLabel(d, w, before), MapScreen.minimapCtlColor(d, before) & 0xFFFFFF));
+                    sideLabel(d, w, before), MapScreen.minimapCtlColor(d, before) & 0xFFFFFF, firstCountry(d, w, now)));
         }
         pushAll(changes, System.currentTimeMillis());
+    }
+
+    private static int firstCountry(SiteTerritories.Data d, SiteTerritories.WarInfo w, int side) {
+        java.util.Iterator<Integer> it = Relations.countriesOf(d, w.sides.get(side)).iterator();
+        return it.hasNext() ? it.next() : -1;
     }
 
     private static String sideLabel(SiteTerritories.Data d, SiteTerritories.WarInfo w, int side) {
@@ -93,7 +99,7 @@ final class CaptureNotice {
                 int n = count.merge(it.by(), 1, Integer::sum);
                 if (n > count.getOrDefault(top.by(), 0)) top = it;
             }
-            offer(new Item(top.city(), top.key(), fresh.size() + " cidades tomadas", top.by(), top.byRgb(), "", 0));
+            offer(new Item(top.city(), top.key(), fresh.size() + " cidades tomadas", top.by(), top.byRgb(), "", 0, top.country()));
             return;
         }
         for (Item it : fresh) offer(it);
@@ -120,7 +126,7 @@ final class CaptureNotice {
             current = QUEUE.pollFirst();
             startedAt = now;
         }
-        boolean down = mc.mouseHandler.isLeftPressed();
+        boolean down = org.lwjgl.glfw.GLFW.glfwGetMouseButton(mc.getWindow().handle(), org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
         if (current == null) {
             wasDown = down;
             return;
@@ -153,8 +159,14 @@ final class CaptureNotice {
         g.enableScissor(left, clipTop, left + w, clipTop + BOX_H);
         g.fill(left, top, left + w, top + BOX_H, hover ? 0xF22C3236 : 0xF21E2123);
         g.fill(left, top + BOX_H - 1, left + w, top + BOX_H, hover ? 0xFF7E8387 : 0xFF3E4245);
-        g.fill(left + 6, top + 8, left + 22, top + 18, 0xFF0A0B08);
-        g.fill(left + 7, top + 9, left + 21, top + 17, 0xFF000000 | it.byRgb());
+        g.fill(left + 5, top + 7, left + 23, top + 19, 0xFF0A0B08);
+        SiteTerritories.Data sd = SiteTerritories.data();
+        RemoteImages.Img flag = sd == null ? null : MapScreen.noticeFlag(sd, it.country());
+        if (flag != null) {
+            g.blit(RenderPipelines.GUI_TEXTURED, flag.id(), left + 6, top + 8, 0f, 0f, 16, 10, flag.w(), flag.h(), flag.w(), flag.h());
+        } else {
+            g.fill(left + 6, top + 8, left + 22, top + 18, 0xFF000000 | it.byRgb());
+        }
         g.drawString(font, it.title(), left + 28, top + 4, 0xFFECEBE4, false);
         int tx = left + 28, ty = top + 15;
         g.drawString(font, it.by(), tx, ty, light(it.byRgb()), false);
