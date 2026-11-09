@@ -30,12 +30,14 @@ jobs:
       - name: Inspecionar API (temporário)
         if: always()
         run: |
-          J=$(find . ~/.gradle -name 'minecraft-*client*.jar' -o -name 'minecraft-merged*.jar' 2>/dev/null | grep -v sources | head -3)
-          echo "JARS: $J"
-          for j in $J; do
-            echo "=== $j"
-            unzip -l "$j" | grep -E "gui/render/(pip|state)|blaze3d/(pipeline|systems|buffers|vertex)/" | awk '{print $4}' | head -150
+          J=$(find ./.gradle/loom-cache -name 'minecraft-merged-*.jar' | grep -v sources | head -1)
+          F=$(find ~/.gradle ./.gradle -name 'fabric-rendering-v1*.jar' -o -name 'fabric-api-*.jar' 2>/dev/null | grep -v sources | head -20)
+          echo "FABRIC: $F"
+          for c in net.minecraft.client.gui.render.pip.PictureInPictureRenderer net.minecraft.client.gui.render.state.pip.PictureInPictureRenderState net.minecraft.client.gui.render.pip.GuiBookModelRenderer net.minecraft.client.gui.render.state.pip.GuiBookModelRenderState com.mojang.blaze3d.systems.RenderPass com.mojang.blaze3d.systems.CommandEncoder com.mojang.blaze3d.systems.GpuDevice com.mojang.blaze3d.vertex.MeshData com.mojang.blaze3d.vertex.BufferBuilder com.mojang.blaze3d.vertex.VertexFormat com.mojang.blaze3d.pipeline.RenderPipeline\$Builder net.minecraft.client.renderer.RenderPipelines com.mojang.blaze3d.pipeline.RenderTarget com.mojang.blaze3d.buffers.GpuBuffer; do
+            echo "=== $c"
+            javap -p -cp "$J" "$c" | head -90
           done
+          for f in $F; do echo "--- $f"; unzip -l "$f" | grep -i -E "SpecialGuiElement|PictureInPicture" | awk '{print $4}'; done
       - uses: actions/upload-artifact@v4
         with:
           name: hoi4map-jar
