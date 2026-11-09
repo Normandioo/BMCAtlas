@@ -50,10 +50,17 @@ final class CaptureNotice {
             int now = h.holder();
             Integer before = HOLDER.put(key, now);
             if (first || before == null || before < 0 || now < 0 || before == now) continue;
-            changes.add(new Item(h.locality(), key, SiteTerritories.splitCamel(h.locality().name), sideLabel(d, w, now), MapScreen.minimapCtlColor(d, now) & 0xFFFFFF,
+            changes.add(new Item(h.locality(), key, titleOf(h.locality()), sideLabel(d, w, now), MapScreen.minimapCtlColor(d, now) & 0xFFFFFF,
                     sideLabel(d, w, before), MapScreen.minimapCtlColor(d, before) & 0xFFFFFF, firstCountry(d, w, now)));
         }
         pushAll(changes, System.currentTimeMillis());
+    }
+
+    /** Nome da cidade com o tamanho dela (Small, Medium, Large, capital...). */
+    private static String titleOf(SiteTerritories.Locality l) {
+        String name = SiteTerritories.splitCamel(l.name);
+        String kind = l.kind == null || l.kind.isBlank() ? "" : SiteTerritories.splitCamel(l.kind);
+        return kind.isEmpty() ? name : name + "  -  " + kind;
     }
 
     private static int firstCountry(SiteTerritories.Data d, SiteTerritories.WarInfo w, int side) {

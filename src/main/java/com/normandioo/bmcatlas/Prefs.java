@@ -40,6 +40,8 @@ final class Prefs {
         boolean countryNames = false;
         /** Marcadores simples (quadradinhos) em vez dos ícones do site. */
         boolean simpleMarkers = false;
+        /** Tamanho dos ícones das cidades no mapa e no minimapa (50-300%). */
+        int cityIconPct = 100;
         /** Tamanho dos ícones dos jogadores online (100-400%). */
         int playerIconPct = 100;
         /** Mostrar a província/país sob o cursor na linha de coordenadas. */

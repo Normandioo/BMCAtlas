@@ -156,13 +156,17 @@ final class RemoteImages {
     /** Reduz um ícone mantendo o alfa (bordas suaves); não amplia. */
     private static Ready shrinkSoft(String url, NativeImage image, int size) {
         int iw = image.getWidth(), ih = image.getHeight();
-        double scale = Math.min(1.0, Math.min((double) size / iw, (double) size / ih));
+        // reduz com média por área; se o ícone original for menor que o pedido, amplia por vizinho mais próximo
+        // (bordas nítidas em vez de borradas). O tamanho pedido é em pixels da tela, não em pixels da interface.
+        double scale = Math.min((double) size / iw, (double) size / ih);
         int w = Math.max(1, (int) Math.round(iw * scale)), h = Math.max(1, (int) Math.round(ih * scale));
         int[] out = new int[w * h];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int x0 = x * iw / w, x1 = Math.max(x0 + 1, (x + 1) * iw / w);
                 int y0 = y * ih / h, y1 = Math.max(y0 + 1, (y + 1) * ih / h);
+                x1 = Math.min(x1, iw);
+                y1 = Math.min(y1, ih);
                 long a = 0, r = 0, g = 0, b = 0;
                 int n = 0;
                 for (int yy = y0; yy < y1; yy++) {
@@ -180,6 +184,16 @@ final class RemoteImages {
             }
         }
         return new Ready(url, w, h, out);
+    }
+
+    /** Desenha a imagem pixel a pixel da tela, centrada em (cx, cy) da interface, sem borrar. */
+    static void drawCrisp(net.minecraft.client.gui.GuiGraphics g, Img img, double cx, double cy) {
+        double gs = Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale());
+        g.pose().pushMatrix();
+        g.pose().translate((float) cx, (float) cy);
+        g.pose().scale((float) (1.0 / gs), (float) (1.0 / gs));
+        g.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, img.id(), -img.w() / 2, -img.h() / 2, 0f, 0f, img.w(), img.h(), img.w(), img.h(), img.w(), img.h());
+        g.pose().popMatrix();
     }
 
     // ------------------------------------------------------------------- skins

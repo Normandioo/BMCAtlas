@@ -42,8 +42,9 @@ public class BmcAtlasClient implements ClientModInitializer {
                 if (mc.screen == null) mc.setScreen(new MapScreen());
             }
             while (MINIMAP_KEY.consumeClick()) {
-                if (mc.screen == null) Minimap.expanded = !Minimap.expanded;
+                // o minimapa aumenta enquanto a tecla está segurada (ver abaixo)
             }
+            Minimap.expanded = mc.screen == null && MINIMAP_KEY.isDown();
             MapData.tick(mc);
             RemoteImages.pump();
             if (++ticks % 6000 == 0 && MapData.isDirty()) MapData.save();

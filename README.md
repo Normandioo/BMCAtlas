@@ -9,12 +9,12 @@
 - **Minimap** on the game screen, with a banner when a city is taken (click it with chat open to jump to the city on the map).
 - **Search** for countries, cities and players, plus distance measuring and your own marked points.
 - **Country labels** fitted inside each territory, city icons and names, online players.
-- **History and diplomacy panels**: alliances, NAPs, truces, ultimatums, purge deadlines and diplolock.
+- **Diplomacy panels**: alliances, NAPs, truces, ultimatums, purge deadlines, diplolock and world history. The country list also has a ranking by map area.
 - **Settings** (gear icon): appearance, players, war, minimap and server maps. Defaults are already tuned for the server.
 
 ## Controls
 
-- `N`: open the map. `Z`: enlarge the minimap.
+- `N`: open the map. Hold `Z`: enlarge the minimap while the key is down.
 - Drag to move, wheel to zoom, click to select, `1`-`5` to switch modes, `F7` for the performance overlay.
 
 ## Configuration

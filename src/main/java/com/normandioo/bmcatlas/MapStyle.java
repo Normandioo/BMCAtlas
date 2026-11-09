@@ -41,6 +41,8 @@ final class MapStyle {
 
     /** Província selecionada (índice no arquivo do site), ou -1. */
     static int selectedProvince = -1;
+    /** País com o contorno dourado (índice do site), ou -1. Mude junto com a invalidação das regiões. */
+    static int highlightCountry = -1;
 
     private static final int M = 8; // margem para o brilho de fronteira cruzar regiões
     private static final int W = MapData.REGION_PX + 2 * M;
@@ -179,6 +181,7 @@ final class MapStyle {
         int baseX = r.rx * size;
         int baseZ = r.rz * size;
         int selected = selectedProvince + 1;
+        final int hl = highlightCountry;
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
                 int gi = (y + M) * W + (x + M);
@@ -206,6 +209,7 @@ final class MapStyle {
                             out = tint(out, country, 0.28f * Prefs.fill());
                             if (dist == 0) out = mix(out, 0xFF070B10, 0.85f * Prefs.border());
                             else if (dist <= 8) out = mix(out, lighten(country, 1.45f), 0.5f * Prefs.border() * (1f - (dist - 1) / 7f));
+                            if (ci == hl) out = gold(out, dist);
                         } else if (dist == 0) {
                             out = mix(out, 0xFF05080C, 0.5f * Prefs.border());
                         }
@@ -244,6 +248,7 @@ final class MapStyle {
                             c = tint(c, country, 0.72f * Prefs.fill());
                             if (dist == 0) c = mix(c, 0xFF070B10, 0.85f * Prefs.border());
                             else if (dist <= 8) c = mix(c, lighten(country, 1.45f), 0.5f * Prefs.border() * (1f - (dist - 1) / 7f));
+                            if (ci == hl) c = gold(c, dist);
                         } else {
                             c = tint(c, country, 0.30f * Prefs.fill());
                             if (dist == 0) c = mix(c, 0xFF05080C, 0.5f * Prefs.border());
@@ -263,6 +268,13 @@ final class MapStyle {
             }
         }
         return OUT;
+    }
+
+    /** Brilho dourado do país escolhido: linha viva na borda e um halo que some para dentro. */
+    private static int gold(int c, int dist) {
+        if (dist == 0) return mix(c, 0xFFFFE27A, 0.95f);
+        if (dist > 10) return c;
+        return mix(c, 0xFFFFD25A, 0.55f * (1f - (dist - 1) / 10f));
     }
 
     static int[] paintGrid(MapData.Region r, int mode) {
