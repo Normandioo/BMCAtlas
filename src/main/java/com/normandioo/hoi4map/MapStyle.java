@@ -137,7 +137,15 @@ final class MapStyle {
                 int k = key[PROV_GRID[idx]];
                 // a linha é só o pixel de dentro da borda (esquerda/cima da mudança), 1 bloco em qualquer direção;
                 // marcar os dois lados fazia 2 blocos nas retas e mais ainda nas diagonais
-                if (k != key[PROV_GRID[idx + 1]] || k != key[PROV_GRID[idx + W]]) DIST[idx] = 0;
+                // se o vizinho é de fora (sem província), a linha vai no pixel de dentro dele, senão some
+                int g0 = PROV_GRID[idx];
+                int n1 = idx + 1, n2 = idx + W;
+                if (k != key[PROV_GRID[n1]]) {
+                    if (g0 == 0 && PROV_GRID[n1] != 0) DIST[n1] = 0; else DIST[idx] = 0;
+                }
+                if (k != key[PROV_GRID[n2]]) {
+                    if (g0 == 0 && PROV_GRID[n2] != 0) DIST[n2] = 0; else DIST[idx] = 0;
+                }
             }
         }
         // distância (chamfer 3-4) até a fronteira mais próxima
