@@ -1393,48 +1393,35 @@ public class MapScreen extends Screen {
     private List<Btn> barButtons() {
         boolean site = siteMode();
         boolean haveSite = SiteTerritories.data() != null;
-        String needSite = "
-Requires site data.";
+        String needSite = "\nRequires site data.";
         List<Btn> b = new ArrayList<>();
-        b.add(new Btn("physical", mode == MODE_PHYSICAL, true, "Physical map
-Real relief and terrain. (1)", () -> mode = MODE_PHYSICAL, false));
-        b.add(new Btn("political", mode == MODE_POLITICAL, true, "Political map
-Tinted countries and names. (2)", () -> mode = MODE_POLITICAL, false));
-        b.add(new Btn("provinces", mode == MODE_PROVINCES, true, "Provinces
-Divisions of each country. (3)", () -> mode = MODE_PROVINCES, false));
-        b.add(new Btn("diplomacy", mode == MODE_DIPLOMACY, site, "Diplomacy
-Relations of a country or an alliance. (4)" + (site ? "" : needSite), this::enterDiplomacy, false));
-        b.add(new Btn("war", mode == MODE_WAR, site, "War
-Sides, taken and contested cities. (5)" + (site ? "" : needSite), this::enterWar, false));
+        b.add(new Btn("physical", mode == MODE_PHYSICAL, true, "Physical map\nReal relief and terrain. (1)", () -> mode = MODE_PHYSICAL, false));
+        b.add(new Btn("political", mode == MODE_POLITICAL, true, "Political map\nTinted countries and names. (2)", () -> mode = MODE_POLITICAL, false));
+        b.add(new Btn("provinces", mode == MODE_PROVINCES, true, "Provinces\nDivisions of each country. (3)", () -> mode = MODE_PROVINCES, false));
+        b.add(new Btn("diplomacy", mode == MODE_DIPLOMACY, site, "Diplomacy\nRelations of a country or an alliance. (4)" + (site ? "" : needSite), this::enterDiplomacy, false));
+        b.add(new Btn("war", mode == MODE_WAR, site, "War\nSides, taken and contested cities. (5)" + (site ? "" : needSite), this::enterWar, false));
 
         b.add(new Btn("list", tab == TAB_LIST, true, "Country list", () -> tab = tab == TAB_LIST ? TAB_NONE : TAB_LIST, true));
-        b.add(new Btn("treaty", tab == TAB_DIPLOMENU, site, "Diplomatic overview
-Alliances, active NAPs, purge and diplolock." + (site ? "" : needSite),
+        b.add(new Btn("treaty", tab == TAB_DIPLOMENU, site, "Diplomatic overview\nAlliances, active NAPs, purge and diplolock." + (site ? "" : needSite),
                 () -> {
                     tab = tab == TAB_DIPLOMENU ? TAB_NONE : TAB_DIPLOMENU;
                     SCROLL[TAB_DIPLOMENU] = 0;
                 }, false));
-        b.add(new Btn("cities", showCities, site, "Cities
-" + (showCities ? "On" : "Off") + (site ? "" : needSite), () -> showCities = !showCities, true));
-        b.add(new Btn("limits", showLimits, site, "City limits
-" + (showLimits ? "On" : "Off") + (site ? "" : needSite), () -> {
+        b.add(new Btn("cities", showCities, site, "Cities\n" + (showCities ? "On" : "Off") + (site ? "" : needSite), () -> showCities = !showCities, true));
+        b.add(new Btn("limits", showLimits, site, "City limits\n" + (showLimits ? "On" : "Off") + (site ? "" : needSite), () -> {
             showLimits = !showLimits;
             Prefs.get().limits = showLimits;
             Prefs.save();
         }, false));
         boolean dyn = SiteTerritories.showPlayers();
-        String playersTip = "Online players
-" + (!dyn ? "Disabled in site.json" : !showPlayers ? "Off"
+        String playersTip = "Online players\n" + (!dyn ? "Disabled in site.json" : !showPlayers ? "Off"
                 : OnlinePlayers.live() ? "On (" + OnlinePlayers.list().size() + " on the map, via dynmap)"
                 : OnlinePlayers.error() != null ? "On (dynmap not responding: only nearby players)" : "On (loading...)");
         b.add(new Btn("players", showPlayers && dyn, dyn, playersTip, () -> showPlayers = !showPlayers, false));
 
         b.add(new Btn("center", false, true, "Center on you", this::centerOnPlayer, true));
-        String sourceTip = !haveSite ? "Source: manual
-No site data."
-                : SiteTerritories.useSite ? "Source: site
-Click to use manual mode." : "Source: manual
-Click to use the site.";
+        String sourceTip = !haveSite ? "Source: manual\nNo site data."
+                : SiteTerritories.useSite ? "Source: site\nClick to use manual mode." : "Source: manual\nClick to use the site.";
         b.add(new Btn("source", haveSite && SiteTerritories.useSite, haveSite, sourceTip, () -> {
             SiteTerritories.useSite = !SiteTerritories.useSite;
             tab = TAB_NONE;
@@ -1452,23 +1439,20 @@ Click to use the site.";
             int at = -1;
             for (int i = 0; i < maps.size(); i++) if (cur != null && maps.get(i).key.equalsIgnoreCase(cur.key)) at = i;
             final MapCatalog.Entry next = maps.get((at + 1) % maps.size());
-            b.add(new Btn("maps", false, true, "Map: " + (cur == null ? "default" : cur.name) + "
-Click to switch to " + next.name + ".", () -> {
+            b.add(new Btn("maps", false, true, "Map: " + (cur == null ? "default" : cur.name) + "\nClick to switch to " + next.name + ".", () -> {
                 selCity = -1;
                 setSite(-1);
                 SiteTerritories.selectMap(next.key);
             }, false));
         }
-        b.add(new Btn("settings", tab == TAB_SET, true, "Settings
-Appearance, players, war, minimap and maps.", () -> {
+        b.add(new Btn("settings", tab == TAB_SET, true, "Settings\nAppearance, players, war, minimap and maps.", () -> {
             tab = tab == TAB_SET ? TAB_NONE : TAB_SET;
             SCROLL[TAB_SET] = 0;
         }, false));
 
         boolean genRunning = ChunkGen.state != ChunkGen.State.IDLE;
         b.add(new Btn("gen", tab == TAB_GEN || genRunning, true,
-                genRunning ? "Chunk generator
-In progress." : "Generate all map chunks", () -> {
+                genRunning ? "Chunk generator\nIn progress." : "Generate all map chunks", () -> {
                     genConfirm = false;
                     tab = tab == TAB_GEN ? TAB_NONE : TAB_GEN;
                 }, false));
@@ -1491,20 +1475,15 @@ In progress." : "Generate all map chunks", () -> {
             }
         }
         boolean site = siteMode();
-        top.add(new Btn("war", tab == TAB_WAR, site, "Wars
-List, scoreboard, cities and Law 7." + (site ? "" : "
-Requires site data."), () -> {
+        top.add(new Btn("war", tab == TAB_WAR, site, "Wars\nList, scoreboard, cities and Law 7." + (site ? "" : "\nRequires site data."), () -> {
             if (tab == TAB_WAR) tab = TAB_NONE;
             else enterWar();
         }, false));
-        top.add(new Btn("history", tab == TAB_HIST, site, "History
-Events, world history and ranking." + (site ? "" : "
-Requires site data."), () -> {
+        top.add(new Btn("history", tab == TAB_HIST, site, "History\nEvents, world history and ranking." + (site ? "" : "\nRequires site data."), () -> {
             tab = tab == TAB_HIST ? TAB_NONE : TAB_HIST;
             SCROLL[TAB_HIST] = 0;
         }, false));
-        right.add(0, new Btn("search", searchOpen, true, "Search
-Countries, cities and players. Also measures distances and marks points.", () -> {
+        right.add(0, new Btn("search", searchOpen, true, "Search\nCountries, cities and players. Also measures distances and marks points.", () -> {
             if (searchOpen) closeSearch();
             else openSearch();
         }, false));
@@ -2769,14 +2748,10 @@ Countries, cities and players. Also measures distances and marks points.", () ->
         for (WarScore.Holding h : r.holdings()) {
             if (h.locality() != city && !(h.locality().name != null && h.locality().name.equals(city.name)
                     && h.locality().country != null && h.locality().country.equals(city.country))) continue;
-            extra += "
-Value: " + pts(h.value()) + " pts";
-            if ("contested".equals(h.state())) extra += "
-Contested";
-            else if ("uncontrolled".equals(h.state())) extra += "
-Uncontrolled";
-            else if (h.holder() >= 0) extra += "
-Held by: " + sideName(w, h.holder());
+            extra += "\nValue: " + pts(h.value()) + " pts";
+            if ("contested".equals(h.state())) extra += "\nContested";
+            else if ("uncontrolled".equals(h.state())) extra += "\nUncontrolled";
+            else if (h.holder() >= 0) extra += "\nHeld by: " + sideName(w, h.holder());
             break;
         }
         WarFront f = viewedFront(d);
