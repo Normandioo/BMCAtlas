@@ -180,27 +180,51 @@ final class Map3D {
                     int cWall = fog <= 0.01f ? wallC : mixFog(wallC, fog);
                     for (int y = ys; y < top; y++) frame[y * rw + col] = (y - ys0) < topRowsFlat ? cTop : cWall;
                 } else {
-                    // textura de verdade: cima com a cor/tint do mapa, lados escurecidos
+                    // textura de verdade, mapeada exatamente: cada pixel é o ponto onde o raio da câmera toca o bloco
                     int cr = (color >> 16) & 0xFF, cg = (color >> 8) & 0xFF, cb = color & 0xFF;
                     double rr = clamp(cr / Math.max(8.0, (tt.avg >> 16) & 0xFF)), rg = clamp(cg / Math.max(8.0, (tt.avg >> 8) & 0xFF)), rb = clamp(cb / Math.max(8.0, tt.avg & 0xFF));
+                    double lum = (rr + rg + rb) / 3.0;
+                    rr /= lum; rg /= lum; rb /= lum;                 // só o tom do mapa (bioma); o relevo vem da luz das faces
+                    float topLight = (float) Math.max(0.86, Math.min(1.08, lum));
                     boolean sameTex = st == null || st.avg == tt.avg;
-                    int topRows = Math.max(1, (int) (pxb * 0.55));
-                    int len = top - ys0;
-                    double pdx = (prevX - wx), pdz = (prevZ - wz);
+                    double mip = Math.max(0.0, Math.min(1.0, (pxb - 2.5) / 6.0));   // longe: cor média, perto: textura nítida
+                    int avgC = 0xFF000000 | ((int) Math.min(255, ((tt.avg >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tt.avg >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tt.avg & 0xFF) * rb);
+                    double dcx = fx * focal + rx * (col - halfX), dcy = fy * focal, dcz = fz * focal + rz * (col - halfX);
+                    boolean alongZ = Math.abs(dirx) > Math.abs(dirz);
+                    double planeC = alongZ ? (dirx > 0 ? ix : ix + 1) : (dirz > 0 ? iz : iz + 1);
                     int lastDi = -1;
                     MapData.Tex lastTex = null;
                     for (int y = ys; y < top; y++) {
-                        int rowIdx = y - ys0;
+                        double vv = halfY - y;
+                        double ddx = dcx + ux * vv, ddy = dcy + uy * vv, ddz = dcz + uz * vv;
+                        boolean topHit = false;
+                        double hx = 0, hz = 0;
+                        if (ddy < -1e-9) {
+                            double tt0 = (by - cy) / ddy;
+                            if (tt0 > 0) {
+                                hx = camX + ddx * tt0;
+                                hz = camZ + ddz * tt0;
+                                topHit = hx >= ix - 0.02 && hx < ix + 1.02 && hz >= iz - 0.02 && hz < iz + 1.02;
+                            }
+                        }
                         int out;
-                        if (rowIdx < topRows) {
-                            double t = Math.min(1.0, (double) rowIdx / Math.max(1, topRows));
-                            double px = wx + pdx * t * 0.5, pz = wz + pdz * t * 0.5;
-                            int tx = Math.min(tt.w - 1, (int) ((px - Math.floor(px)) * tt.w)), tz = Math.min(tt.w - 1, (int) ((pz - Math.floor(pz)) * tt.w));
+                        if (topHit) {
+                            int tx = Math.max(0, Math.min(tt.w - 1, (int) ((hx - ix) * tt.w))), tz = Math.max(0, Math.min(tt.w - 1, (int) ((hz - iz) * tt.w)));
                             int tc = tt.px[tz * tt.w + tx];
-                            if ((tc >>> 24) < 32) out = color;
-                            else out = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
+                            int tcol;
+                            if ((tc >>> 24) < 32) tcol = color;
+                            else tcol = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
+                            out = shade(mip >= 0.999 ? tcol : mixRgb(avgC, tcol, (float) mip), topLight);
                         } else {
-                            double depth = (rowIdx - topRows) / pxb;
+                            double along, depth;
+                            double den = alongZ ? ddx : ddz;
+                            if (Math.abs(den) < 1e-9) { along = alongZ ? wz : wx; depth = 0; }
+                            else {
+                                double t2 = ((alongZ ? planeC - camX : planeC - camZ)) / den;
+                                along = alongZ ? camZ + ddz * t2 : camX + ddx * t2;
+                                depth = by - (cy + ddy * t2);
+                                if (depth < 0) depth = 0;
+                            }
                             int di = (int) depth;
                             MapData.Tex sx = st == null ? tt : st;
                             boolean deep = false;
@@ -215,21 +239,20 @@ final class Map3D {
                                         if (ln == 0 || di < acc + ln) break;
                                         acc += ln;
                                     }
-                                    MapData.Tex w2 = wid > 0 ? MapData.sideTexture(wid - 1) : null;
-                                    lastTex = w2;
+                                    lastTex = wid > 0 ? MapData.sideTexture(wid - 1) : null;
                                     lastDi = di;
                                 }
                                 if (lastTex != null) { sx = lastTex; deep = true; }
                             }
-                            double along = Math.abs(dirx) > Math.abs(dirz) ? wz : wx;
-                            int tx = Math.min(sx.w - 1, (int) ((along - Math.floor(along)) * sx.w));
-                            int ty = Math.min(sx.w - 1, (int) ((depth - di) * sx.w));
+                            int tx = Math.max(0, Math.min(sx.w - 1, (int) ((along - Math.floor(along)) * sx.w)));
+                            int ty = Math.max(0, Math.min(sx.w - 1, (int) ((depth - di) * sx.w)));
                             int tc = sx.px[ty * sx.w + tx];
                             int base;
                             if ((tc >>> 24) < 32) base = color;
                             else if (deep) base = tc | 0xFF000000;
                             else if (sameTex) base = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
                             else base = mixRgb(tc, color, 0.3f);
+                            if (mip < 0.999) base = mixRgb(shade(avgC, 1f), base, (float) mip);
                             out = shade(base, (float) (wallShade * Math.max(0.6, 1.0 - depth * 0.010)));
                         }
                         frame[y * rw + col] = fog <= 0.01f ? out : mixFog(out, fog);
