@@ -21,6 +21,41 @@ final class LiveControl {
     private static final int SNAP_BLOCKS = 8;
 
     private static final Map<String, List<SiteTerritories.Captured>> CACHE = new HashMap<>();
+    private static final Map<String, List<SiteTerritories.Captured>> LAST = new HashMap<>();
+
+    private static boolean sameContent(List<SiteTerritories.Captured> a, List<SiteTerritories.Captured> b) {
+        if (a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            SiteTerritories.Captured x = a.get(i), y = b.get(i);
+            if (!java.util.Objects.equals(x.name, y.name) || !java.util.Objects.equals(x.country, y.country) || !java.util.Objects.equals(x.state, y.state)
+                    || !java.util.Objects.equals(x.holder, y.holder) || !java.util.Objects.equals(x.liveSide, y.liveSide) || x.x != y.x || x.z != y.z) return false;
+        }
+        return true;
+    }
+
+    /** Índices dos marcadores, montados uma vez por leitura: id, id "marker__...", e nome. */
+    private static final class Index {
+        final Map<String, DynmapMarkers.Marker> byId = new HashMap<>(), byName = new HashMap<>();
+    }
+
+    private static List<DynmapMarkers.Marker> indexed;
+    private static Index index;
+
+    private static synchronized Index indexOf(List<DynmapMarkers.Marker> markers) {
+        if (index != null && indexed == markers) return index;
+        Index ix = new Index();
+        for (DynmapMarkers.Marker m : markers) {
+            String idLow = m.id().toLowerCase();
+            ix.byId.putIfAbsent(idLow, m);
+            Matcher mid = MAP_ID.matcher(m.id());
+            if (mid.matches()) ix.byId.putIfAbsent(WarScore.key(mid.group(1), mid.group(2)), m);
+            ix.byName.putIfAbsent(m.label().toLowerCase(), m);
+            ix.byName.putIfAbsent(idLow, m);
+        }
+        indexed = markers;
+        index = ix;
+        return ix;
+    }
     private static long cachedAt = -1;
     private static SiteTerritories.Data cachedData;
 
@@ -39,7 +74,15 @@ final class LiveControl {
             cachedAt = DynmapMarkers.markersAt();
         }
         String id = war.id == null ? String.valueOf(System.identityHashCode(war)) : war.id;
-        return CACHE.computeIfAbsent(id, k -> merge(d, war, own, DynmapMarkers.markers()));
+        List<SiteTerritories.Captured> cur = CACHE.get(id);
+        if (cur != null) return cur;
+        List<SiteTerritories.Captured> merged = merge(d, war, own, DynmapMarkers.markers());
+        // a mesma lista de antes (mesmo objeto) quando nada mudou: placar e frente não são recalculados a cada leitura do dynmap
+        List<SiteTerritories.Captured> prev = LAST.get(id);
+        if (prev != null && sameContent(prev, merged)) merged = prev;
+        LAST.put(id, merged);
+        CACHE.put(id, merged);
+        return merged;
     }
 
     static List<SiteTerritories.Captured> merge(SiteTerritories.Data d, SiteTerritories.WarInfo war,
@@ -85,15 +128,11 @@ final class LiveControl {
     }
 
     private static DynmapMarkers.Marker markerFor(SiteTerritories.Locality l, List<DynmapMarkers.Marker> markers) {
-        String id = WarScore.key(l.name, l.country);
-        for (DynmapMarkers.Marker m : markers) {                                   // pelo id
-            if (m.id().toLowerCase().equals(id)) return m;
-            Matcher mid = MAP_ID.matcher(m.id());
-            if (mid.matches() && WarScore.key(mid.group(1), mid.group(2)).equals(id)) return m;
-        }
-        for (DynmapMarkers.Marker m : markers) {                                   // pelo nome
-            if (m.label().equalsIgnoreCase(l.name) || m.id().equalsIgnoreCase(l.name)) return m;
-        }
+        Index ix = indexOf(markers);
+        DynmapMarkers.Marker hit = ix.byId.get(WarScore.key(l.name, l.country));                 // pelo id
+        if (hit != null) return hit;
+        hit = ix.byName.get(l.name.toLowerCase());                                                // pelo nome
+        if (hit != null) return hit;
         DynmapMarkers.Marker best = null;
         double bestD = SNAP_BLOCKS * SNAP_BLOCKS + 1;
         for (DynmapMarkers.Marker m : markers) {                                   // o mais próximo em poucos blocos
