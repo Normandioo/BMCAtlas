@@ -472,7 +472,8 @@ public class MapScreen extends Screen {
             }
         }
         Map3D.setup(viewX, viewZ, scale, width, height);
-        Map3D.render(g, width, height);
+        if (Map3DGpu.enabled) Map3DGpu.submit(g, viewX, viewZ, scale, width, height);
+        else Map3D.render(g, width, height);
     }
 
     private void drawGrid(GuiGraphics g, double leftB, double rightB, double topB, double botB) {
@@ -3998,6 +3999,10 @@ public class MapScreen extends Screen {
         }
         if (k == GLFW.GLFW_KEY_5 && siteMode()) {
             enterWar();
+            return true;
+        }
+        if (on3d() && k == GLFW.GLFW_KEY_G) {
+            Map3DGpu.enabled = !Map3DGpu.enabled;
             return true;
         }
         if (on3d() && (k == GLFW.GLFW_KEY_Q || k == GLFW.GLFW_KEY_E)) {

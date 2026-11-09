@@ -66,7 +66,7 @@ final class Map3D {
         uz = sp * fhz;
     }
 
-    private static MapData.Region regionAt(int wx, int wz) {
+    static MapData.Region regionAt(int wx, int wz) {
         int gx = Math.floorDiv(wx, MapData.REGION_PX) - cacheRx + GRID;
         int gz = Math.floorDiv(wz, MapData.REGION_PX) - cacheRz + GRID;
         if (gx < 0 || gz < 0 || gx > 2 * GRID || gz > 2 * GRID) return null;

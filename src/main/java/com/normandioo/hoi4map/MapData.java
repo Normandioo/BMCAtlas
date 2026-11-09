@@ -211,6 +211,13 @@ final class MapData {
         return OWNERS.get(key(px, pz));
     }
 
+    private static int dataVer;
+
+    /** Muda sempre que o terreno lido muda (o 3D da GPU refaz a malha). */
+    static int dataVersion() {
+        return dataVer;
+    }
+
     static boolean isDirty() {
         return dirty;
     }
@@ -691,6 +698,7 @@ final class MapData {
         }
         reg.dirty = true;
         dirty = true;
+        dataVer++;
     }
 
     /** Lê agora todos os chunks carregados no quadrado em volta (cx, cz); devolve quantos leu. */
