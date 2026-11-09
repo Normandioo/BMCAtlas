@@ -23,10 +23,10 @@ public class BmcAtlasClient implements ClientModInitializer {
     public void onInitializeClient() {
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
         OPEN_KEY = KeyMappingHelper.registerKeyMapping(
-                new KeyMapping("key.bmcatlas.open", InputConstants.Type.KEYSYM, InputConstants.KEY_N, category));
+                new KeyMapping("key.bmcatlas.open", InputConstants.KEY_N, category));
 
         MINIMAP_KEY = KeyMappingHelper.registerKeyMapping(
-                new KeyMapping("key.bmcatlas.minimap", InputConstants.Type.KEYSYM, InputConstants.KEY_Z, category));
+                new KeyMapping("key.bmcatlas.minimap", InputConstants.KEY_Z, category));
 
         Prefs.load();
         Countries.load();
