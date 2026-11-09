@@ -27,17 +27,6 @@ jobs:
       - name: Build
         run: gradle build --no-daemon --stacktrace
 
-      - name: Inspecionar API (temporário)
-        if: always()
-        run: |
-          J=$(find ./.gradle/loom-cache -name 'minecraft-merged-*.jar' | grep -v sources | head -1)
-          for c in net.minecraft.client.renderer.rendertype.RenderTypes 'net.minecraft.client.renderer.rendertype.RenderType' net.minecraft.client.renderer.rendertype.RenderSetup; do
-            echo "=== $c"
-            javap -p -cp "$J" "$c" 2>&1 | grep -v -E "lambda\$|synthetic" | head -140
-          done
-          echo "=== VertexConsumer defaults"; javap -p -cp "$J" com.mojang.blaze3d.vertex.VertexConsumer | grep default
-          echo "=== PiP code"; javap -p -c -cp "$J" net.minecraft.client.gui.render.pip.PictureInPictureRenderer | grep -E "invoke|public|protected|private" | head -80
-          echo "=== Lighting"; javap -p -cp "$J" com.mojang.blaze3d.platform.Lighting
       - uses: actions/upload-artifact@v4
         with:
           name: hoi4map-jar

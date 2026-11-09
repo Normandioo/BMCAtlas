@@ -49,10 +49,6 @@ final class Prefs {
         boolean minimapPlayers = true;
         /** Limites das cidades desenhados no terreno (mapa e minimapa). */
         boolean limits = true;
-        /** Mapa grande inclinado (visão 3D). */
-        boolean view3d = false;
-        /** Resolução do 3D em relação à tela (30-100%). */
-        int quality3dPct = 60;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -99,7 +95,6 @@ final class Prefs {
         data.borderPct = Math.max(0, Math.min(100, data.borderPct));
         data.reliefPct = Math.max(100, Math.min(300, data.reliefPct));
         data.smoothPct = Math.max(0, Math.min(100, data.smoothPct));
-        data.quality3dPct = Math.max(30, Math.min(100, data.quality3dPct));
         data.waterSatPct = Math.max(0, Math.min(100, data.waterSatPct));
         data.playerIconPct = Math.max(100, Math.min(400, data.playerIconPct));
         data.zoomBiasPct = Math.max(50, Math.min(200, data.zoomBiasPct));

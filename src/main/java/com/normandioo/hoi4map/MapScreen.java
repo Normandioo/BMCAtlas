@@ -94,7 +94,6 @@ public class MapScreen extends Screen {
 
     private boolean dragging;
     private boolean moved;
-    private boolean rotating;
     private double pressX, pressY;
 
     // UI em modo imediato: cada quadro registra as áreas clicáveis
@@ -198,7 +197,7 @@ public class MapScreen extends Screen {
 
     @Override
     public void onClose() {
-        MapData.saveAsync();
+        MapData.save();
         // os marcadores da guerra ficam na memória: ao reabrir o mapa o estado atual aparece na hora
         OnlinePlayers.reset();
         super.onClose();
@@ -230,35 +229,20 @@ public class MapScreen extends Screen {
         return viewZ + (sy - areaCy()) / scale;
     }
 
-    /** Verdadeiro com a visão 3D ligada (só com os dados do site). */
-    private boolean on3d() {
-        return Prefs.get().view3d && siteMode();
-    }
-
-    // posição do bloco (x, z) na tela; no 3D passa pela câmera e leva em conta a altura do terreno
     private double sx(double bx, double bz) {
-        if (!on3d()) return toScreenX(bx);
-        Map3D.project(bx, bz);
-        return Map3D.projX;
+        return toScreenX(bx);
     }
 
     private double sy(double bx, double bz) {
-        if (!on3d()) return toScreenY(bz);
-        Map3D.project(bx, bz);
-        return Map3D.projY;
-    }
-
-    private double[] pick3d(double mx, double my) {
-        double[] p = Map3D.pick(mx, my);
-        return p != null ? p : new double[]{viewX, viewZ};
+        return toScreenY(bz);
     }
 
     private double blockX(double mx, double my) {
-        return on3d() ? pick3d(mx, my)[0] : toBlockX(mx);
+        return toBlockX(mx);
     }
 
     private double blockZ(double mx, double my) {
-        return on3d() ? pick3d(mx, my)[1] : toBlockZ(my);
+        return toBlockZ(my);
     }
 
     private boolean blockedAt(List<Hit> list, double mx, double my) {
@@ -408,10 +392,6 @@ public class MapScreen extends Screen {
         int rz0 = (int) Math.floor(topB / MapData.REGION_PX);
         int rz1 = (int) Math.floor(botB / MapData.REGION_PX);
         int uploads = 0;
-        if (on3d()) {
-            draw3d(g, sd);
-            rx1 = rx0 - 1;       // o terreno já foi desenhado
-        }
         for (int rx = rx0; rx <= rx1; rx++) {
             for (int rz = rz0; rz <= rz1; rz++) {
                 MapData.Region r = MapData.region(rx, rz, false);
@@ -439,7 +419,7 @@ public class MapScreen extends Screen {
             if (mode == MODE_POLITICAL) drawManualNames(g);
             drawManualSelection(g);
         } else if (d != null) {
-            if (mode == MODE_WAR && !on3d()) drawWaves(g);
+            if (mode == MODE_WAR) drawWaves(g);
             if (mode == MODE_POLITICAL || rel) drawSiteNames(g, d);
             drawWarFront(g, d);
             drawCities(g, d, mouseX, mouseY);
@@ -447,33 +427,6 @@ public class MapScreen extends Screen {
         }
         drawOnlinePlayers(g, site ? d : null, mouseX, mouseY);
         drawPlayer(g);
-    }
-
-    /** Visão 3D: pinta as regiões em volta (poucas por quadro) e desenha o terreno pela câmera. */
-    private void draw3d(GuiGraphics g, SiteTerritories.Data sd) {
-        if (scale < 0.2) scale = 0.2;
-        int crx = Math.floorDiv((int) Math.floor(viewX), MapData.REGION_PX), crz = Math.floorDiv((int) Math.floor(viewZ), MapData.REGION_PX);
-        int uploads = 0;
-        for (int ring = 0; ring <= 5; ring++) {
-            for (int dx = -ring; dx <= ring; dx++) {
-                for (int dz = -ring; dz <= ring; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) continue;
-                    int rx = crx + dx, rz = crz + dz;
-                    MapData.Region r = MapData.region(rx, rz, false);
-                    if (r == null && sd != null && regionTouchesSite(sd, rx, rz)) r = MapData.viewRegion(rx, rz);
-                    if (r == null) continue;
-                    MapData.markUsed(r);
-                    boolean stale = r.id == null || r.dirty || r.styledMode != mode || r.styledVer != MapStyle.overrideVersion;
-                    if (stale && uploads < 2) {
-                        r.ensureUploaded(mode);
-                        uploads++;
-                    }
-                }
-            }
-        }
-        Map3D.setup(viewX, viewZ, scale, width, height);
-        if (Map3DGpu.enabled) Map3DGpu.submit(g, viewX, viewZ, scale, width, height);
-        else Map3D.render(g, width, height);
     }
 
     private void drawGrid(GuiGraphics g, double leftB, double rightB, double topB, double botB) {
@@ -1360,10 +1313,6 @@ public class MapScreen extends Screen {
                 : OnlinePlayers.error() != null ? "Ligado (dynmap sem resposta: só quem está por perto)" : "Ligado (carregando...)");
         b.add(new Btn("players", showPlayers && dyn, dyn, playersTip, () -> showPlayers = !showPlayers, false));
 
-        b.add(new Btn("view3d", Prefs.get().view3d, true, "Visão 3D\n" + (Prefs.get().view3d ? "Ligada. Botão direito: girar e inclinar. Q/E: girar. (T)" : "Desligada. (T)"), () -> {
-            Prefs.get().view3d = !Prefs.get().view3d;
-            Prefs.save();
-        }, false));
         b.add(new Btn("center", false, true, "Centralizar em você", this::centerOnPlayer, true));
         String sourceTip = !haveSite ? "Fonte: manual\nSem dados do site."
                 : SiteTerritories.useSite ? "Fonte: site\nClique para usar o modo manual." : "Fonte: manual\nClique para usar o site.";
@@ -2982,10 +2931,6 @@ public class MapScreen extends Screen {
             p.waterSatPct = i * 10;
             Prefs.changed();
         });
-        stepsRow(g, "Resolução do 3D", p.quality3dPct + "%", 8, indexOfStep(p.quality3dPct, 30, 10, 8), mouseX, mouseY, i -> {
-            p.quality3dPct = 30 + i * 10;
-            Prefs.save();
-        });
         toggleRow(g, "Nomes dos países", p.countryNames, mouseX, mouseY, () -> {
             p.countryNames = !p.countryNames;
             Prefs.save();
@@ -3846,13 +3791,6 @@ public class MapScreen extends Screen {
             if (h.action() != null && event.button() == 0) h.action().run();
             return true;
         }
-        if (event.button() == 1 && on3d()) {
-            rotating = true;
-            moved = false;
-            pressX = mx;
-            pressY = my;
-            return true;
-        }
         if (event.button() == 1) {
             closePanel();
             selPlayer = null;
@@ -3867,24 +3805,11 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
-        if (rotating) {
-            if (Math.abs(event.x() - pressX) > 3 || Math.abs(event.y() - pressY) > 3) moved = true;
-            Map3D.yaw += dx * 0.006;
-            Map3D.pitch = Math.max(0.25, Math.min(1.45, Map3D.pitch - dy * 0.005));
-            return true;
-        }
         if (dragging) {
             if (Math.abs(event.x() - pressX) > 3 || Math.abs(event.y() - pressY) > 3) moved = true;
             if (moved) {
-                if (on3d()) {
-                    double fhx = Math.sin(Map3D.yaw), fhz = -Math.cos(Map3D.yaw);
-                    double k = 1.0 / (scale * Math.max(0.3, Math.sin(Map3D.pitch)));
-                    viewX -= dx / scale * Math.cos(Map3D.yaw) - dy * k * fhx;
-                    viewZ -= dx / scale * Math.sin(Map3D.yaw) - dy * k * fhz;
-                } else {
-                    viewX -= dx / scale;
-                    viewZ -= dy / scale;
-                }
+                viewX -= dx / scale;
+                viewZ -= dy / scale;
             }
             return true;
         }
@@ -3893,14 +3818,6 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
-        if (rotating && event.button() == 1) {
-            rotating = false;
-            if (!moved) {
-                closePanel();
-                selPlayer = null;
-            }
-            return true;
-        }
         if (dragging) {
             dragging = false;
             if (!moved) select(blockX(event.x(), event.y()), blockZ(event.x(), event.y()), event.x(), event.y());
@@ -3962,10 +3879,6 @@ public class MapScreen extends Screen {
             return true;
         }
         if (blockedAt(hits, mouseX, mouseY)) return true;
-        if (on3d()) {
-            scale = Math.max(0.2, Math.min(8.0, scale * Math.pow(1.2, scrollY)));
-            return true;
-        }
         double bxx = toBlockX(mouseX);
         double bzz = toBlockZ(mouseY);
         scale = Math.max(0.03, Math.min(8.0, scale * Math.pow(1.2, scrollY)));
@@ -3999,24 +3912,6 @@ public class MapScreen extends Screen {
         }
         if (k == GLFW.GLFW_KEY_5 && siteMode()) {
             enterWar();
-            return true;
-        }
-        if (on3d() && k == GLFW.GLFW_KEY_H) {
-            MapData.layers = !MapData.layers;
-            MapData.bumpData();
-            return true;
-        }
-        if (on3d() && k == GLFW.GLFW_KEY_G) {
-            Map3DGpu.enabled = !Map3DGpu.enabled;
-            return true;
-        }
-        if (on3d() && (k == GLFW.GLFW_KEY_Q || k == GLFW.GLFW_KEY_E)) {
-            Map3D.yaw += k == GLFW.GLFW_KEY_E ? 0.26 : -0.26;
-            return true;
-        }
-        if (k == GLFW.GLFW_KEY_T) {
-            Prefs.get().view3d = !Prefs.get().view3d;
-            Prefs.save();
             return true;
         }
         return super.keyPressed(event);
