@@ -347,7 +347,9 @@ final class MapStyle {
         }
         int c = landBase(raw);
         if (k == 1f || n == 0) return c;
-        float shift = delta * (k - 1f) * 1.6f;
+        // só degraus de verdade (acima do ruído de cor entre blocos) são realçados, com teto para não virar sal e pimenta
+        float mag = Math.max(0f, Math.abs(delta) - 8f);
+        float shift = Math.signum(delta) * Math.min(26f, mag * (k - 1f) * 1.1f);
         return pack(((c >> 16) & 0xFF) + shift, ((c >> 8) & 0xFF) + shift, (c & 0xFF) + shift);
     }
 

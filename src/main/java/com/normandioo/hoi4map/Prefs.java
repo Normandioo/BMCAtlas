@@ -27,7 +27,7 @@ final class Prefs {
         /** Realce do relevo (100-300%). */
         int reliefPct = 150;
         /** Suavização do terreno: menos ruído entre blocos (0-100%). */
-        int smoothPct = 40;
+        int smoothPct = 60;
         /** Saturação da água (0-100%). */
         int waterSatPct = 60;
         boolean cityNames = true;
