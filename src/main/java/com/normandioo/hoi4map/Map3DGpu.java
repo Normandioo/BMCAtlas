@@ -55,6 +55,12 @@ final class Map3DGpu {
             return State.class;
         }
 
+        /** origem da pose no meio da tela (o padrão do jogo põe a origem embaixo, como nos bonecos do inventário) */
+        @Override
+        protected float getTranslateY(int height, int guiScale) {
+            return height / 2.0f;
+        }
+
         @Override
         protected String getTextureLabel() {
             return "hoi4map 3d gpu";
