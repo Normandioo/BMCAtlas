@@ -646,7 +646,7 @@ public class MapScreen extends Screen {
 
     // ----------------------------------------------------------- limites e cidades
 
-    private SiteTerritories.Zone zoneOf(SiteTerritories.Data d, SiteTerritories.Locality l) {
+    private static SiteTerritories.Zone zoneOf(SiteTerritories.Data d, SiteTerritories.Locality l) {
         return d.zoneByKey.get(SiteTerritories.zoneKey(l.name, l.country));
     }
 
