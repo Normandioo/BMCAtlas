@@ -58,6 +58,7 @@ public class MapScreen extends Screen {
     private static boolean viewInit;
     private static int mode = MODE_POLITICAL;
     private static int tab = TAB_NONE;
+    private static String lastWaveKey;     // guerra e mapa da última leitura de cores
     private static int infoTab;            // aba da janela do país
     private static final double[] SCROLL = new double[10];
     private static double cardScroll;
@@ -350,6 +351,8 @@ public class MapScreen extends Screen {
             MapStyle.provinceOverride = null;
             legend = List.of();
             zoneColors = Map.of();
+            WarWave.clear();
+            lastWaveKey = null;
             return;
         }
         Relations.Result r;
@@ -364,6 +367,14 @@ public class MapScreen extends Screen {
         // só repinta o mapa se as cores realmente mudaram (a leitura do dynmap chega a cada poucos segundos)
         boolean same = Arrays.equals(MapStyle.countryOverride, r.country()) && Objects.equals(MapStyle.provinceOverride, r.provinces())
                 && Objects.equals(zoneColors, r.zones());
+        // onda de conquista: só entre duas leituras da mesma guerra no mesmo mapa (nada anima ao entrar)
+        MapCatalog.Entry waveMap = SiteTerritories.activeMap();
+        String waveKey = mode == MODE_WAR ? warSel + "|" + (waveMap == null ? "" : waveMap.key) : null;
+        if (waveKey == null || !waveKey.equals(lastWaveKey)) WarWave.clear();
+        else if (!same && MapStyle.provinceOverride != null && MapStyle.countryOverride != null) {
+            WarWave.changes(d, MapStyle.provinceOverride, MapStyle.countryOverride, r.provinces(), r.country(), System.currentTimeMillis());
+        }
+        lastWaveKey = waveKey;
         MapStyle.countryOverride = r.country();
         MapStyle.provinceOverride = r.provinces();
         if (!same) MapStyle.overrideVersion++;
@@ -422,6 +433,7 @@ public class MapScreen extends Screen {
             if (mode == MODE_POLITICAL) drawManualNames(g);
             drawManualSelection(g);
         } else if (d != null) {
+            if (mode == MODE_WAR && !on3d()) drawWaves(g);
             if (mode == MODE_POLITICAL || rel) drawSiteNames(g, d);
             drawWarFront(g, d);
             drawCities(g, d, mouseX, mouseY);
@@ -2218,6 +2230,68 @@ public class MapScreen extends Screen {
         return 0xFF9A9A9A;
     }
 
+    private static final double ARROW_SCALE = 0.3;     // zoom a partir do qual as setas das conexões aparecem
+    private static final int CHEVRON_STEP = 7;         // distância entre as setas, em pixels da interface
+
+    /** Setas ">" de tamanho fixo na tela, deslizando de (x0, y0) para (x1, y1) e ganhando força no caminho. */
+    private void chevrons(GuiGraphics g, double x0, double y0, double x1, double y1, int color, float thick, long now) {
+        double len = Math.hypot(x1 - x0, y1 - y0);
+        if (len < 10) return;
+        double ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+        float angle = (float) Math.atan2(uy, ux);
+        int r = (color >> 16) & 255, gr = (color >> 8) & 255, b = color & 255;
+        int tone = (r + (255 - r) * 3 / 5) << 16 | (gr + (255 - gr) * 3 / 5) << 8 | (b + (255 - b) * 3 / 5);
+        int half = Math.max(1, ((int) thick - 3) / 2);
+        double offset = (now / 300.0) % CHEVRON_STEP;
+        for (double s = 4 + offset; s <= len - 3; s += CHEVRON_STEP) {
+            double x = x0 + ux * s, y = y0 + uy * s;
+            if (x < -8 || x > width + 8 || y < -8 || y > height + 8) continue;
+            double alpha = Math.min(0.3 + 0.7 * s / len, (len - s) / 6.0);
+            if (alpha <= 0.02) continue;
+            int argb = (int) Math.round(255 * Math.min(1, alpha)) << 24 | tone;
+            g.pose().pushMatrix();
+            g.pose().translate((float) x, (float) y);
+            g.pose().rotate(angle);
+            for (int k = -half; k <= half; k++) {
+                int ax = -Math.abs(k);
+                g.fill(ax - 1, k, ax + 1, k + 1, argb);
+            }
+            g.pose().popMatrix();
+        }
+    }
+
+    /** Onda de conquista: cobre com a cor antiga o que ela ainda não alcançou e pinta a frente em vermelho claro. */
+    private void drawWaves(GuiGraphics g) {
+        long now = System.currentTimeMillis();
+        for (WarWave.Wave w : WarWave.active(now)) {
+            int front = (int) (w.maxDist * (now - w.start) / (double) WarWave.DURATION);
+            int band = Math.max(1, w.maxDist / 12);
+            int old = 0xE6000000 | (w.oldRgb < 0 ? 0x6E6E6E : w.oldRgb & 0xFFFFFF);
+            for (int j = 0; j < w.h; j++) {
+                int y0 = (int) Math.floor(toScreenY(w.z0 + j * (double) w.cell));
+                int y1 = (int) Math.floor(toScreenY(w.z0 + (j + 1) * (double) w.cell));
+                if (y1 <= y0 || y1 < 0 || y0 > height) continue;
+                int i = 0;
+                while (i < w.w) {
+                    int kind = waveKind(w.dist[j * w.w + i], front, band), end = i + 1;
+                    while (end < w.w && waveKind(w.dist[j * w.w + end], front, band) == kind) end++;
+                    if (kind != 0) {
+                        int x0 = (int) Math.floor(toScreenX(w.x0 + i * (double) w.cell));
+                        int x1 = (int) Math.floor(toScreenX(w.x0 + end * (double) w.cell));
+                        g.fill(x0, y0, x1, y1, kind == 2 ? 0xFFF2907E : old);
+                    }
+                    i = end;
+                }
+            }
+        }
+    }
+
+    /** 0 = nada a desenhar, 1 = ainda não alcançado, 2 = frente da onda. */
+    private static int waveKind(int dist, int front, int band) {
+        if (dist < 0 || dist < front) return 0;
+        return dist < front + band ? 2 : 1;
+    }
+
     /** Linhas de frente (grossas, cada metade na cor de quem segura), ligações internas (pontilhadas) e anéis nas cidades In Play. */
     private void drawWarFront(GuiGraphics g, SiteTerritories.Data d) {
         if (mode != MODE_WAR || scale < 0.04) return;
@@ -2228,26 +2302,56 @@ public class MapScreen extends Screen {
             double x0 = sx(h.a().x + 0.5, h.a().z + 0.5), y0 = sy(h.a().x + 0.5, h.a().z + 0.5), x1 = sx(h.b().x + 0.5, h.b().z + 0.5), y1 = sy(h.b().x + 0.5, h.b().z + 0.5);
             dottedLine(g, x0, y0, x1, y1, 0xC8C8C8C8);
         }
-        float thick = (float) Math.max(2, Math.min(9, 3 * scale));
+        boolean arrows = scale >= ARROW_SCALE;
+        float thick = arrows ? (float) Math.max(7, Math.min(9, 3 * scale)) : 2f;
+        long now = System.currentTimeMillis();
         for (WarFront.Hot h : f.hotLines()) {
             double x0 = sx(h.a().x + 0.5, h.a().z + 0.5), y0 = sy(h.a().x + 0.5, h.a().z + 0.5), x1 = sx(h.b().x + 0.5, h.b().z + 0.5), y1 = sy(h.b().x + 0.5, h.b().z + 0.5);
-            double mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+            double len = Math.hypot(x1 - x0, y1 - y0);
+            if (len < 1) continue;
+            // a barra para antes do ícone das cidades
+            double ux = (x1 - x0) / len, uy = (y1 - y0) / len, gapA = iconRadius(h.a()) + 4, gapB = iconRadius(h.b()) + 4;
+            if (len > gapA + gapB + 6) {
+                x0 += ux * gapA;
+                y0 += uy * gapA;
+                x1 -= ux * gapB;
+                y1 -= uy * gapB;
+            }
+            WarFront.Unit ua = f.unitOf(h.a()), ub = f.unitOf(h.b());
+            boolean ea = ua != null && ua.encircled, eb = ub != null && ub.encircled;
+            int ca = ctlColor(war, h.controlA()), cb = ctlColor(war, h.controlB());
             segment(g, x0, y0, x1, y1, 0xB0000000, thick + 2);
-            segment(g, x0, y0, mx, my, ctlColor(war, h.controlA()), thick);
-            segment(g, mx, my, x1, y1, ctlColor(war, h.controlB()), thick);
+            if (ea != eb) {       // só uma cercada: só quem está fora avança, apontando para ela
+                int c = ea ? cb : ca;
+                segment(g, x0, y0, x1, y1, c, thick);
+                if (arrows) {
+                    if (ea) chevrons(g, x1, y1, x0, y0, c, thick, now);
+                    else chevrons(g, x0, y0, x1, y1, c, thick, now);
+                }
+            } else {
+                double mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+                segment(g, x0, y0, mx, my, ca, thick);
+                segment(g, mx, my, x1, y1, cb, thick);
+                if (arrows) {
+                    chevrons(g, x0, y0, mx, my, ca, thick, now);
+                    chevrons(g, x1, y1, mx, my, cb, thick, now);
+                }
+            }
         }
-        long now = System.currentTimeMillis();
-        double phase = (now % 1400) / 1400.0;
+        double phase = (now % 2400) / 2400.0;
         for (WarFront.Unit u : f.units()) {
-            if (!u.inPlay || u.neutral()) continue;
-            int color = ctlColor(war, u.control) & 0xFFFFFF;
+            if (u.neutral() || (!u.inPlay && !u.encircled)) continue;
             for (SiteTerritories.Locality l : u.members) {
                 int sx = (int) Math.round(sx(l.x + 0.5, l.z + 0.5)), sy = (int) Math.round(sy(l.x + 0.5, l.z + 0.5));
                 if (sx < -30 || sx > width + 30 || sy < -30 || sy > height + 30 || !cityVisible(l)) continue;
-                int r = iconRadius(l) + 2 + (int) Math.round(phase * 6);
-                int a = (int) Math.round(200 * (1 - phase));
-                squareRing(g, sx, sy, r, (a << 24) | color);
-                squareRing(g, sx, sy, iconRadius(l) + 2, 0xC0000000 | color);
+                if (u.inPlay) {
+                    int a = (int) Math.round(190 * (1 - phase));
+                    squareRing(g, sx, sy, iconRadius(l) + 2 + (int) Math.round(phase * 10), (a << 24) | (u.encircled ? 0xE8403A : 0xECEBE4));
+                }
+                if (u.encircled) {       // anel fixo da cidade cercada
+                    squareRing(g, sx, sy, iconRadius(l) + 3, 0xFFE8403A);
+                    squareRing(g, sx, sy, iconRadius(l) + 4, 0xFFE8403A);
+                }
             }
         }
     }
@@ -2758,7 +2862,7 @@ public class MapScreen extends Screen {
         }
 
         section(g, "Legenda do mapa");
-        paragraph(g, "Linha grossa: frente, cada metade na cor de quem segura aquela ponta. Linha pontilhada cinza: ligação interna de um lado. Anel pulsante: cidade In Play. Espada: jogadores dos dois lados no mesmo território. Bandeira: cidade tomada há menos de 10 minutos.", COL_DIM);
+        paragraph(g, "Linha grossa: frente, com setas na direção do avanço (numa cidade cercada, só quem pode avançar tem setas). Linha pontilhada cinza: ligação interna de um lado. Anel pulsante: cidade In Play. Anel vermelho: cidade cercada. Espada: jogadores dos dois lados no mesmo território. Bandeira: cidade tomada há menos de 10 minutos.", COL_DIM);
     }
 
     // -------------------------------------------------------------- configurações
