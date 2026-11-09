@@ -533,7 +533,8 @@ final class MapData {
                     int hW = neighborHeight(chunk, west, north, northWest, heights, lx - 1, lz, top);
                     int hN = neighborHeight(chunk, west, north, northWest, heights, lx, lz - 1, top);
                     int slope = (top - hW) + (top - hN);
-                    float shade = 1.0f + Math.max(-6, Math.min(6, slope)) * 0.095f;
+                    // relevo estilo Xaero's: cada degrau de 1 bloco escurece/clareia bem (luz vinda do noroeste) + leve tom por altitude
+                    float shade = 1.0f + Math.max(-4, Math.min(4, slope)) * 0.15f + Math.max(-0.10f, Math.min(0.10f, (top - 70) * 0.0025f));
                     color = shadeColor(c, shade);
                 }
                 result[outIndex] = color;
