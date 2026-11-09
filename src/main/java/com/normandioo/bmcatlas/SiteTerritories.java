@@ -184,7 +184,7 @@ final class SiteTerritories {
         /** Dynmap do servidor (o site encaminha /dynmap/): de onde vêm os jogadores online. Só leitura. */
         String dynmapUrl = "https://bmcmc.online/dynmap/";
         String dynmapWorld = "world";
-        /** Milissegundos entre perguntas ao dynmap (só com o mapa aberto). Mínimo 1000. */
+        /** Milissegundos entre perguntas ao dynmap. O mod nunca pergunta mais rápido que 2 s (mapa aberto) ou 5 s (minimapa). */
         int playersRefreshMs = 1000;
         boolean showPlayers = true;
         /** Guerras marcadas "ao vivo" no site: quem segura cada cidade vem dos marcadores do dynmap. */
