@@ -80,7 +80,7 @@ final class MapStyle {
         if (!anyZone) return;
         int size = MapData.REGION_PX;
         if (LINE_RGB.length < tint.length) LINE_RGB = new int[tint.length];
-        for (int i = 0; i < tint.length; i++) LINE_RGB[i] = tint[i] == 0 ? 0 : (tint[i] & 0xFFFFFF) == 0xFFFFFF ? 0xF4F1E8 : tint[i] & 0xFFFFFF;
+        for (int i = 0; i < tint.length; i++) LINE_RGB[i] = tint[i] == 0 ? 0 : (tint[i] & 0xFFFFFF) == 0xFFE27A ? 0xFFE27A : 0xF4F1E8;   // branco; dourado na escolhida
         if (!SiteTerritories.rasterZones(d, r.rx * size, r.rz * size, size, size, ZONE_GRID, include)) return;
         int bx = r.rx * size, bz = r.rz * size;
         for (int y = 0; y < size; y++) {
@@ -91,18 +91,23 @@ final class MapStyle {
                     int t = tint[z - 1];
                     out[i] = mix(out[i], 0xFF000000 | t, (t >>> 24) / 255f);
                 }
-                // linha do limite gravada no próprio terreno (como no outro mod): fica parada, tem tamanho de bloco e
-                // passa por cima da água; tracejada em trechos de 8 blocos
-                int lz = z;
+                // linha do limite gravada no próprio terreno: contínua, 1 bloco, só na borda de dentro da zona.
+                // Não marca a costa (onde a zona simplesmente termina na água): só limites de verdade.
+                if (z == 0) continue;
+                boolean selfWater = r.px[i] != 0 && isWater(r.px[i]);
                 boolean edge = false;
-                if (x > 0 && ZONE_GRID[i - 1] != z) { edge = true; if (lz == 0) lz = ZONE_GRID[i - 1]; }
-                if (x < size - 1 && ZONE_GRID[i + 1] != z) { edge = true; if (lz == 0) lz = ZONE_GRID[i + 1]; }
-                if (y > 0 && ZONE_GRID[i - size] != z) { edge = true; if (lz == 0) lz = ZONE_GRID[i - size]; }
-                if (y < size - 1 && ZONE_GRID[i + size] != z) { edge = true; if (lz == 0) lz = ZONE_GRID[i + size]; }
-                if (!edge || lz == 0 || (((bx + x) >> 3) + ((bz + y) >> 3) & 1) != 0) continue;
-                int lc = LINE_RGB[lz - 1 < LINE_RGB.length ? lz - 1 : 0];
+                for (int k = 0; k < 4 && !edge; k++) {
+                    int nx = x + (k == 0 ? -1 : k == 1 ? 1 : 0), ny = y + (k == 2 ? -1 : k == 3 ? 1 : 0);
+                    if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+                    int ni = ny * size + nx;
+                    if (ZONE_GRID[ni] == z) continue;
+                    if (ZONE_GRID[ni] == 0 && !selfWater && r.px[ni] != 0 && isWater(r.px[ni])) continue;   // costa
+                    edge = true;
+                }
+                if (!edge) continue;
+                int lc = LINE_RGB[z - 1 < LINE_RGB.length ? z - 1 : 0];
                 if (lc == 0) continue;
-                out[i] = out[i] == 0 ? 0xFF000000 | (lc & 0xFFFFFF) : mix(out[i], 0xFF000000 | (lc & 0xFFFFFF), 0.92f);
+                out[i] = out[i] == 0 ? 0xFF000000 | (lc & 0xFFFFFF) : mix(out[i], 0xFF000000 | (lc & 0xFFFFFF), 0.95f);
             }
         }
     }
