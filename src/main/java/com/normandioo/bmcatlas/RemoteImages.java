@@ -5,7 +5,20 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 
-import java.io.InputStream;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -25,86 +38,181 @@ final class RemoteImages {
 
     private record Ready(String url, int w, int h, int[] argb) {}
 
+    /** A texture in use, with the last time somebody asked for it. */
+    private static final class Entry {
+        final Img img;
+        volatile long used;
+
+        Entry(Img img) {
+            this.img = img;
+            this.used = System.currentTimeMillis();
+        }
+    }
+
+    /** A download that failed: tried again after retryAt (each failure waits longer). */
+    private record Failed(long retryAt, int count) {}
+
+    private interface Converter {
+        Ready apply(NativeImage image);
+    }
+
     private static final Object PENDING = new Object();
-    private static final Object FAILED = new Object();
     private static final Map<String, Object> CACHE = new ConcurrentHashMap<>();
     private static final Queue<Ready> READY = new ConcurrentLinkedQueue<>();
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10)).followRedirects(HttpClient.Redirect.NORMAL).build();
+    private static final ExecutorService WORK = Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "bmcatlas-images");
+        t.setDaemon(true);
+        return t;
+    });
+    private static final DateTimeFormatter HTTP_DATE = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US).withZone(ZoneOffset.UTC);
+    private static final long DAY = 24L * 60 * 60 * 1000;
+    private static final int MAX_TEXTURES = 300;
     private static final int MAX_W = 96, MAX_H = 64;
     private static int counter;
+    private static int pumps;
+    private static Path cacheDir;
 
     private RemoteImages() {}
 
     /** A bandeira desse endereço, ou null enquanto baixa (ou se não existir). */
     static Img flag(String url) {
-        return get(url, false);
+        return get(url, url, image -> shrink(url, image));
     }
 
     /** A vista frontal da skin desse endereço (16x32), ou null enquanto baixa. */
     static Img skin(String url) {
-        return get(url, true);
+        return get(url, url, image -> front(url, image));
     }
 
     /** Ícone pequeno (cidade, cara de jogador) reduzido para size x size com bordas suaves; null enquanto baixa. */
     static Img icon(String url, int size) {
-        if (url == null || url.isBlank()) return null;
+        if (url == null) return null;
         String key = url + "@" + size;
-        Object o = CACHE.get(key);
-        if (o instanceof Img img) return img;
-        if (o != null) return null;
-        if (CACHE.putIfAbsent(key, PENDING) != null) return null;
-        HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url))
-                        .timeout(Duration.ofSeconds(20)).header("User-Agent", "bmcatlas-fabric-mod").GET().build(),
-                HttpResponse.BodyHandlers.ofInputStream()).whenComplete((response, error) -> {
-            try {
-                if (error != null) throw new RuntimeException(error);
-                if (response.statusCode() != 200) throw new RuntimeException("HTTP " + response.statusCode());
-                try (InputStream in = response.body(); NativeImage src = NativeImage.read(in)) {
-                    READY.add(shrinkSoft(key, src, size));
-                }
-            } catch (Exception e) {
-                BmcAtlasClient.LOG.debug("Sem imagem em {}: {}", url, e.toString());
-                CACHE.put(key, FAILED);
-            }
-        });
-        return null;
+        return get(url, key, image -> shrinkSoft(key, image, size));
     }
 
     /** Verdadeiro se o download desse ícone falhou (não existe / sem rede). */
     static boolean failed(String url, int size) {
-        return CACHE.get(url + "@" + size) == FAILED;
+        return CACHE.get(url + "@" + size) instanceof Failed;
     }
 
-    private static Img get(String url, boolean skin) {
-        return get(url, skin ? 1 : 0);
-    }
-
-    private static Img get(String url, int kind) {
+    private static Img get(String url, String key, Converter conv) {
         if (url == null || url.isBlank()) return null;
-        Object o = CACHE.get(url);
-        if (o instanceof Img img) return img;
-        if (o != null) return null;
-        if (CACHE.putIfAbsent(url, PENDING) != null) return null;
-        HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url))
-                        .timeout(Duration.ofSeconds(20)).header("User-Agent", "bmcatlas-fabric-mod").GET().build(),
-                HttpResponse.BodyHandlers.ofInputStream()).whenComplete((response, error) -> {
+        Object o = CACHE.get(key);
+        if (o instanceof Entry e) {
+            e.used = System.currentTimeMillis();
+            return e.img;
+        }
+        int fails = 0;
+        if (o instanceof Failed f) {
+            if (System.currentTimeMillis() < f.retryAt) return null;
+            if (!CACHE.replace(key, f, PENDING)) return null;
+            fails = f.count;
+        } else if (o != null || CACHE.putIfAbsent(key, PENDING) != null) {
+            return null;
+        }
+        final int failsSoFar = fails;
+        try {
+            WORK.execute(() -> fetch(url, key, failsSoFar, conv));
+        } catch (RuntimeException e) {
+            CACHE.put(key, new Failed(Long.MAX_VALUE, failsSoFar + 1));
+        }
+        return null;
+    }
+
+    // ------------------------------------------------------------ disk cache
+
+    // Each image is kept as downloaded in config/bmcatlas/cache/img. A copy checked less than a day ago (6 hours for
+    // player faces, which change with the skin) is used with no request at all; an older one is confirmed with a
+    // conditional request (the site answers "not modified" without sending the image again). If the site does not
+    // answer, the old copy is used.
+
+    private static synchronized Path cacheFile(String url) {
+        try {
+            if (cacheDir == null) {
+                cacheDir = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("bmcatlas").resolve("cache").resolve("img");
+                Files.createDirectories(cacheDir);
+            }
+            byte[] h = MessageDigest.getInstance("SHA-1").digest(url.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : h) sb.append(Character.forDigit((b >> 4) & 15, 16)).append(Character.forDigit(b & 15, 16));
+            return cacheDir.resolve(sb + ".img");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void decode(String key, byte[] bytes, Converter conv) throws Exception {
+        try (NativeImage src = NativeImage.read(new ByteArrayInputStream(bytes))) {
+            READY.add(conv.apply(src));
+        }
+    }
+
+    private static void fail(String url, String key, int fails, boolean missing, Object why) {
+        BmcAtlasClient.LOG.debug("No image at {}: {}", url, why);
+        long wait = missing ? 30L * 60_000 : Math.min(10L * 60_000, 30_000L << Math.min(fails, 5));
+        CACHE.put(key, new Failed(System.currentTimeMillis() + wait, fails + 1));
+    }
+
+    private static void fetch(String url, String key, int fails, Converter conv) {
+        Path file = cacheFile(url);
+        byte[] cached = null;
+        long checked = 0;
+        try {
+            if (file != null && Files.exists(file)) {
+                cached = Files.readAllBytes(file);
+                checked = Files.getLastModifiedTime(file).toMillis();
+            }
+        } catch (IOException e) {
+            cached = null;
+        }
+        long ttl = url.contains("/faces/") ? DAY / 4 : DAY;
+        if (cached != null && System.currentTimeMillis() - checked < ttl) {
             try {
-                if (error != null) throw new RuntimeException(error);
-                if (response.statusCode() != 200) throw new RuntimeException("HTTP " + response.statusCode());
-                try (InputStream in = response.body(); NativeImage src = NativeImage.read(in)) {
-                    READY.add(kind == 1 ? front(url, src) : shrink(url, src));
-                }
+                decode(key, cached, conv);
+                return;
             } catch (Exception e) {
-                BmcAtlasClient.LOG.debug("Sem imagem em {}: {}", url, e.toString());
-                CACHE.put(url, FAILED);
+                cached = null;      // broken copy: download again
+            }
+        }
+        final byte[] old = cached;
+        HttpRequest.Builder req;
+        try {
+            req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20)).header("User-Agent", "bmcatlas-fabric-mod").GET();
+            if (old != null) req.header("If-Modified-Since", HTTP_DATE.format(Instant.ofEpochMilli(checked)));
+        } catch (RuntimeException e) {
+            fail(url, key, fails, true, e);
+            return;
+        }
+        HTTP.sendAsync(req.build(), HttpResponse.BodyHandlers.ofByteArray()).whenComplete((response, error) -> {
+            try {
+                int code = error != null ? -1 : response.statusCode();
+                if (code == 200) {
+                    decode(key, response.body(), conv);
+                    if (file != null) {
+                        Path tmp = file.resolveSibling(file.getFileName() + "." + System.nanoTime() + ".tmp");
+                        Files.write(tmp, response.body());
+                        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                    return;
+                }
+                if (old != null && (code == 304 || code == -1 || code >= 500)) {
+                    decode(key, old, conv);
+                    if (code == 304) Files.setLastModifiedTime(file, FileTime.fromMillis(System.currentTimeMillis()));
+                    return;
+                }
+                fail(url, key, fails, code == 404 || code == 403 || code == 410, error != null ? error : "HTTP " + code);
+            } catch (Exception e) {
+                if (CACHE.get(key) == PENDING) fail(url, key, fails, false, e);
             }
         });
-        return null;
     }
 
     /** Chamado no thread principal: cria as texturas das imagens que acabaram de baixar. */
     static void pump() {
+        if (++pumps % 1200 == 0) releaseUnused();
         for (int i = 0; i < 3; i++) {
             Ready r = READY.poll();
             if (r == null) return;
@@ -117,9 +225,22 @@ final class RemoteImages {
                 Identifier id = Identifier.fromNamespaceAndPath(BmcAtlasClient.MOD_ID, "img/i" + (counter++));
                 Minecraft.getInstance().getTextureManager().register(id, tex);
                 tex.upload();
-                CACHE.put(r.url, new Img(id, r.w, r.h));
+                CACHE.put(r.url, new Entry(new Img(id, r.w, r.h)));
             } catch (RuntimeException e) {
-                CACHE.put(r.url, FAILED);
+                CACHE.put(r.url, new Failed(System.currentTimeMillis() + 10L * 60_000, 1));
+            }
+        }
+    }
+
+    /** With many textures alive, the ones nobody asked for in the last 5 minutes are released (they come back from the disk cache). */
+    private static void releaseUnused() {
+        int alive = 0;
+        for (Object o : CACHE.values()) if (o instanceof Entry) alive++;
+        if (alive <= MAX_TEXTURES) return;
+        long limit = System.currentTimeMillis() - 5L * 60_000;
+        for (Map.Entry<String, Object> e : CACHE.entrySet()) {
+            if (e.getValue() instanceof Entry en && en.used < limit && CACHE.remove(e.getKey(), en)) {
+                Minecraft.getInstance().getTextureManager().release(en.img.id());
             }
         }
     }

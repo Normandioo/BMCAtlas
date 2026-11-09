@@ -81,8 +81,7 @@ final class Minimap {
                 if (r == null) continue;
                 boolean stale = r.id == null || r.dirty || r.styledMode != mode || r.styledVer != MapStyle.overrideVersion;
                 if (stale && uploads < 1) {
-                    r.ensureUploaded(mode);
-                    uploads++;
+                    if (r.ensureUploaded(mode)) uploads++;
                 }
                 if (r.id == null) continue;
                 MapData.markUsed(r);

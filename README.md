@@ -22,7 +22,7 @@
 - Server and map settings: `config/bmcatlas/site.json` (`url`, `mapsUrl`, `dynmapUrl`, `dynmapWorld`, `worldHalfSize`).
 - Player preferences: `config/bmcatlas/prefs.json`.
 - Manual countries (when there is no site data): `config/bmcatlas/countries.json` (`id`, `name`, `color` as `#RRGGBB`).
-- Explored terrain and province owners per world: `bmcatlas/` in the game folder.
+- Explored terrain and province owners per world: `bmcatlas/` in the game folder. Downloaded images are cached in `config/bmcatlas/cache/`.
 
 To use the mod on another server, point `url` at that server's `territories.json` (and optionally `mapsUrl` and `dynmapUrl`). Without `url`, the map works only with the chunks you explore.
 
