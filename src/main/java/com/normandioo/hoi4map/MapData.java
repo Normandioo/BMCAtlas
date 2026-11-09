@@ -65,6 +65,8 @@ final class MapData {
         int[] px = EMPTY_PX; // ARGB; 0 = desconhecido. Compartilhado até a região ser lida de verdade.
         /** Altura de cada bloco (y + 64, 1..); 0 = desconhecida. Só existe onde o chunk foi lido com esta versão. */
         short[] hgt;
+        /** Bloco do topo de cada coluna (id no registro + 1); 0 = desconhecido. */
+        short[] blk;
         /** Cópia das cores já pintadas no estilo atual (o modo 3D lê daqui); null até a região ser pintada. */
         int[] styledCpu;
         long lastUsed;
@@ -353,6 +355,22 @@ final class MapData {
                 Hoi4MapClient.LOG.warn("Alturas ilegíveis: {}", heights, e);
             }
         }
+        Path blocks = dir().resolve(worldKey + ".blocks1");
+        if (Files.exists(blocks)) {
+            try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(blocks)))) {
+                int n = in.readInt();
+                for (int i = 0; i < n; i++) {
+                    int rx = in.readInt();
+                    int rz = in.readInt();
+                    int len = in.readInt();
+                    short[] data = readShorts(in, len);
+                    Region r = REGIONS.get(key(rx, rz));
+                    if (r != null) r.blk = data;
+                }
+            } catch (IOException | DataFormatException e) {
+                Hoi4MapClient.LOG.warn("Blocos ilegíveis: {}", blocks, e);
+            }
+        }
         Path owners = dir().resolve(worldKey + ".owners.json");
         if (Files.exists(owners)) {
             try (Reader r = Files.newBufferedReader(owners, StandardCharsets.UTF_8)) {
@@ -369,6 +387,38 @@ final class MapData {
         }
         ownersVersion++;
         dirty = false;
+    }
+
+    private static short[] readShorts(DataInputStream in, int len) throws IOException, DataFormatException {
+        byte[] comp = new byte[len];
+        in.readFully(comp);
+        java.util.zip.Inflater inf = new java.util.zip.Inflater();
+        inf.setInput(comp);
+        byte[] raw = new byte[REGION_PX * REGION_PX * 2];
+        int got = 0;
+        while (got < raw.length && !inf.finished()) got += inf.inflate(raw, got, raw.length - got);
+        inf.end();
+        short[] h = new short[REGION_PX * REGION_PX];
+        for (int k = 0; k < h.length; k++) h[k] = (short) (((raw[2 * k] & 0xFF) << 8) | (raw[2 * k + 1] & 0xFF));
+        return h;
+    }
+
+    private static void writeShorts(DataOutputStream out, Region r, short[] data) throws IOException {
+        byte[] raw = new byte[data.length * 2];
+        for (int k = 0; k < data.length; k++) {
+            raw[2 * k] = (byte) (data[k] >> 8);
+            raw[2 * k + 1] = (byte) data[k];
+        }
+        java.util.zip.Deflater def = new java.util.zip.Deflater(6);
+        def.setInput(raw);
+        def.finish();
+        byte[] buf = new byte[raw.length + 64];
+        int len = def.deflate(buf);
+        def.end();
+        out.writeInt(r.rx);
+        out.writeInt(r.rz);
+        out.writeInt(len);
+        out.write(buf, 0, len);
     }
 
     static void save() {
@@ -412,6 +462,13 @@ final class MapData {
                     out.writeInt(len);
                     out.write(buf, 0, len);
                 }
+            }
+            Path blocks = dir().resolve(worldKey + ".blocks1");
+            try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(blocks)))) {
+                int count = 0;
+                for (Region r : REGIONS.values()) if (r.blk != null) count++;
+                out.writeInt(count);
+                for (Region r : REGIONS.values()) if (r.blk != null) writeShorts(out, r, r.blk);
             }
             Map<String, String> m = new HashMap<>();
             for (Map.Entry<Long, String> e : OWNERS.entrySet()) {
@@ -513,6 +570,14 @@ final class MapData {
                 }
             }
         }
+        if (px.length >= 768) {
+            if (reg.blk == null) reg.blk = new short[REGION_PX * REGION_PX];
+            for (int lz = 0; lz < 16; lz++) {
+                for (int lx = 0; lx < 16; lx++) {
+                    reg.blk[(oz + lz) * REGION_PX + ox + lx] = (short) px[512 + lz * 16 + lx];
+                }
+            }
+        }
         reg.dirty = true;
         dirty = true;
     }
@@ -546,7 +611,7 @@ final class MapData {
      * do cliente (o servidor interno usa para gerar o mapa sem o jogador estar perto).
      */
     static int[] computeChunk(Level level, ChunkAccess chunk, int cx, int cz) {
-        int[] result = new int[512];       // 0..255 cores; 256..511 alturas (y + 64)
+        int[] result = new int[768];       // 0..255 cores; 256..511 alturas (y + 64); 512..767 blocos (id + 1)
         ChunkAccess west = neighbor(level, cx - 1, cz);
         ChunkAccess north = neighbor(level, cx, cz - 1);
         ChunkAccess northWest = neighbor(level, cx - 1, cz - 1);
@@ -572,6 +637,7 @@ final class MapData {
                 }
                 result[256 + outIndex] = Math.max(1, top + 64);
                 BlockState state = stateAtTop(chunk, pos, wx, top, wz);
+                result[512 + outIndex] = BuiltInRegistries.BLOCK.getId(state.getBlock()) + 1;
                 FluidState fluid = state.getFluidState();
 
                 int color;
@@ -646,7 +712,7 @@ final class MapData {
     // ------------------------------------------------------------- cores de bloco
 
     /** Textura de um bloco: cor média + pixels (primeiro quadro), para dar granulado. */
-    private static final class Tex {
+    static final class Tex {
         int avg;
         int[] px;
         int w;
@@ -654,6 +720,7 @@ final class MapData {
 
     private static final Tex NO_TEX = new Tex();
     private static final Map<Block, Tex> TEXTURES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<Block, Tex> SIDE_TEXTURES = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static final String[] STRIP_SUFFIXES = {
             "_stairs", "_slab", "_wall", "_fence_gate", "_fence", "_button", "_pressure_plate"
@@ -685,18 +752,36 @@ final class MapData {
         return base;
     }
 
+    /** Textura da face de cima do bloco (id do registro), ou null se não houver. */
+    static Tex topTexture(int blockId) {
+        Block b = BuiltInRegistries.BLOCK.byId(blockId);
+        Tex t = TEXTURES.computeIfAbsent(b, k -> loadTexture(k, false));
+        return t == NO_TEX ? null : t;
+    }
+
+    /** Textura da face lateral do bloco, ou null se não houver. */
+    static Tex sideTexture(int blockId) {
+        Block b = BuiltInRegistries.BLOCK.byId(blockId);
+        Tex t = SIDE_TEXTURES.computeIfAbsent(b, k -> loadTexture(k, true));
+        return t == NO_TEX ? null : t;
+    }
+
     private static Tex loadTexture(Block block) {
+        return loadTexture(block, false);
+    }
+
+    private static Tex loadTexture(Block block, boolean side) {
         Identifier id = BuiltInRegistries.BLOCK.getKey(block);
         String ns = id.getNamespace();
         String path = id.getPath();
 
         List<String> names = new ArrayList<>();
         if (path.equals("lava")) names.add("lava_still");
-        addCandidates(names, path);
+        addCandidates(names, path, side);
         for (String suffix : STRIP_SUFFIXES) {
             if (path.endsWith(suffix)) {
                 String stem = path.substring(0, path.length() - suffix.length());
-                addCandidates(names, stem);
+                addCandidates(names, stem, side);
                 names.add(stem + "s");
                 names.add(stem + "_planks");
                 names.add(stem + "_block");
@@ -710,7 +795,14 @@ final class MapData {
         return NO_TEX;
     }
 
-    private static void addCandidates(List<String> out, String name) {
+    private static void addCandidates(List<String> out, String name, boolean side) {
+        if (side) {
+            out.add(name + "_side");
+            out.add(name);
+            out.add(name + "_top");
+            out.add(name + "_front");
+            return;
+        }
         out.add(name + "_top");
         out.add(name);
         out.add(name + "_side");

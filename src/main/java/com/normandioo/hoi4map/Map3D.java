@@ -21,6 +21,8 @@ final class Map3D {
     private static final double QUALITY = 0.4;     // pixels da imagem por pixel da tela
     private static final int GRID = 5;             // regiões em cada direção do alvo que entram no desenho
     private static final int BG = 0xFF0B1628;
+    /** Usa as texturas dos blocos do jogo (e do pacote de texturas) nos blocos próximos. */
+    static boolean TEXTURES = true;
     private static final int UNKNOWN_H = 126;      // y 62 quando a região ainda não tem alturas
 
     private static NativeImage img;
@@ -138,6 +140,7 @@ final class Map3D {
             double dirx = Math.sin(yaw + a), dirz = -Math.cos(yaw + a);
             int top = rh;
             double r0 = Math.max(1, camDistH - 1500), rEnd = camDistH + 1500;
+            double prevX = camX + dirx * r0, prevZ = camZ + dirz * r0;
             for (double r = r0; r < rEnd && top > 0; r += Math.max(1.5, 2.0 * r / focal)) {
                 double wx = camX + dirx * r, wz = camZ + dirz * r;
                 int ix = (int) Math.floor(wx), iz = (int) Math.floor(wz);
@@ -154,12 +157,56 @@ final class Map3D {
                 if (zc < 1) continue;
                 double yc = vx * ux + vy * uy + vz * uz;
                 int ys = (int) Math.floor(halfY - focal * yc / zc);
-                if (ys >= top) continue;
+                if (ys >= top) {
+                    continue;
+                }
+                int ys0 = ys;
                 if (ys < 0) ys = 0;
-                // neblina leve com a distância
                 float fog = (float) Math.min(0.55, r / 9000.0);
-                int c = fog <= 0.01f ? color : mixFog(color, fog);
-                for (int y = ys; y < top; y++) frame[y * rw + col] = c;
+                MapData.Tex tt = null, st = null;
+                double pxb = focal * uy / zc;                 // pixels da imagem por bloco, na vertical
+                int blk = reg.blk == null ? 0 : reg.blk[idx];
+                if (TEXTURES && blk > 0 && pxb >= 2.5 && (reg.px[idx] >>> 24) == 0xFF) {
+                    tt = MapData.topTexture(blk - 1);
+                    st = tt == null ? null : MapData.sideTexture(blk - 1);
+                }
+                if (tt == null) {
+                    int c = fog <= 0.01f ? color : mixFog(color, fog);
+                    for (int y = ys; y < top; y++) frame[y * rw + col] = c;
+                } else {
+                    // textura de verdade: cima com a cor/tint do mapa, lados escurecidos
+                    int cr = (color >> 16) & 0xFF, cg = (color >> 8) & 0xFF, cb = color & 0xFF;
+                    double rr = clamp(cr / Math.max(8.0, (tt.avg >> 16) & 0xFF)), rg = clamp(cg / Math.max(8.0, (tt.avg >> 8) & 0xFF)), rb = clamp(cb / Math.max(8.0, tt.avg & 0xFF));
+                    boolean sameTex = st == null || st.avg == tt.avg;
+                    int topRows = Math.max(1, (int) (pxb * 0.55));
+                    int len = top - ys0;
+                    double pdx = (prevX - wx), pdz = (prevZ - wz);
+                    for (int y = ys; y < top; y++) {
+                        int rowIdx = y - ys0;
+                        int out;
+                        if (rowIdx < topRows) {
+                            double t = Math.min(1.0, (double) rowIdx / Math.max(1, topRows));
+                            double px = wx + pdx * t * 0.5, pz = wz + pdz * t * 0.5;
+                            int tx = Math.min(tt.w - 1, (int) ((px - Math.floor(px)) * tt.w)), tz = Math.min(tt.w - 1, (int) ((pz - Math.floor(pz)) * tt.w));
+                            int tc = tt.px[tz * tt.w + tx];
+                            if ((tc >>> 24) < 32) out = color;
+                            else out = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
+                        } else {
+                            MapData.Tex sx = st == null ? tt : st;
+                            int tx = Math.min(sx.w - 1, (int) ((wx - Math.floor(wx)) * sx.w));
+                            int ty = Math.floorMod((int) ((rowIdx - topRows) / pxb * sx.w), sx.w);
+                            int tc = sx.px[ty * sx.w + tx];
+                            int base;
+                            if ((tc >>> 24) < 32) base = color;
+                            else if (sameTex) base = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
+                            else base = mixRgb(tc, color, 0.3f);
+                            out = shade(base, 0.78f);
+                        }
+                        frame[y * rw + col] = fog <= 0.01f ? out : mixFog(out, fog);
+                    }
+                }
+                prevX = wx;
+                prevZ = wz;
                 top = ys;
             }
         }
@@ -168,6 +215,21 @@ final class Map3D {
         }
         tex.upload();
         g.blit(RenderPipelines.GUI_TEXTURED, id, 0, 0, 0f, 0f, guiWidth, guiHeight, rw, rh, rw, rh);
+    }
+
+    private static double clamp(double v) {
+        return Math.max(0.3, Math.min(3.0, v));
+    }
+
+    private static int shade(int c, float k) {
+        return 0xFF000000 | ((int) (((c >> 16) & 0xFF) * k) << 16) | ((int) (((c >> 8) & 0xFF) * k) << 8) | (int) ((c & 0xFF) * k);
+    }
+
+    private static int mixRgb(int a, int b, float t) {
+        int r = (int) (((a >> 16) & 0xFF) * (1 - t) + ((b >> 16) & 0xFF) * t);
+        int g = (int) (((a >> 8) & 0xFF) * (1 - t) + ((b >> 8) & 0xFF) * t);
+        int bl = (int) ((a & 0xFF) * (1 - t) + (b & 0xFF) * t);
+        return 0xFF000000 | (r << 16) | (g << 8) | bl;
     }
 
     private static int mixFog(int c, float t) {
