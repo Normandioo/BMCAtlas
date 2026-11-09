@@ -65,7 +65,9 @@ final class MapData {
     /** Segundas e terceiras camadas de sólido numa coluna (vãos de 3+ blocos de ar): (topo, fundo, bloco) x 2. */
     static final int SP_N = 6;
     /** camadas extras (beirais/vãos) no 3D; H alterna. Desligado = colunas sólidas até o fundo. */
-    static boolean layers = false;
+    static boolean layers = true;
+    /** o 3D da CPU (cabo de raios por coluna) fica sem camadas: só a malha da GPU mostra vãos corretamente */
+    static boolean layersCpu = false;
     private static final int CHUNK_EXTRA = 256 + 256 * SP_N;
 
     static final class Region {
