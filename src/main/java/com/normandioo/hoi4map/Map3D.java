@@ -41,6 +41,9 @@ final class Map3D {
     static void setup(double tx, double tz, double scale, int guiWidth, int guiHeight) {
         guiW = guiWidth;
         guiH = guiHeight;
+        gpuScale = scale;
+        gpuCx = tx;
+        gpuCz = tz;
         focalGui = 0.9 * guiWidth;
         cacheRx = Math.floorDiv((int) Math.floor(tx), MapData.REGION_PX);
         cacheRz = Math.floorDiv((int) Math.floor(tz), MapData.REGION_PX);
@@ -86,7 +89,23 @@ final class Map3D {
     static double projX, projY;
     static boolean projOk;
 
+    // câmera ortográfica da GPU (a mesma pose do Map3DGpu): ZP180 · XP(pitch) · YP(yaw)
+    static double gpuSgnX = -1, gpuSgnY = 1;     // a projeção da GUI espelha o X em relação à pose
+    private static double gpuScale, gpuCx, gpuCz;
+
+    private static org.joml.Matrix3f gpuMatrix() {
+        return new org.joml.Matrix3f().rotateZ((float) Math.PI).rotateX((float) pitch).rotateY((float) yaw);
+    }
+
     static void project(double bx, double bz) {
+        if (Map3DGpu.enabled) {
+            double by = heightAt((int) Math.floor(bx), (int) Math.floor(bz)) - 64.0;
+            org.joml.Vector3f v = gpuMatrix().transform(new org.joml.Vector3f((float) (bx - gpuCx), (float) (by - targetY), (float) (bz - gpuCz)));
+            projOk = true;
+            projX = guiW / 2 + gpuSgnX * v.x * gpuScale;
+            projY = guiH / 2 + gpuSgnY * v.y * gpuScale;
+            return;
+        }
         double by = heightAt((int) Math.floor(bx), (int) Math.floor(bz)) - 64.0;
         double vx = bx - camX, vy = by - camY, vz = bz - camZ;
         double zc = vx * fx + vy * fy + vz * fz;
@@ -103,6 +122,15 @@ final class Map3D {
 
     /** O ponto do chão (na altura do alvo) sob um pixel da tela; null se o pixel olha acima do horizonte. */
     static double[] pick(double sx, double sy) {
+        if (Map3DGpu.enabled) {
+            org.joml.Matrix3f m = gpuMatrix();
+            org.joml.Vector3f a = m.transform(new org.joml.Vector3f(1, 0, 0)), c = m.transform(new org.joml.Vector3f(0, 0, 1));
+            double X = gpuSgnX * (sx - guiW / 2) / gpuScale, Y = gpuSgnY * (sy - guiH / 2) / gpuScale;
+            double det = a.x * c.y - c.x * a.y;
+            if (Math.abs(det) < 1e-6) return null;
+            double dx = (X * c.y - c.x * Y) / det, dz = (a.x * Y - X * a.y) / det;
+            return new double[]{gpuCx + dx, gpuCz + dz};
+        }
         double a = (sx - guiW / 2) / focalGui, b = (guiH / 2 - sy) / focalGui;
         double vx = fx + a * rx + b * ux, vy = fy + b * uy, vz = fz + a * rz + b * uz;
         if (vy >= -1e-4) return null;

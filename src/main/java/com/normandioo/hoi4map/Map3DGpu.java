@@ -30,7 +30,7 @@ import net.minecraft.world.level.block.Block;
 final class Map3DGpu {
     private Map3DGpu() {}
 
-    static boolean enabled = false;
+    static boolean enabled = true;
     static String status = "";
 
     record State(int x0, int y0, int x1, int y1, float scale, ScreenRectangle scissorArea, ScreenRectangle bounds,
