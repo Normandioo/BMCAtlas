@@ -751,7 +751,7 @@ public class MapScreen extends Screen {
         }
     }
 
-    private SiteTerritories.Zone selZone(SiteTerritories.Data d) {
+    private static SiteTerritories.Zone selZone(SiteTerritories.Data d) {
         return selCity >= 0 && selCity < d.localities.size() ? zoneOf(d, d.localities.get(selCity)) : null;
     }
 
@@ -2181,7 +2181,7 @@ public class MapScreen extends Screen {
         return n;
     }
 
-    private SiteTerritories.WarInfo viewedWar(SiteTerritories.Data d) {
+    private static SiteTerritories.WarInfo viewedWar(SiteTerritories.Data d) {
         List<SiteTerritories.WarInfo> wars = Relations.wars(d);
         return warSel >= 0 && warSel < wars.size() ? wars.get(warSel) : null;
     }
