@@ -63,6 +63,10 @@ final class MapData {
     static final class Region {
         final int rx, rz;
         int[] px = EMPTY_PX; // ARGB; 0 = desconhecido. Compartilhado até a região ser lida de verdade.
+        /** Altura de cada bloco (y + 64, 1..); 0 = desconhecida. Só existe onde o chunk foi lido com esta versão. */
+        short[] hgt;
+        /** Cópia das cores já pintadas no estilo atual (o modo 3D lê daqui); null até a região ser pintada. */
+        int[] styledCpu;
         long lastUsed;
         boolean dirty = true;
         private NativeImage image;
@@ -89,6 +93,8 @@ final class MapData {
             int ver = MapStyle.overrideVersion;
             if (dirty || styledMode != mode || styledVer != ver) {
                 int[] out = MapStyle.paint(this, mode);
+                if (styledCpu == null) styledCpu = new int[REGION_PX * REGION_PX];
+                System.arraycopy(out, 0, styledCpu, 0, REGION_PX * REGION_PX);
                 for (int y = 0; y < REGION_PX; y++) {
                     for (int x = 0; x < REGION_PX; x++) {
                         image.setPixel(x, y, out[y * REGION_PX + x]);
@@ -118,6 +124,7 @@ final class MapData {
                 texture = null;
                 image = null;
                 id = null;
+                styledCpu = null;
                 styledMode = -1;
                 dirty = true;
             }
@@ -320,6 +327,32 @@ final class MapData {
                 Hoi4MapClient.LOG.warn("Cache de terreno ilegível: {}", regions, e);
             }
         }
+        Path heights = dir().resolve(worldKey + ".heights1");
+        if (Files.exists(heights)) {
+            try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(heights)))) {
+                int n = in.readInt();
+                for (int i = 0; i < n; i++) {
+                    int rx = in.readInt();
+                    int rz = in.readInt();
+                    int len = in.readInt();
+                    byte[] comp = new byte[len];
+                    in.readFully(comp);
+                    Region r = REGIONS.get(key(rx, rz));
+                    if (r == null) continue;
+                    java.util.zip.Inflater inf = new java.util.zip.Inflater();
+                    inf.setInput(comp);
+                    byte[] raw = new byte[REGION_PX * REGION_PX * 2];
+                    int got = 0;
+                    while (got < raw.length && !inf.finished()) got += inf.inflate(raw, got, raw.length - got);
+                    inf.end();
+                    short[] h = new short[REGION_PX * REGION_PX];
+                    for (int k = 0; k < h.length; k++) h[k] = (short) (((raw[2 * k] & 0xFF) << 8) | (raw[2 * k + 1] & 0xFF));
+                    r.hgt = h;
+                }
+            } catch (IOException | DataFormatException e) {
+                Hoi4MapClient.LOG.warn("Alturas ilegíveis: {}", heights, e);
+            }
+        }
         Path owners = dir().resolve(worldKey + ".owners.json");
         if (Files.exists(owners)) {
             try (Reader r = Files.newBufferedReader(owners, StandardCharsets.UTF_8)) {
@@ -354,6 +387,30 @@ final class MapData {
                     out.writeInt(r.rz);
                     out.writeInt(comp.length);
                     out.write(comp);
+                }
+            }
+            Path heights = dir().resolve(worldKey + ".heights1");
+            try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(heights)))) {
+                int count = 0;
+                for (Region r : REGIONS.values()) if (r.hgt != null) count++;
+                out.writeInt(count);
+                for (Region r : REGIONS.values()) {
+                    if (r.hgt == null) continue;
+                    byte[] raw = new byte[r.hgt.length * 2];
+                    for (int k = 0; k < r.hgt.length; k++) {
+                        raw[2 * k] = (byte) (r.hgt[k] >> 8);
+                        raw[2 * k + 1] = (byte) r.hgt[k];
+                    }
+                    java.util.zip.Deflater def = new java.util.zip.Deflater(6);
+                    def.setInput(raw);
+                    def.finish();
+                    byte[] buf = new byte[raw.length + 64];
+                    int len = def.deflate(buf);
+                    def.end();
+                    out.writeInt(r.rx);
+                    out.writeInt(r.rz);
+                    out.writeInt(len);
+                    out.write(buf, 0, len);
                 }
             }
             Map<String, String> m = new HashMap<>();
@@ -448,6 +505,14 @@ final class MapData {
         for (int lz = 0; lz < 16; lz++) {
             System.arraycopy(px, lz * 16, reg.px, (oz + lz) * REGION_PX + ox, 16);
         }
+        if (px.length >= 512) {
+            if (reg.hgt == null) reg.hgt = new short[REGION_PX * REGION_PX];
+            for (int lz = 0; lz < 16; lz++) {
+                for (int lx = 0; lx < 16; lx++) {
+                    reg.hgt[(oz + lz) * REGION_PX + ox + lx] = (short) px[256 + lz * 16 + lx];
+                }
+            }
+        }
         reg.dirty = true;
         dirty = true;
     }
@@ -481,7 +546,7 @@ final class MapData {
      * do cliente (o servidor interno usa para gerar o mapa sem o jogador estar perto).
      */
     static int[] computeChunk(Level level, ChunkAccess chunk, int cx, int cz) {
-        int[] result = new int[256];
+        int[] result = new int[512];       // 0..255 cores; 256..511 alturas (y + 64)
         ChunkAccess west = neighbor(level, cx - 1, cz);
         ChunkAccess north = neighbor(level, cx, cz - 1);
         ChunkAccess northWest = neighbor(level, cx - 1, cz - 1);
@@ -505,6 +570,7 @@ final class MapData {
                     result[outIndex] = 0;
                     continue;
                 }
+                result[256 + outIndex] = Math.max(1, top + 64);
                 BlockState state = stateAtTop(chunk, pos, wx, top, wz);
                 FluidState fluid = state.getFluidState();
 

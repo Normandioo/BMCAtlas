@@ -93,6 +93,7 @@ public class MapScreen extends Screen {
 
     private boolean dragging;
     private boolean moved;
+    private boolean rotating;
     private double pressX, pressY;
 
     // UI em modo imediato: cada quadro registra as áreas clicáveis
@@ -217,13 +218,8 @@ public class MapScreen extends Screen {
         return areaCx() + (blockX - viewX) * scale;
     }
 
-    /** Visão 3D: o mapa fica inclinado (o eixo norte-sul encurta), como um tabuleiro visto de cima e de lado. */
-    private static double tilt() {
-        return Prefs.get().view3d ? 0.58 : 1.0;
-    }
-
     private double toScreenY(double blockZ) {
-        return areaCy() + (blockZ - viewZ) * scale * tilt();
+        return areaCy() + (blockZ - viewZ) * scale;
     }
 
     private double toBlockX(double sx) {
@@ -231,7 +227,38 @@ public class MapScreen extends Screen {
     }
 
     private double toBlockZ(double sy) {
-        return viewZ + (sy - areaCy()) / (scale * tilt());
+        return viewZ + (sy - areaCy()) / scale;
+    }
+
+    /** Verdadeiro com a visão 3D ligada (só com os dados do site). */
+    private boolean on3d() {
+        return Prefs.get().view3d && siteMode();
+    }
+
+    // posição do bloco (x, z) na tela; no 3D passa pela câmera e leva em conta a altura do terreno
+    private double sx(double bx, double bz) {
+        if (!on3d()) return toScreenX(bx);
+        Map3D.project(bx, bz);
+        return Map3D.projX;
+    }
+
+    private double sy(double bx, double bz) {
+        if (!on3d()) return toScreenY(bz);
+        Map3D.project(bx, bz);
+        return Map3D.projY;
+    }
+
+    private double[] pick3d(double mx, double my) {
+        double[] p = Map3D.pick(mx, my);
+        return p != null ? p : new double[]{viewX, viewZ};
+    }
+
+    private double blockX(double mx, double my) {
+        return on3d() ? pick3d(mx, my)[0] : toBlockX(mx);
+    }
+
+    private double blockZ(double mx, double my) {
+        return on3d() ? pick3d(mx, my)[1] : toBlockZ(my);
     }
 
     private boolean blockedAt(List<Hit> list, double mx, double my) {
@@ -364,6 +391,10 @@ public class MapScreen extends Screen {
         int rz0 = (int) Math.floor(topB / MapData.REGION_PX);
         int rz1 = (int) Math.floor(botB / MapData.REGION_PX);
         int uploads = 0;
+        if (on3d()) {
+            draw3d(g, sd);
+            rx1 = rx0 - 1;       // o terreno já foi desenhado
+        }
         for (int rx = rx0; rx <= rx1; rx++) {
             for (int rz = rz0; rz <= rz1; rz++) {
                 MapData.Region r = MapData.region(rx, rz, false);
@@ -398,6 +429,32 @@ public class MapScreen extends Screen {
         }
         drawOnlinePlayers(g, site ? d : null, mouseX, mouseY);
         drawPlayer(g);
+    }
+
+    /** Visão 3D: pinta as regiões em volta (poucas por quadro) e desenha o terreno pela câmera. */
+    private void draw3d(GuiGraphics g, SiteTerritories.Data sd) {
+        if (scale < 0.2) scale = 0.2;
+        int crx = Math.floorDiv((int) Math.floor(viewX), MapData.REGION_PX), crz = Math.floorDiv((int) Math.floor(viewZ), MapData.REGION_PX);
+        int uploads = 0;
+        for (int ring = 0; ring <= 5; ring++) {
+            for (int dx = -ring; dx <= ring; dx++) {
+                for (int dz = -ring; dz <= ring; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) continue;
+                    int rx = crx + dx, rz = crz + dz;
+                    MapData.Region r = MapData.region(rx, rz, false);
+                    if (r == null && sd != null && regionTouchesSite(sd, rx, rz)) r = MapData.viewRegion(rx, rz);
+                    if (r == null) continue;
+                    MapData.markUsed(r);
+                    boolean stale = r.id == null || r.dirty || r.styledMode != mode || r.styledVer != MapStyle.overrideVersion;
+                    if (stale && uploads < 2) {
+                        r.ensureUploaded(mode);
+                        uploads++;
+                    }
+                }
+            }
+        }
+        Map3D.setup(viewX, viewZ, scale, width, height);
+        Map3D.render(g, width, height);
     }
 
     private void drawGrid(GuiGraphics g, double leftB, double rightB, double topB, double botB) {
@@ -453,8 +510,8 @@ public class MapScreen extends Screen {
             float sc = (float) (f[3] * scale);
             if (sc < 0.55f) continue;           // pequeno demais para ler
             sc = Math.min(sc, 6.0f);
-            double sx = toScreenX(f[0]);
-            double sy = toScreenY(f[1]);
+            double sx = sx(f[0], f[1]);
+            double sy = sy(f[0], f[1]);
             if (sx < -400 || sx > width + 400 || sy < -200 || sy > height + 200) continue;
             drawLabel(g, text, (float) sx, (float) sy, (float) f[2], sc);
         }
@@ -563,8 +620,8 @@ public class MapScreen extends Screen {
     private void drawPlayer(GuiGraphics g) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
-        int px = (int) toScreenX(mc.player.getX());
-        int pz = (int) toScreenY(mc.player.getZ());
+        int px = (int) sx(mc.player.getX(), mc.player.getZ());
+        int pz = (int) sy(mc.player.getX(), mc.player.getZ());
         g.fill(px - 4, pz - 4, px + 4, pz + 4, 0xFF000000);
         g.fill(px - 3, pz - 3, px + 3, pz + 3, 0xFFE03C3C);
     }
@@ -683,10 +740,10 @@ public class MapScreen extends Screen {
     private void drawRing(GuiGraphics g, double[] ring, int color, float thick) {
         int n = ring.length / 2;
         if (n < 2) return;
-        double fx = toScreenX(ring[0]), fy = toScreenY(ring[1]);
+        double fx = sx(ring[0], ring[1]), fy = sy(ring[0], ring[1]);
         double px = fx, py = fy;
         for (int i = 1; i < n; i++) {
-            double x = toScreenX(ring[2 * i]), y = toScreenY(ring[2 * i + 1]);
+            double x = sx(ring[2 * i], ring[2 * i + 1]), y = sy(ring[2 * i], ring[2 * i + 1]);
             if (Math.abs(x - px) + Math.abs(y - py) < 3 && i < n - 1) continue; // pontos muito juntos
             segment(g, px, py, x, y, color, thick);
             px = x;
@@ -700,10 +757,10 @@ public class MapScreen extends Screen {
         int n = ring.length / 2;
         if (n < 2) return;
         double period = on + off, pos = 0;
-        double px = toScreenX(ring[0]), py = toScreenY(ring[1]);
+        double px = sx(ring[0], ring[1]), py = sy(ring[0], ring[1]);
         double fx = px, fy = py;
         for (int i = 1; i <= n; i++) {
-            double x = i == n ? fx : toScreenX(ring[2 * i]), y = i == n ? fy : toScreenY(ring[2 * i + 1]);
+            double x = i == n ? fx : sx(ring[2 * i], ring[2 * i + 1]), y = i == n ? fy : sy(ring[2 * i], ring[2 * i + 1]);
             double dx = x - px, dy = y - py, len = Math.hypot(dx, dy);
             if (len < 0.5 && i < n) continue;
             if ((px < 0 && x < 0) || (px > width && x > width) || (py < 0 && y < 0) || (py > height && y > height)) {
@@ -757,7 +814,7 @@ public class MapScreen extends Screen {
         if (d == null || !siteMode() || !showCities) return null;
         for (SiteTerritories.Locality l : d.cityOrder) {
             if (!cityVisible(l)) continue;
-            double sx = toScreenX(l.x + 0.5), sy = toScreenY(l.z + 0.5);
+            double sx = sx(l.x + 0.5, l.z + 0.5), sy = sy(l.x + 0.5, l.z + 0.5);
             double r = iconRadius(l) + 3;
             if (Math.abs(mx - sx) <= r && Math.abs(my - sy) <= r) return l;
         }
@@ -794,8 +851,8 @@ public class MapScreen extends Screen {
         long nowMs = System.currentTimeMillis();
         for (SiteTerritories.Locality l : d.cityOrder) {
             if (!cityVisible(l)) continue;
-            int sx = (int) Math.round(toScreenX(l.x + 0.5));
-            int sy = (int) Math.round(toScreenY(l.z + 0.5));
+            int sx = (int) Math.round(sx(l.x + 0.5, l.z + 0.5));
+            int sy = (int) Math.round(sy(l.x + 0.5, l.z + 0.5));
             if (sx < -30 || sx > width + 30 || sy < -30 || sy > height + 30) continue;
             int rgb = l.countryIdx >= 0 ? d.rgb[l.countryIdx] : 0xFF909090;
             boolean pulsing = l.idx == pulseCity && nowMs - pulseStart < PULSE_MS;
@@ -890,8 +947,8 @@ public class MapScreen extends Screen {
         Spot hover = blockedAt(prevHits, mouseX, mouseY) ? null : playerAt(mouseX, mouseY);
         for (OnlinePlayers.Entry e : OnlinePlayers.list()) {
             if (e.account.equalsIgnoreCase(self)) continue;
-            int sx = (int) Math.round(toScreenX(e.x(now)));
-            int sy = (int) Math.round(toScreenY(e.z(now)));
+            int sx = (int) Math.round(sx(e.x(now), e.z(now)));
+            int sy = (int) Math.round(sy(e.x(now), e.z(now)));
             if (sx < -40 || sx > width + 40 || sy < -40 || sy > height + 40) continue;
             String low = e.account.toLowerCase(Locale.ROOT);
             String site = d == null ? null : d.ignToSite.get(low);
@@ -951,8 +1008,8 @@ public class MapScreen extends Screen {
         String hint = "Arraste: mover  |  Roda: zoom  |  Clique: selecionar  |  1-5: modos";
         if (!side) g.drawString(font, hint, MARGIN, height - 12, COL_DIM, true);
         if (blockedAt(hits, mouseX, mouseY)) return;
-        int bxx = (int) Math.floor(toBlockX(mouseX));
-        int bzz = (int) Math.floor(toBlockZ(mouseY));
+        int bxx = (int) Math.floor(blockX(mouseX, mouseY));
+        int bzz = (int) Math.floor(blockZ(mouseX, mouseY));
         String text = "X " + bxx + "  Z " + bzz;
         SiteTerritories.Data d = SiteTerritories.data();
         if (siteMode() && d != null) {
@@ -1284,7 +1341,7 @@ public class MapScreen extends Screen {
                 : OnlinePlayers.error() != null ? "Ligado (dynmap sem resposta: só quem está por perto)" : "Ligado (carregando...)");
         b.add(new Btn("players", showPlayers && dyn, dyn, playersTip, () -> showPlayers = !showPlayers, false));
 
-        b.add(new Btn("view3d", Prefs.get().view3d, true, "Visão 3D\n" + (Prefs.get().view3d ? "Ligada (mapa inclinado). (T)" : "Desligada. (T)"), () -> {
+        b.add(new Btn("view3d", Prefs.get().view3d, true, "Visão 3D\n" + (Prefs.get().view3d ? "Ligada. Botão direito: girar e inclinar. Q/E: girar. (T)" : "Desligada. (T)"), () -> {
             Prefs.get().view3d = !Prefs.get().view3d;
             Prefs.save();
         }, false));
@@ -2168,12 +2225,12 @@ public class MapScreen extends Screen {
         WarFront f = viewedFront(d);
         if (war == null || f == null) return;
         for (WarFront.Hot h : f.innerLines()) {
-            double x0 = toScreenX(h.a().x + 0.5), y0 = toScreenY(h.a().z + 0.5), x1 = toScreenX(h.b().x + 0.5), y1 = toScreenY(h.b().z + 0.5);
+            double x0 = sx(h.a().x + 0.5, h.a().z + 0.5), y0 = sy(h.a().x + 0.5, h.a().z + 0.5), x1 = sx(h.b().x + 0.5, h.b().z + 0.5), y1 = sy(h.b().x + 0.5, h.b().z + 0.5);
             dottedLine(g, x0, y0, x1, y1, 0xC8C8C8C8);
         }
         float thick = (float) Math.max(2, Math.min(9, 3 * scale));
         for (WarFront.Hot h : f.hotLines()) {
-            double x0 = toScreenX(h.a().x + 0.5), y0 = toScreenY(h.a().z + 0.5), x1 = toScreenX(h.b().x + 0.5), y1 = toScreenY(h.b().z + 0.5);
+            double x0 = sx(h.a().x + 0.5, h.a().z + 0.5), y0 = sy(h.a().x + 0.5, h.a().z + 0.5), x1 = sx(h.b().x + 0.5, h.b().z + 0.5), y1 = sy(h.b().x + 0.5, h.b().z + 0.5);
             double mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
             segment(g, x0, y0, x1, y1, 0xB0000000, thick + 2);
             segment(g, x0, y0, mx, my, ctlColor(war, h.controlA()), thick);
@@ -2185,7 +2242,7 @@ public class MapScreen extends Screen {
             if (!u.inPlay || u.neutral()) continue;
             int color = ctlColor(war, u.control) & 0xFFFFFF;
             for (SiteTerritories.Locality l : u.members) {
-                int sx = (int) Math.round(toScreenX(l.x + 0.5)), sy = (int) Math.round(toScreenY(l.z + 0.5));
+                int sx = (int) Math.round(sx(l.x + 0.5, l.z + 0.5)), sy = (int) Math.round(sy(l.x + 0.5, l.z + 0.5));
                 if (sx < -30 || sx > width + 30 || sy < -30 || sy > height + 30 || !cityVisible(l)) continue;
                 int r = iconRadius(l) + 2 + (int) Math.round(phase * 6);
                 int a = (int) Math.round(200 * (1 - phase));
@@ -2226,7 +2283,7 @@ public class MapScreen extends Screen {
         if (list.isEmpty()) return;
         int phase = (int) ((System.currentTimeMillis() / 350) % 2);
         for (WarMarkers.Marker m : list) {
-            int sx = (int) Math.round(toScreenX(m.x() + 0.5)), sy = (int) Math.round(toScreenY(m.z() + 0.5));
+            int sx = (int) Math.round(sx(m.x() + 0.5, m.z() + 0.5)), sy = (int) Math.round(sy(m.x() + 0.5, m.z() + 0.5));
             if (sx < -30 || sx > width + 30 || sy < -30 || sy > height + 30) continue;
             if (m.kind() == WarMarkers.Kind.SWORD) {
                 WarArt.Art a = WarArt.SWORD;
@@ -3661,6 +3718,13 @@ public class MapScreen extends Screen {
             if (h.action() != null && event.button() == 0) h.action().run();
             return true;
         }
+        if (event.button() == 1 && on3d()) {
+            rotating = true;
+            moved = false;
+            pressX = mx;
+            pressY = my;
+            return true;
+        }
         if (event.button() == 1) {
             closePanel();
             selPlayer = null;
@@ -3675,11 +3739,24 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (rotating) {
+            if (Math.abs(event.x() - pressX) > 3 || Math.abs(event.y() - pressY) > 3) moved = true;
+            Map3D.yaw += dx * 0.006;
+            Map3D.pitch = Math.max(0.25, Math.min(1.45, Map3D.pitch - dy * 0.005));
+            return true;
+        }
         if (dragging) {
             if (Math.abs(event.x() - pressX) > 3 || Math.abs(event.y() - pressY) > 3) moved = true;
             if (moved) {
-                viewX -= dx / scale;
-                viewZ -= dy / (scale * tilt());
+                if (on3d()) {
+                    double fhx = Math.sin(Map3D.yaw), fhz = -Math.cos(Map3D.yaw);
+                    double k = 1.0 / (scale * Math.max(0.3, Math.sin(Map3D.pitch)));
+                    viewX -= dx / scale * Math.cos(Map3D.yaw) - dy * k * fhx;
+                    viewZ -= dx / scale * Math.sin(Map3D.yaw) - dy * k * fhz;
+                } else {
+                    viewX -= dx / scale;
+                    viewZ -= dy / scale;
+                }
             }
             return true;
         }
@@ -3688,9 +3765,17 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (rotating && event.button() == 1) {
+            rotating = false;
+            if (!moved) {
+                closePanel();
+                selPlayer = null;
+            }
+            return true;
+        }
         if (dragging) {
             dragging = false;
-            if (!moved) select(toBlockX(event.x()), toBlockZ(event.y()), event.x(), event.y());
+            if (!moved) select(blockX(event.x(), event.y()), blockZ(event.x(), event.y()), event.x(), event.y());
             return true;
         }
         return super.mouseReleased(event);
@@ -3749,11 +3834,15 @@ public class MapScreen extends Screen {
             return true;
         }
         if (blockedAt(hits, mouseX, mouseY)) return true;
+        if (on3d()) {
+            scale = Math.max(0.2, Math.min(8.0, scale * Math.pow(1.2, scrollY)));
+            return true;
+        }
         double bxx = toBlockX(mouseX);
         double bzz = toBlockZ(mouseY);
         scale = Math.max(0.03, Math.min(8.0, scale * Math.pow(1.2, scrollY)));
         viewX = bxx - (mouseX - areaCx()) / scale;
-        viewZ = bzz - (mouseY - areaCy()) / (scale * tilt());
+        viewZ = bzz - (mouseY - areaCy()) / scale;
         return true;
     }
 
@@ -3782,6 +3871,10 @@ public class MapScreen extends Screen {
         }
         if (k == GLFW.GLFW_KEY_5 && siteMode()) {
             enterWar();
+            return true;
+        }
+        if (on3d() && (k == GLFW.GLFW_KEY_Q || k == GLFW.GLFW_KEY_E)) {
+            Map3D.yaw += k == GLFW.GLFW_KEY_E ? 0.26 : -0.26;
             return true;
         }
         if (k == GLFW.GLFW_KEY_T) {
