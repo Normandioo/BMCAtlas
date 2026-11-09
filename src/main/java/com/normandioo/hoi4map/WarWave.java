@@ -22,6 +22,7 @@ final class WarWave {
 
     static final class Wave {
         int cell, x0, z0, w, h, oldRgb, maxDist;
+        int frontArgb = 0xFFF2907E;     // frente da onda: tom claro da cor de quem conquistou
         int[] dist;     // distância da origem da onda, -1 fora da província
         long start;
     }
@@ -82,6 +83,10 @@ final class WarWave {
         w.w = (int) Math.ceil(spanX / (double) w.cell);
         w.h = (int) Math.ceil(spanZ / (double) w.cell);
         w.oldRgb = oldRgb;
+        {
+            int cr = (conqueror >> 16) & 255, cg = (conqueror >> 8) & 255, cb = conqueror & 255;
+            w.frontArgb = 0xFF000000 | (cr + (255 - cr) * 55 / 100) << 16 | (cg + (255 - cg) * 55 / 100) << 8 | (cb + (255 - cb) * 55 / 100);
+        }
         w.dist = new int[w.w * w.h];
 
         boolean[] in = new boolean[w.dist.length];

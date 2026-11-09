@@ -2287,7 +2287,7 @@ public class MapScreen extends Screen {
         long now = System.currentTimeMillis();
         for (WarWave.Wave w : WarWave.active(now)) {
             int front = (int) (w.maxDist * (now - w.start) / (double) WarWave.DURATION);
-            int band = Math.max(1, w.maxDist / 12);
+            int band = Math.max(1, w.maxDist / 40);
             int old = 0xE6000000 | (w.oldRgb < 0 ? 0x6E6E6E : w.oldRgb & 0xFFFFFF);
             for (int j = 0; j < w.h; j++) {
                 int y0 = (int) Math.floor(toScreenY(w.z0 + j * (double) w.cell));
@@ -2300,7 +2300,7 @@ public class MapScreen extends Screen {
                     if (kind != 0) {
                         int x0 = (int) Math.floor(toScreenX(w.x0 + i * (double) w.cell));
                         int x1 = (int) Math.floor(toScreenX(w.x0 + end * (double) w.cell));
-                        g.fill(x0, y0, x1, y1, kind == 2 ? 0xFFF2907E : old);
+                        g.fill(x0, y0, x1, y1, kind == 2 ? w.frontArgb : old);
                     }
                     i = end;
                 }
@@ -2483,10 +2483,7 @@ public class MapScreen extends Screen {
         String subtitle = sel == null ? running + " em andamento, " + (wars.size() - running) + " encerrada(s)"
                 : sel.sides != null && sel.sides.size() >= 2 ? sideName(sel, 0) + " contra " + sideName(sel, 1) : "";
         headRed = true;
-        int top = header(g, NEUTRAL, sel == null ? "Guerras" : warName(sel), subtitle.isEmpty() ? null : subtitle, null, mouseX, mouseY, () -> {
-            tab = TAB_NONE;
-            warSel = -1;
-        });
+        int top = header(g, NEUTRAL, sel == null ? "Guerras" : warName(sel), subtitle.isEmpty() ? null : subtitle, null, mouseX, mouseY, () -> tab = TAB_NONE);   // fechar o menu mantém a guerra escolhida no mapa
         if (sel == null) {
             beginScroll(g, top, SCROLL[TAB_WAR], 0);
             warList(g, d, wars, mouseX, mouseY);

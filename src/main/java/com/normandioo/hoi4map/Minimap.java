@@ -144,9 +144,16 @@ final class Minimap {
             double x0 = snap(tx + (h.a().x + 0.5) * scale, gs), y0 = snap(ty + (h.a().z + 0.5) * scale, gs);
             double x1 = snap(tx + (h.b().x + 0.5) * scale, gs), y1 = snap(ty + (h.b().z + 0.5) * scale, gs);
             double mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+            WarFront.Unit ua = f.unitOf(h.a()), ub = f.unitOf(h.b());
+            boolean ea = ua != null && ua.encircled, eb = ub != null && ub.encircled;
+            int ca = MapScreen.minimapCtlColor(d, h.controlA()), cb = MapScreen.minimapCtlColor(d, h.controlB());
             line(g, x0, y0, x1, y1, 0xB0000000, 4f);
-            line(g, x0, y0, mx, my, MapScreen.minimapCtlColor(d, h.controlA()), 2.5f);
-            line(g, mx, my, x1, y1, MapScreen.minimapCtlColor(d, h.controlB()), 2.5f);
+            if (ea != eb) {       // só uma cercada: a ligação toda na cor de quem está de fora
+                line(g, x0, y0, x1, y1, ea ? cb : ca, 2.5f);
+            } else {
+                line(g, x0, y0, mx, my, ca, 2.5f);
+                line(g, mx, my, x1, y1, cb, 2.5f);
+            }
         }
     }
 
