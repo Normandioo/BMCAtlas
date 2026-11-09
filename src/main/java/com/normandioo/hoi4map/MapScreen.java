@@ -199,9 +199,8 @@ public class MapScreen extends Screen {
     @Override
     public void onClose() {
         MapData.saveAsync();
+        // os marcadores da guerra ficam na memória: ao reabrir o mapa o estado atual aparece na hora
         OnlinePlayers.reset();
-        DynmapMarkers.reset();
-        WarMarkers.clear();
         super.onClose();
     }
 
