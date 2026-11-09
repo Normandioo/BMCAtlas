@@ -62,6 +62,9 @@ final class MapData {
     /** Uma região de terreno. */
     /** Execuções (bloco, comprimento) por coluna abaixo do topo; comprimento 0 = até o fundo. Empacotado: (id+1)<<5 | len. */
     static final int WALL_R = 8;
+    /** Segundas e terceiras camadas de sólido numa coluna (vãos de 3+ blocos de ar): (topo, fundo, bloco) x 2. */
+    static final int SP_N = 6;
+    private static final int CHUNK_EXTRA = 256 + 256 * SP_N;
 
     static final class Region {
         final int rx, rz;
@@ -72,6 +75,10 @@ final class MapData {
         short[] blk;
         /** Blocos abaixo do topo (WALL_K-1 por coluna: profundidade 1..): textura das paredes no 3D; 0 = desconhecido. */
         short[] wall;
+        /** Fundo (y + 64) da camada de cima de cada coluna; 0 = vai até o fundo do mundo. */
+        short[] bot0;
+        /** Camadas extras: topo, fundo e bloco (id + 1) de cada uma; topo 0 = sem camada. */
+        short[] sp;
         /** Cópia das cores já pintadas no estilo atual (o modo 3D lê daqui); null até a região ser pintada. */
         int[] styledCpu;
         long lastUsed;
@@ -392,6 +399,23 @@ final class MapData {
                 Hoi4MapClient.LOG.warn("Paredes ilegíveis: {}", walls, e);
             }
         }
+        for (int which = 0; which < 2; which++) {
+            Path f = dir().resolve(worldKey + (which == 0 ? ".bot1" : ".spans1"));
+            if (!Files.exists(f)) continue;
+            try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(f)))) {
+                int n = in.readInt();
+                for (int i2 = 0; i2 < n; i2++) {
+                    int rx = in.readInt();
+                    int rz = in.readInt();
+                    int len = in.readInt();
+                    short[] data = readShorts(in, len, REGION_PX * REGION_PX * (which == 0 ? 1 : SP_N));
+                    Region r = REGIONS.get(key(rx, rz));
+                    if (r != null) { if (which == 0) r.bot0 = data; else r.sp = data; }
+                }
+            } catch (IOException | DataFormatException e) {
+                Hoi4MapClient.LOG.warn("Camadas ilegíveis: {}", f, e);
+            }
+        }
         Path owners = dir().resolve(worldKey + ".owners.json");
         if (Files.exists(owners)) {
             try (Reader r = Files.newBufferedReader(owners, StandardCharsets.UTF_8)) {
@@ -522,6 +546,18 @@ final class MapData {
                 out.writeInt(count);
                 for (Region r : regs) if (r.wall != null) writeShorts(out, r, r.wall);
             }
+            for (int which = 0; which < 2; which++) {
+                Path f = dir().resolve(worldKey + (which == 0 ? ".bot1" : ".spans1"));
+                try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(f)))) {
+                    int count = 0;
+                    for (Region r : regs) if ((which == 0 ? r.bot0 : r.sp) != null) count++;
+                    out.writeInt(count);
+                    for (Region r : regs) {
+                        short[] arr = which == 0 ? r.bot0 : r.sp;
+                        if (arr != null) writeShorts(out, r, arr);
+                    }
+                }
+            }
             Map<String, String> m = new HashMap<>();
             for (Map.Entry<Long, String> e : ownersSnap.entrySet()) {
                 m.put(keyA(e.getKey()) + "," + keyB(e.getKey()), e.getValue());
@@ -641,6 +677,18 @@ final class MapData {
                 }
             }
         }
+        int ex = 768 + 256 * WALL_R;
+        if (px.length >= ex + CHUNK_EXTRA) {
+            if (reg.bot0 == null) reg.bot0 = new short[REGION_PX * REGION_PX];
+            if (reg.sp == null) reg.sp = new short[REGION_PX * REGION_PX * SP_N];
+            for (int lz = 0; lz < 16; lz++) {
+                for (int lx = 0; lx < 16; lx++) {
+                    int col = (oz + lz) * REGION_PX + ox + lx, k = lz * 16 + lx;
+                    reg.bot0[col] = (short) px[ex + k];
+                    for (int d = 0; d < SP_N; d++) reg.sp[col * SP_N + d] = (short) px[ex + 256 + k * SP_N + d];
+                }
+            }
+        }
         reg.dirty = true;
         dirty = true;
     }
@@ -674,7 +722,7 @@ final class MapData {
      * do cliente (o servidor interno usa para gerar o mapa sem o jogador estar perto).
      */
     static int[] computeChunk(Level level, ChunkAccess chunk, int cx, int cz) {
-        int[] result = new int[768 + 256 * WALL_R];       // 0..255 cores; 256..511 alturas (y + 64); 512..767 blocos (id + 1)
+        int[] result = new int[768 + 256 * WALL_R + CHUNK_EXTRA];       // 0..255 cores; 256..511 alturas (y + 64); 512..767 blocos (id + 1)
         ChunkAccess west = neighbor(level, cx - 1, cz);
         ChunkAccess north = neighbor(level, cx, cz - 1);
         ChunkAccess northWest = neighbor(level, cx - 1, cz - 1);
@@ -728,6 +776,7 @@ final class MapData {
                     // a última execução vale até o fundo
                     if (runLen > 0 && slot < WALL_R) result[base + slot] = (runId << 5);
                 }
+                if (state.getFluidState().isEmpty()) scanSpans(chunk, wx, wz, pos.getY(), result, 768 + 256 * WALL_R, outIndex);
                 FluidState fluid = state.getFluidState();
 
                 int color;
@@ -763,6 +812,54 @@ final class MapData {
             }
         }
         return result;
+    }
+
+    /**
+     * Camadas de sólido de uma coluna (para o 3D ver por baixo de beirais, pontes e topos largos): o fundo da
+     * camada de cima e até duas camadas abaixo de vãos de 3+ blocos de ar. Para quando acha 16 blocos sólidos seguidos.
+     */
+    private static void scanSpans(ChunkAccess chunk, int wx, int wz, int topY, int[] out, int ex, int k) {
+        BlockPos.MutableBlockPos q = new BlockPos.MutableBlockPos();
+        int minY = Math.max(-64, topY - 300);
+        int spanIdx = 0;                 // 0 = camada de cima
+        int solidRun = 1, air = 0, lastSolid = topY;
+        boolean in = true;
+        out[ex + k] = 0;
+        for (int y = topY - 1; y >= minY; y--) {
+            q.set(wx, y, wz);
+            BlockState bs = chunk.getBlockState(q);
+            boolean solid = !bs.isAir() && bs.getFluidState().isEmpty();
+            if (in) {
+                if (solid) {
+                    lastSolid = y;
+                    air = 0;
+                    if (++solidRun >= 16) break;
+                } else {
+                    solidRun = 0;
+                    air++;
+                    if (air >= 3) {
+                        in = false;
+                        // fecha a camada: fundo na face de baixo do último sólido
+                        if (spanIdx == 0) out[ex + k] = lastSolid + 64;
+                        else out[ex + 256 + k * SP_N + (spanIdx - 1) * 3 + 1] = lastSolid + 64;
+                    }
+                }
+            } else {
+                if (solid) {
+                    if (spanIdx >= 2) { break; }
+                    spanIdx++;
+                    int id = BuiltInRegistries.BLOCK.getId(bs.getBlock()) + 1;
+                    int b = ex + 256 + k * SP_N + (spanIdx - 1) * 3;
+                    out[b] = y + 1 + 64;
+                    out[b + 2] = id > 32000 ? 0 : id;
+                    out[b + 1] = 0;
+                    in = true;
+                    solidRun = 1;
+                    air = 0;
+                    lastSolid = y;
+                }
+            }
+        }
     }
 
     /**

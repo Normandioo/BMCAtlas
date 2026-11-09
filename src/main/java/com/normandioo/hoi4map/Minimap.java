@@ -52,6 +52,7 @@ final class Minimap {
         if (scale * gs >= 1.0) scale = Math.max(1.0, Math.round(scale * gs)) / gs;
         double cx = net.minecraft.util.Mth.lerp(partial, mc.player.xo, mc.player.getX());
         double cz = net.minecraft.util.Mth.lerp(partial, mc.player.zo, mc.player.getZ());
+        if (!(mc.screen instanceof MapScreen)) MapScreen.liveTick();
         int mode = MapScreen.minimapMode();
 
         // moldura

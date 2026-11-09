@@ -297,15 +297,22 @@ public class MapScreen extends Screen {
         if (copiedFrames > 0) copiedFrames--;
     }
 
+    /** Chamado pelo minimapa a cada quadro: mantém a guerra atualizada mesmo com o mapa grande fechado. */
+    static void liveTick() {
+        if (mode != MODE_WAR) return;
+        tickWar();
+        refreshOverrides();
+    }
+
     private static int[] lastTint;
 
-    private void refreshOverrides() {
+    static void refreshOverrides() {
         refreshRelations();
         refreshZoneTint();
     }
 
     /** Cor de dentro das zonas de cidade (limites ligados, cidade escolhida, guerra); repinta as regiões se mudou. */
-    private void refreshZoneTint() {
+    static void refreshZoneTint() {
         SiteTerritories.Data d = SiteTerritories.data();
         int[] t = null;
         if (d != null && siteMode() && !d.zones.isEmpty()) {
@@ -333,7 +340,7 @@ public class MapScreen extends Screen {
     }
 
     /** Recalcula as cores dos modos diplomacia/guerra quando algo muda. */
-    private void refreshRelations() {
+    static void refreshRelations() {
         SiteTerritories.Data d = SiteTerritories.data();
         boolean rel = relationalMode() && siteMode() && d != null;
         if (d != null) {
@@ -2188,7 +2195,7 @@ public class MapScreen extends Screen {
     }
 
     /** Uma vez por quadro: marcadores do dynmap (só com guerra ao vivo à vista) e efeitos de guerra. */
-    private void tickWar() {
+    static void tickWar() {
         SiteTerritories.Data d = SiteTerritories.data();
         if (d == null || !siteMode()) return;
         SiteTerritories.WarInfo viewed = viewedWar(d);
