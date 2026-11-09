@@ -198,7 +198,7 @@ public class MapScreen extends Screen {
 
     @Override
     public void onClose() {
-        MapData.save();
+        MapData.saveAsync();
         OnlinePlayers.reset();
         DynmapMarkers.reset();
         WarMarkers.clear();

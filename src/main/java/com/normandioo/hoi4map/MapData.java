@@ -434,7 +434,7 @@ final class MapData {
             raw[2 * k] = (byte) (data[k] >> 8);
             raw[2 * k + 1] = (byte) data[k];
         }
-        java.util.zip.Deflater def = new java.util.zip.Deflater(6);
+        java.util.zip.Deflater def = new java.util.zip.Deflater(1);
         def.setInput(raw);
         def.finish();
         byte[] buf = new byte[raw.length + 64];
@@ -448,14 +448,34 @@ final class MapData {
 
     static void save() {
         if (worldKey == null || (REGIONS.isEmpty() && OWNERS.isEmpty())) return;
+        saveNow(new java.util.ArrayList<>(REGIONS.values()), new HashMap<>(OWNERS), worldKey);
+    }
+
+    private static volatile boolean saving;
+
+    /** Salva em segundo plano (ao fechar o mapa não trava o jogo). */
+    static void saveAsync() {
+        if (worldKey == null || (REGIONS.isEmpty() && OWNERS.isEmpty()) || !dirty || saving) return;
+        saving = true;
+        java.util.List<Region> snap = new java.util.ArrayList<>(REGIONS.values());
+        Map<Long, String> owners = new HashMap<>(OWNERS);
+        String key = worldKey;
+        Thread th = new Thread(() -> {
+            try { saveNow(snap, owners, key); } finally { saving = false; }
+        }, "hoi4map-save");
+        th.setDaemon(true);
+        th.start();
+    }
+
+    private static void saveNow(java.util.Collection<Region> regs, Map<Long, String> ownersSnap, String worldKey) {
         try {
             Files.createDirectories(dir());
             Path regions = dir().resolve(worldKey + ".regions5");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(regions)))) {
                 int count = 0;
-                for (Region r : REGIONS.values()) if (r.hasData()) count++;
+                for (Region r : regs) if (r.hasData()) count++;
                 out.writeInt(count);
-                for (Region r : REGIONS.values()) {
+                for (Region r : regs) {
                     if (!r.hasData()) continue;
                     byte[] comp = deflate(r.px);
                     out.writeInt(r.rx);
@@ -467,16 +487,16 @@ final class MapData {
             Path heights = dir().resolve(worldKey + ".heights1");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(heights)))) {
                 int count = 0;
-                for (Region r : REGIONS.values()) if (r.hgt != null) count++;
+                for (Region r : regs) if (r.hgt != null) count++;
                 out.writeInt(count);
-                for (Region r : REGIONS.values()) {
+                for (Region r : regs) {
                     if (r.hgt == null) continue;
                     byte[] raw = new byte[r.hgt.length * 2];
                     for (int k = 0; k < r.hgt.length; k++) {
                         raw[2 * k] = (byte) (r.hgt[k] >> 8);
                         raw[2 * k + 1] = (byte) r.hgt[k];
                     }
-                    java.util.zip.Deflater def = new java.util.zip.Deflater(6);
+                    java.util.zip.Deflater def = new java.util.zip.Deflater(1);
                     def.setInput(raw);
                     def.finish();
                     byte[] buf = new byte[raw.length + 64];
@@ -491,19 +511,19 @@ final class MapData {
             Path blocks = dir().resolve(worldKey + ".blocks1");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(blocks)))) {
                 int count = 0;
-                for (Region r : REGIONS.values()) if (r.blk != null) count++;
+                for (Region r : regs) if (r.blk != null) count++;
                 out.writeInt(count);
-                for (Region r : REGIONS.values()) if (r.blk != null) writeShorts(out, r, r.blk);
+                for (Region r : regs) if (r.blk != null) writeShorts(out, r, r.blk);
             }
             Path walls = dir().resolve(worldKey + ".walls2");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(walls)))) {
                 int count = 0;
-                for (Region r : REGIONS.values()) if (r.wall != null) count++;
+                for (Region r : regs) if (r.wall != null) count++;
                 out.writeInt(count);
-                for (Region r : REGIONS.values()) if (r.wall != null) writeShorts(out, r, r.wall);
+                for (Region r : regs) if (r.wall != null) writeShorts(out, r, r.wall);
             }
             Map<String, String> m = new HashMap<>();
-            for (Map.Entry<Long, String> e : OWNERS.entrySet()) {
+            for (Map.Entry<Long, String> e : ownersSnap.entrySet()) {
                 m.put(keyA(e.getKey()) + "," + keyB(e.getKey()), e.getValue());
             }
             Path owners = dir().resolve(worldKey + ".owners.json");
