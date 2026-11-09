@@ -30,14 +30,12 @@ jobs:
       - name: Inspect Minecraft API (debug)
         if: always()
         run: |
-          J=$(find ~/.gradle ~/.cache -name '*.jar' -path '*minecraft*' 2>/dev/null | grep -iE 'minecraft-(merged|client|common)' | grep -v sources | head -3)
+          J=$(find ~/.gradle -name '*.jar' | grep -E '26\.1' | grep -iE 'minecraft' | grep -v -E 'sources|fabric-api|fabric-loader' | head -3)
           echo "JARS: $J"
           for j in $J; do
-            for c in net.minecraft.client.color.block.BlockColors net.minecraft.client.color.block.BlockTintSource net.minecraft.client.renderer.block.BlockModelShaper; do javap -public -cp $j $c 2>&1 | head -40; done
-            break
+            unzip -l $j | grep -E 'BlockColors|BlockTintSource|MouseHandler\.class|/Window\.class|InputConstants\.class|PlayerFaceExtractor' | head
+            for c in $(unzip -l $j | grep -oE 'net/minecraft/client/[A-Za-z/]*(BlockColors|BlockTintSource)\.class' | sed 's/\.class//;s#/#.#g'); do javap -public -cp $j $c | head -40; done
           done
-          F=$(find ~/.gradle -name 'fabric-key-mapping-api-v1*.jar' | head -1); echo "KEYJAR $F"; unzip -l $F | grep -i keymapping | head
-          for c in net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper; do javap -public -cp $F $c 2>&1 | head; done
 
       - uses: actions/upload-artifact@v4
         with:
