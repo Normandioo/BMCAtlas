@@ -29,3 +29,15 @@ jobs:
           gradle-version: current
       - name: Compile against ${{ matrix.mc }}
         run: gradle compileJava --no-daemon -Pminecraft_version=${{ matrix.mc }} -Pfabric_version=${{ matrix.api }}
+      - name: Inspect APIs
+        if: always()
+        run: |
+          J=$(find ~/.gradle ~/.cache -name 'minecraft-clientOnly*.jar' -o -name 'minecraft-merged*.jar' -o -name 'minecraft-client*.jar' 2>/dev/null | head -3); echo "$J"
+          for j in $J; do
+            for c in net.minecraft.client.Minecraft net.minecraft.client.Options net.minecraft.client.gui.Gui; do
+              echo "#### $c"; javap -cp $j -public $c | grep -iE "screen|hideGui|overlay|Gui\b|actionbar" | head -20
+            done
+            unzip -l $j | grep -iE "glfw|sdl|MouseHandler|InputConstants" | head
+            javap -cp $j -public com.mojang.blaze3d.platform.InputConstants | head -40
+          done
+          find ~/.gradle -name '*.jar' | grep -iE "lwjgl|sdl" | head -20
