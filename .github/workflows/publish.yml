@@ -50,7 +50,7 @@ jobs:
       - name: Publish 1.21.11
         uses: Kir-Antipov/mc-publish@v3.3
         with:
-          curseforge-id: ${{ inputs.publish_to != 'modrinth' && vars.CURSEFORGE_ID || '' }}
+          curseforge-id: ${{ inputs.publish_to != 'modrinth' && '1794918' || '' }}
           curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
           modrinth-id: ${{ inputs.publish_to != 'curseforge' && vars.MODRINTH_ID || '' }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
@@ -69,7 +69,7 @@ jobs:
       - name: Publish 26.x
         uses: Kir-Antipov/mc-publish@v3.3
         with:
-          curseforge-id: ${{ inputs.publish_to != 'modrinth' && vars.CURSEFORGE_ID || '' }}
+          curseforge-id: ${{ inputs.publish_to != 'modrinth' && '1794918' || '' }}
           curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
           modrinth-id: ${{ inputs.publish_to != 'curseforge' && vars.MODRINTH_ID || '' }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
