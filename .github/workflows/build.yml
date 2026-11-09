@@ -27,6 +27,15 @@ jobs:
       - name: Build
         run: gradle build --no-daemon --stacktrace
 
+      - name: Inspecionar API (temporário)
+        if: always()
+        run: |
+          J=$(find . ~/.gradle -name 'minecraft-*client*.jar' -o -name 'minecraft-merged*.jar' 2>/dev/null | grep -v sources | head -3)
+          echo "JARS: $J"
+          for j in $J; do
+            echo "=== $j"
+            unzip -l "$j" | grep -E "gui/render/(pip|state)|blaze3d/(pipeline|systems|buffers|vertex)/" | awk '{print $4}' | head -150
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: hoi4map-jar
