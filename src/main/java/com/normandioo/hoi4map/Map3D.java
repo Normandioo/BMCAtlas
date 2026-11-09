@@ -207,8 +207,8 @@ final class Map3D {
                             if (di >= 1 && reg.wall != null) {
                                 if (di != lastDi) {
                                     int wid = 0, acc = 1;
-                                    for (int q = 0; q < MapData.WALL_R; q++) {
-                                        int e = reg.wall[idx * MapData.WALL_R + q] & 0xFFFF;
+                                    for (int qq = 0; qq < MapData.WALL_R; qq++) {
+                                        int e = reg.wall[idx * MapData.WALL_R + qq] & 0xFFFF;
                                         if (e == 0) break;
                                         int ln = e & 31;
                                         wid = e >> 5;
