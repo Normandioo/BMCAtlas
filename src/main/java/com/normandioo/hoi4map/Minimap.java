@@ -104,7 +104,12 @@ final class Minimap {
         // norte e coordenadas
         g.drawString(font, "N", x + size / 2 - 2, y + 2, 0xFFECEBE4, true);
         g.fill(x - 3, y + size + 3, x + size + 3, y + size + (d != null ? 26 : 16), 0xE01E2123);
-        String coords = (int) Math.floor(cx) + ", " + (int) Math.floor(cz);
+        g.drawString(font, "S", x + size / 2 - 2, y + size - 10, 0xFFB9B8B0, true);
+        g.drawString(font, "L", x + size - 9, y + size / 2 - 4, 0xFFB9B8B0, true);
+        g.drawString(font, "O", x + 4, y + size / 2 - 4, 0xFFB9B8B0, true);
+        // direção para onde você olha (yaw 0 = sul, 90 = oeste, 180 = norte, 270 = leste)
+        int dir = Math.floorMod(Math.round(net.minecraft.util.Mth.wrapDegrees(mc.player.getYRot()) / 45f), 8);
+        String coords = (int) Math.floor(cx) + ", " + (int) Math.floor(cz) + "  " + HEADING[dir];
         g.drawString(font, coords, x + (size - font.width(coords)) / 2, y + size + 5, 0xFFE8E2D0, true);
         if (d != null) {
             int prov = SiteTerritories.provinceAt(d, (int) Math.floor(cx), (int) Math.floor(cz));
