@@ -187,7 +187,7 @@ final class RemoteImages {
     }
 
     /** Desenha a imagem pixel a pixel da tela, centrada em (cx, cy) da interface, sem borrar. */
-    static void drawCrisp(net.minecraft.client.gui.GuiGraphics g, Img img, double cx, double cy) {
+    static void drawCrisp(net.minecraft.client.gui.GuiGraphicsExtractor g, Img img, double cx, double cy) {
         double gs = Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale());
         g.pose().pushMatrix();
         g.pose().translate((float) cx, (float) cy);

@@ -2,7 +2,7 @@ package com.normandioo.bmcatlas;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.renderer.RenderPipelines;
 
@@ -126,7 +126,7 @@ final class CaptureNotice {
      * Desenha o aviso colado na borda do minimapa. edgeY é a borda de onde a caixa sai: a de baixo da faixa de
      * coordenadas, ou a de cima do minimapa quando ele está num canto inferior (upward).
      */
-    static void render(GuiGraphics g, Font font, Minecraft mc, int mapX, int mapW, int edgeY, boolean upward, int screenW) {
+    static void render(GuiGraphicsExtractor g, Font font, Minecraft mc, int mapX, int mapW, int edgeY, boolean upward, int screenW) {
         long now = System.currentTimeMillis();
         if (current != null && now - startedAt >= IN + HOLD + OUT) current = null;
         if (current == null && !QUEUE.isEmpty()) {
@@ -174,14 +174,14 @@ final class CaptureNotice {
         } else {
             g.fill(left + 6, top + 8, left + 22, top + 18, 0xFF000000 | it.byRgb());
         }
-        g.drawString(font, it.title(), left + 28, top + 4, 0xFFECEBE4, false);
+        g.text(font, it.title(), left + 28, top + 4, 0xFFECEBE4, false);
         int tx = left + 28, ty = top + 15;
-        g.drawString(font, it.by(), tx, ty, light(it.byRgb()), false);
+        g.text(font, it.by(), tx, ty, light(it.byRgb()), false);
         tx += font.width(it.by());
-        g.drawString(font, middle, tx, ty, 0xFFBFC2C2, false);
+        g.text(font, middle, tx, ty, 0xFFBFC2C2, false);
         if (!it.from().isEmpty()) {
             tx += font.width(middle);
-            g.drawString(font, it.from(), tx, ty, light(it.fromRgb()), false);
+            g.text(font, it.from(), tx, ty, light(it.fromRgb()), false);
         }
         g.disableScissor();
 

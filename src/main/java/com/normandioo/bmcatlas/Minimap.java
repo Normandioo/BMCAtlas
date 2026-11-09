@@ -2,12 +2,12 @@ package com.normandioo.bmcatlas;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
 
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.gui.components.PlayerFaceRenderer;
+import net.minecraft.client.gui.components.PlayerFaceExtractor;
 
 import java.util.List;
 import java.util.Locale;
@@ -25,7 +25,7 @@ final class Minimap {
     static boolean expanded;
     private static final String[] HEADING = {"S", "SW", "W", "NW", "N", "NE", "E", "SE"};
 
-    static void render(GuiGraphics g, float partial) {
+    static void render(GuiGraphicsExtractor g, float partial) {
         Prefs.Data p = Prefs.get();
         Minecraft mc = Minecraft.getInstance();
         if (!p.minimap || mc.player == null || mc.level == null || mc.options.hideGui) return;
@@ -99,15 +99,15 @@ final class Minimap {
         g.disableScissor();
 
         // norte e coordenadas
-        g.drawString(font, "N", x + size / 2 - 2, y + 2, 0xFFECEBE4, true);
+        g.text(font, "N", x + size / 2 - 2, y + 2, 0xFFECEBE4, true);
         g.fill(x - 3, y + size + 3, x + size + 3, y + size + (d != null ? 26 : 16), 0xE01E2123);
-        g.drawString(font, "S", x + size / 2 - 2, y + size - 10, 0xFFB9B8B0, true);
-        g.drawString(font, "E", x + size - 9, y + size / 2 - 4, 0xFFB9B8B0, true);
-        g.drawString(font, "W", x + 4, y + size / 2 - 4, 0xFFB9B8B0, true);
+        g.text(font, "S", x + size / 2 - 2, y + size - 10, 0xFFB9B8B0, true);
+        g.text(font, "E", x + size - 9, y + size / 2 - 4, 0xFFB9B8B0, true);
+        g.text(font, "W", x + 4, y + size / 2 - 4, 0xFFB9B8B0, true);
         // direção para onde você olha (yaw 0 = sul, 90 = oeste, 180 = norte, 270 = leste)
         int dir = Math.floorMod(Math.round(net.minecraft.util.Mth.wrapDegrees(mc.player.getYRot()) / 45f), 8);
         String coords = (int) Math.floor(cx) + ", " + (int) Math.floor(cz) + "  " + HEADING[dir];
-        g.drawString(font, coords, x + (size - font.width(coords)) / 2, y + size + 5, 0xFFE8E2D0, true);
+        g.text(font, coords, x + (size - font.width(coords)) / 2, y + size + 5, 0xFFE8E2D0, true);
         if (d != null && !expanded) {
             SiteTerritories.WarInfo watched = MapScreen.minimapWar(d);
             if (watched != null) CaptureNotice.observe(d, watched);
@@ -120,7 +120,7 @@ final class Minimap {
                 String country = d.labels[d.provCountry[prov]];
                 while (country.length() > 1 && font.width(country) > size + 8) country = country.substring(0, country.length() - 1);
                 int tw = font.width(country);
-                g.drawString(font, country, x + (size - tw) / 2, y + size + 15, 0xFF000000 | d.rgb[d.provCountry[prov]], true);
+                g.text(font, country, x + (size - tw) / 2, y + size + 15, 0xFF000000 | d.rgb[d.provCountry[prov]], true);
             }
         }
     }
@@ -140,7 +140,7 @@ final class Minimap {
     }
 
     /** Conexões da guerra (frentes quentes, metade na cor de cada lado) por baixo dos ícones das cidades. */
-    private static void drawFront(GuiGraphics g, SiteTerritories.Data d, double tx, double ty, double scale, double gs) {
+    private static void drawFront(GuiGraphicsExtractor g, SiteTerritories.Data d, double tx, double ty, double scale, double gs) {
         WarFront f = MapScreen.minimapFront(d);
         if (f == null) return;
         for (WarFront.Hot h : f.innerLines()) {
@@ -167,7 +167,7 @@ final class Minimap {
         return Math.round(v * gs) / gs;
     }
 
-    private static void line(GuiGraphics g, double x0, double y0, double x1, double y1, int color, float thick) {
+    private static void line(GuiGraphicsExtractor g, double x0, double y0, double x1, double y1, int color, float thick) {
         double dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
         if (len < 0.3) return;
         g.pose().pushMatrix();
@@ -179,7 +179,7 @@ final class Minimap {
         g.pose().popMatrix();
     }
 
-    private static void drawCities(GuiGraphics g, SiteTerritories.Data d, double tx, double ty, int ox, int oy, double scale, int size, double gs) {
+    private static void drawCities(GuiGraphicsExtractor g, SiteTerritories.Data d, double tx, double ty, int ox, int oy, double scale, int size, double gs) {
         int half = size / 2 + 6;
         for (SiteTerritories.Locality l : d.cityOrder) {
             // só as maiores quando o zoom é pequeno
@@ -222,7 +222,7 @@ final class Minimap {
     }
 
     /** Cabeças dos jogadores: quem está carregado por perto usa a skin real; o resto, a cabeça do dynmap. */
-    private static void drawPlayers(GuiGraphics g, SiteTerritories.Data d, Minecraft mc, int ox, int oy, double cx, double cz, double scale, int size, float partial, double gs) {
+    private static void drawPlayers(GuiGraphicsExtractor g, SiteTerritories.Data d, Minecraft mc, int ox, int oy, double cx, double cz, double scale, int size, float partial, double gs) {
         String self = mc.player.getName().getString();
         double half = size / 2.0 + 6;
         java.util.Set<String> drawn = new java.util.HashSet<>();
@@ -235,7 +235,7 @@ final class Minimap {
             g.pose().pushMatrix();
             g.pose().translate((float) sx, (float) sy);
             g.fill(-6, -6, 6, 6, 0xFF05080C);
-            PlayerFaceRenderer.draw(g, pl.getSkin(), -5, -5, 10);
+            PlayerFaceExtractor.extractRenderState(g, pl.getSkin(), -5, -5, 10);
             g.pose().popMatrix();
         }
         if (!SiteTerritories.showPlayers()) return;
@@ -267,12 +267,12 @@ final class Minimap {
     }
 
     /** Você: a cabeça da sua skin, com moldura clara para se destacar dos outros jogadores. */
-    private static void drawSelf(GuiGraphics g, Minecraft mc, int ox, int oy, float partial) {
+    private static void drawSelf(GuiGraphicsExtractor g, Minecraft mc, int ox, int oy, float partial) {
         g.pose().pushMatrix();
         g.pose().translate(ox, oy);
         g.fill(-7, -7, 7, 7, 0xFF05080C);
         g.fill(-6, -6, 6, 6, 0xFFFFF2B0);
-        PlayerFaceRenderer.draw(g, mc.player.getSkin(), -5, -5, 10);
+        PlayerFaceExtractor.extractRenderState(g, mc.player.getSkin(), -5, -5, 10);
         g.pose().popMatrix();
     }
 }

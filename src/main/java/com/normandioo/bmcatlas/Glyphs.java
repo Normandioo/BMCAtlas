@@ -1,6 +1,6 @@
 package com.normandioo.bmcatlas;
 
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.renderer.RenderPipelines;
 
 import java.util.HashMap;
@@ -307,7 +307,7 @@ final class Glyphs {
     private static final Map<String, WarArt.Tex> CACHE = new HashMap<>();
 
     /** Cada ícone vira uma textura por combinação de cores (criada uma vez): desenhar é um blit em vez de dezenas de retângulos. */
-    static void draw(GuiGraphics g, String name, int x, int y, int main, int accent, int shade) {
+    static void draw(GuiGraphicsExtractor g, String name, int x, int y, int main, int accent, int shade) {
         String[] art = ART.get(name);
         if (art == null) return;
         String key = "glyph" + name + "_" + main + "_" + accent + "_" + shade;
