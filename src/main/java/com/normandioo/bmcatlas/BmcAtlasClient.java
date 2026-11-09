@@ -8,7 +8,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,10 +23,10 @@ public class BmcAtlasClient implements ClientModInitializer {
     public void onInitializeClient() {
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
         OPEN_KEY = KeyMappingHelper.registerKeyMapping(
-                new KeyMapping("key.bmcatlas.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
+                new KeyMapping("key.bmcatlas.open", InputConstants.Type.KEYSYM, InputConstants.KEY_N, category));
 
         MINIMAP_KEY = KeyMappingHelper.registerKeyMapping(
-                new KeyMapping("key.bmcatlas.minimap", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
+                new KeyMapping("key.bmcatlas.minimap", InputConstants.Type.KEYSYM, InputConstants.KEY_Z, category));
 
         Prefs.load();
         Countries.load();
@@ -39,12 +38,12 @@ public class BmcAtlasClient implements ClientModInitializer {
             ChunkGen.tick(mc);
             if (mc.level == null || mc.player == null) return;
             while (OPEN_KEY.consumeClick()) {
-                if (mc.screen == null) mc.setScreen(new MapScreen());
+                if (Compat.screen(mc) == null) Compat.setScreen(mc, new MapScreen());
             }
             while (MINIMAP_KEY.consumeClick()) {
                 // o minimapa aumenta enquanto a tecla está segurada (ver abaixo)
             }
-            Minimap.expanded = mc.screen == null && MINIMAP_KEY.isDown();
+            Minimap.expanded = Compat.screen(mc) == null && MINIMAP_KEY.isDown();
             MapData.tick(mc);
             RemoteImages.pump();
             if (++ticks % 6000 == 0 && MapData.isDirty()) MapData.save();

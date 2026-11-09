@@ -28,8 +28,8 @@ final class Minimap {
     static void render(GuiGraphicsExtractor g, float partial) {
         Prefs.Data p = Prefs.get();
         Minecraft mc = Minecraft.getInstance();
-        if (!p.minimap || mc.player == null || mc.level == null || mc.options.hideGui) return;
-        if (mc.screen instanceof MapScreen) return;       // o mapa grande já está na tela
+        if (!p.minimap || mc.player == null || mc.level == null || Compat.hideGui(mc)) return;
+        if (Compat.screen(mc) instanceof MapScreen) return;       // o mapa grande já está na tela
         if (debugShown(mc)) return;                      // F3 aberto: não cobrir as informações
         MapScreen.idleTint();                             // limites das cidades gravados no terreno
         Font font = mc.font;
@@ -52,7 +52,7 @@ final class Minimap {
         if (scale * gs >= 1.0) scale = Math.max(1.0, Math.round(scale * gs)) / gs;
         double cx = net.minecraft.util.Mth.lerp(partial, mc.player.xo, mc.player.getX());
         double cz = net.minecraft.util.Mth.lerp(partial, mc.player.zo, mc.player.getZ());
-        if (!(mc.screen instanceof MapScreen)) MapScreen.liveTick();
+        if (!(Compat.screen(mc) instanceof MapScreen)) MapScreen.liveTick();
         int mode = MapScreen.minimapMode();
 
         // moldura

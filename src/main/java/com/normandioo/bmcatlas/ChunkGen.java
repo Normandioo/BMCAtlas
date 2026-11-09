@@ -233,8 +233,8 @@ final class ChunkGen {
         }
         ticks++;
         if (ticks % 40 == 0) known = countKnown();
-        if (ticks % 20 == 0 && !(mc.screen instanceof MapScreen)) {
-            mc.gui.setOverlayMessage(Component.literal("Generating map: " + (int) (progress() * 100) + "%  (" + known + "/" + total + ")"), false);
+        if (ticks % 20 == 0 && !(Compat.screen(mc) instanceof MapScreen)) {
+            Compat.overlay(mc, Component.literal("Generating map: " + (int) (progress() * 100) + "%  (" + known + "/" + total + ")"));
         }
         if (state == State.PAUSED) return;
         if (remote) tickRemote(mc);

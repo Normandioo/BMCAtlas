@@ -1,5 +1,6 @@
 package com.normandioo.bmcatlas;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -9,7 +10,6 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -367,7 +367,7 @@ public class MapScreen extends Screen {
     static void openAt(SiteTerritories.Locality city) {
         pendingFocus = city;
         mode = MODE_WAR;
-        Minecraft.getInstance().setScreen(new MapScreen());
+        Compat.setScreen(Minecraft.getInstance(), new MapScreen());
     }
 
     /** A guerra que o minimapa acompanha (a escolhida no mapa, senão a primeira em andamento). */
@@ -4632,32 +4632,32 @@ public class MapScreen extends Screen {
     public boolean keyPressed(KeyEvent event) {
         int key0 = event.key();
         if (photoMode) {
-            if (key0 == GLFW.GLFW_KEY_ESCAPE) {
+            if (key0 == InputConstants.KEY_ESCAPE) {
                 photoMode = false;
                 return true;
             }
             return false;
         }
-        if (key0 == GLFW.GLFW_KEY_F7) {
+        if (key0 == InputConstants.KEY_F7) {
             Perf.on = !Perf.on;
             return true;
         }
         if (searchOpen) {
-            if (key0 == GLFW.GLFW_KEY_ESCAPE) {
+            if (key0 == InputConstants.KEY_ESCAPE) {
                 closeSearch();
                 return true;
             }
-            if (key0 == GLFW.GLFW_KEY_ENTER || key0 == GLFW.GLFW_KEY_KP_ENTER) {
+            if (key0 == InputConstants.KEY_RETURN || key0 == InputConstants.KEY_NUMPADENTER) {
                 if (searchIdx >= 0 && searchIdx < searchHits.size()) runSearchHit(searchHits.get(searchIdx));
                 return true;
             }
-            if (key0 == GLFW.GLFW_KEY_UP || key0 == GLFW.GLFW_KEY_DOWN) {
-                if (!searchHits.isEmpty()) searchIdx = Math.floorMod(searchIdx + (key0 == GLFW.GLFW_KEY_UP ? -1 : 1), searchHits.size());
+            if (key0 == InputConstants.KEY_UP || key0 == InputConstants.KEY_DOWN) {
+                if (!searchHits.isEmpty()) searchIdx = Math.floorMod(searchIdx + (key0 == InputConstants.KEY_UP ? -1 : 1), searchHits.size());
                 return true;
             }
             return super.keyPressed(event);
         }
-        if (toolMode != 0 && key0 == GLFW.GLFW_KEY_ESCAPE) {
+        if (toolMode != 0 && key0 == InputConstants.KEY_ESCAPE) {
             toolMode = 0;
             measureN = 0;
             return true;
@@ -4667,23 +4667,23 @@ public class MapScreen extends Screen {
             return true;
         }
         int k = event.key();
-        if (k == GLFW.GLFW_KEY_1) {
+        if (k == InputConstants.KEY_1) {
             mode = MODE_PHYSICAL;
             return true;
         }
-        if (k == GLFW.GLFW_KEY_2) {
+        if (k == InputConstants.KEY_2) {
             mode = MODE_POLITICAL;
             return true;
         }
-        if (k == GLFW.GLFW_KEY_3) {
+        if (k == InputConstants.KEY_3) {
             mode = MODE_PROVINCES;
             return true;
         }
-        if (k == GLFW.GLFW_KEY_4 && siteMode()) {
+        if (k == InputConstants.KEY_4 && siteMode()) {
             enterDiplomacy();
             return true;
         }
-        if (k == GLFW.GLFW_KEY_5 && siteMode()) {
+        if (k == InputConstants.KEY_5 && siteMode()) {
             enterWar();
             return true;
         }

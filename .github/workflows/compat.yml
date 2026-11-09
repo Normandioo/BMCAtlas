@@ -3,7 +3,7 @@ name: compat
 on:
   push:
     branches: [mc-26.1]
-    paths: ['.github/workflows/compat.yml']
+    paths: ['src/**','.github/workflows/compat.yml']
 
 jobs:
   compile:
@@ -29,10 +29,3 @@ jobs:
           gradle-version: current
       - name: Compile against ${{ matrix.mc }}
         run: gradle compileJava --no-daemon -Pminecraft_version=${{ matrix.mc }} -Pfabric_version=${{ matrix.api }}
-      - name: Inspect APIs
-        if: always()
-        run: |
-          j=$(ls ~/.gradle/caches/fabric-loom/${{ matrix.mc }}/minecraft-merged.jar)
-          for c in net.minecraft.client.gui.Hud net.minecraft.client.gui.Gui net.minecraft.client.Options net.minecraft.client.Minecraft; do echo "## $c"; javap -cp $j -public $c | grep -iE "hide|hidden|visible|showHud|toggleGui"; done
-          echo "## SDL"; find ~/.gradle -iname '*lwjgl*sdl*' | head -3
-          javap -cp $j -public net.minecraft.client.Minecraft | grep -E " screen|Screen\(\)"

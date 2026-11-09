@@ -133,7 +133,7 @@ final class CaptureNotice {
             current = QUEUE.pollFirst();
             startedAt = now;
         }
-        boolean down = org.lwjgl.glfw.GLFW.glfwGetMouseButton(mc.getWindow().handle(), org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+        boolean down = Compat.leftDown(mc);
         if (current == null) {
             wasDown = down;
             return;
@@ -158,7 +158,7 @@ final class CaptureNotice {
         int clipTop = upward ? edgeY - BOX_H : edgeY;
         int top = upward ? edgeY - BOX_H + (int) Math.round((1 - shown) * BOX_H) : edgeY - (int) Math.round((1 - shown) * BOX_H);
 
-        boolean chat = mc.screen instanceof ChatScreen;
+        boolean chat = Compat.screen(mc) instanceof ChatScreen;
         double gs = Math.max(1.0, mc.getWindow().getGuiScale());
         double mx = mc.mouseHandler.xpos() / gs, my = mc.mouseHandler.ypos() / gs;
         boolean hover = chat && mx >= left && mx < left + w && my >= clipTop && my < clipTop + BOX_H;
