@@ -51,7 +51,7 @@ public class MapScreen extends Screen {
     /** Cabeçalho sem país (sem caixa de bandeira). */
     private static final int NEUTRAL = -1;
 
-    private static final int TAB_NONE = 0, TAB_INFO = 1, TAB_LIST = 2, TAB_DIPLO = 3, TAB_WAR = 4, TAB_CITY = 5, TAB_GEN = 6, TAB_DIPLOMENU = 7, TAB_SET = 8, TAB_HIST = 9;
+    private static final int TAB_NONE = 0, TAB_INFO = 1, TAB_LIST = 2, TAB_DIPLO = 3, TAB_WAR = 4, TAB_CITY = 5, TAB_GEN = 6, TAB_DIPLOMENU = 7, TAB_SET = 8;
 
     // O estado da vista persiste entre aberturas da tela.
     private static double viewX, viewZ;
@@ -61,7 +61,7 @@ public class MapScreen extends Screen {
     private static int mode = MODE_POLITICAL;
     private static int tab = TAB_NONE;
     private static String lastWaveKey;     // guerra e mapa da última leitura de cores
-    private static int histTab;            // aba do histórico
+    private static int listTab;            // aba da lista de países (lista / ranking)
     private EditBox searchBox;
     private boolean searchOpen;
     private int searchX, searchY, searchW, searchH, searchIdx;
@@ -149,6 +149,8 @@ public class MapScreen extends Screen {
     private int outlineVer = -1;
     private List<SiteTerritories.WarInfo> outWars = List.of();
     private List<Timed> outTruces = List.of(), outUlts = List.of();
+    private int myWarsN, myAlliesN, myTrucesN, myUltsN, myPlayersN;
+    private static boolean mineOnly;       // listas abertas pela barra de cima: só o país do jogador
 
     // cache do modo manual: país -> {somaX, somaZ, n, somaXX, somaZZ, somaXZ} (em províncias)
     private int cacheVersion = -1;
@@ -900,7 +902,12 @@ public class MapScreen extends Screen {
     }
 
     private static int iconSize(SiteTerritories.Locality l) {
-        return "Fort".equals(l.kind) ? 14 : ICON_PX[l.tier];
+        int base = "Fort".equals(l.kind) ? 14 : ICON_PX[l.tier];
+        return Math.max(6, (int) Math.round(base * Prefs.get().cityIconPct / 100.0));
+    }
+
+    private static double guiScale() {
+        return Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale());
     }
 
     private int iconRadius(SiteTerritories.Locality l) {
@@ -936,13 +943,13 @@ public class MapScreen extends Screen {
             boolean pulsing = l.idx == pulseCity && nowMs - pulseStart < PULSE_MS;
             boolean hot = l == hover || l.idx == selCity || pulsing;
             if (pulsing) drawPulse(g, sx, sy, iconRadius(l), nowMs - pulseStart);
-            RemoteImages.Img img = Prefs.get().simpleMarkers ? null : cityImage(l, iconSize(l));
+            RemoteImages.Img img = Prefs.get().simpleMarkers ? null : cityImage(l, (int) Math.round(iconSize(l) * guiScale()));
             if (img != null) {
                 if (hot) {
                     int r = iconRadius(l) + 3;
                     g.fill(sx - r, sy - r, sx + r + 1, sy + r + 1, 0x70FFE27A);
                 }
-                g.blit(RenderPipelines.GUI_TEXTURED, img.id(), sx - img.w() / 2, sy - img.h() / 2, 0f, 0f, img.w(), img.h(), img.w(), img.h(), img.w(), img.h());
+                RemoteImages.drawCrisp(g, img, sx, sy);
             } else {
                 drawIcon(g, sx, sy, l, rgb, hot);
             }
@@ -1129,6 +1136,45 @@ public class MapScreen extends Screen {
         outWars = running;
         outTruces = truceList(d, now);
         outUlts = ultimatumList(d, now);
+        int me = myCountry(d);
+        myWarsN = 0;
+        for (SiteTerritories.WarInfo w : running) if (me < 0 || warInvolves(d, w, me)) myWarsN++;
+        myAlliesN = 0;
+        if (d.war != null && d.war.alliances != null) {
+            for (SiteTerritories.AllianceInfo a : d.war.alliances) if (me < 0 || Relations.countriesOf(d, a).contains(me)) myAlliesN++;
+        }
+        myTrucesN = truceList(d, now, me).size();
+        myUltsN = ultimatumList(d, now, me).size();
+        myPlayersN = 0;
+        for (OnlinePlayers.Entry e : OnlinePlayers.list()) {
+            String low = e.account.toLowerCase(Locale.ROOT);
+            String site = d.ignToSite.get(low);
+            Integer ci = d.countryOfPlayer.get(site != null ? site.toLowerCase(Locale.ROOT) : low);
+            if (me < 0 || (ci != null && ci == me)) myPlayersN++;
+        }
+    }
+
+    private static boolean warInvolves(SiteTerritories.Data d, SiteTerritories.WarInfo w, int me) {
+        if (w.sides == null) return false;
+        for (SiteTerritories.Side side : w.sides) if (Relations.countriesOf(d, side).contains(me)) return true;
+        return false;
+    }
+
+    private static boolean nameIsMe(SiteTerritories.Data d, String name, int me) {
+        if (name == null) return false;
+        Integer ci = Relations.nameIndex(d).get(Relations.norm(name));
+        return ci != null && ci == me;
+    }
+
+    /** Só o país do jogador quando a lista foi aberta pela barra de cima; -1 = tudo. */
+    private int mineFilter(SiteTerritories.Data d) {
+        return mineOnly ? myCountry(d) : -1;
+    }
+
+    private void mineToggle(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
+        if (myCountry(d) < 0) return;
+        textButton(g, bx + 9, cy, bw - 18, 16, mineOnly ? "Showing: your country (click for all)" : "Showing: everyone (click for your country)", mouseX, mouseY, true, () -> mineOnly = !mineOnly);
+        cy += 21;
     }
 
     /** Mostrador da barra superior; devolve o x seguinte (pula se não couber). */
@@ -1146,6 +1192,11 @@ public class MapScreen extends Screen {
     }
 
     private void openPanorama(int sub) {
+        openPanorama(sub, false);
+    }
+
+    private void openPanorama(int sub, boolean mine) {
+        mineOnly = mine;
         tab = TAB_DIPLOMENU;
         dmTab = sub;
         SCROLL[TAB_DIPLOMENU] = 0;
@@ -1179,7 +1230,7 @@ public class MapScreen extends Screen {
         for (Btn b : nav) {
             iconButton(g, x, 2, BTN, b.glyph(), b.active(), b.enabled(), mouseX, mouseY, b.tip(), b.action());
             if (b.glyph().equals("war") && b.enabled()) {
-                int n = activeWarCount();
+                int n = myWarsN;
                 if (n > 0) {
                     String txt = String.valueOf(n);
                     int tw = font.width(txt) + 5;
@@ -1210,12 +1261,16 @@ public class MapScreen extends Screen {
         int limit = rx - nameW - 8;
 
         if (site) {
-            x = stat(g, x, limit, "war", activeWarCount(), 0xFFF0A090, "Wars in progress", this::enterWar, mouseX, mouseY);
-            int allies = d.war == null || d.war.alliances == null ? 0 : d.war.alliances.size();
-            x = stat(g, x, limit, "diplomacy", allies, COL_TEXT, "Alliances", () -> openPanorama(0), mouseX, mouseY);
-            x = stat(g, x, limit, "treaty", outTruces.size(), COL_TEXT, "Truces", () -> openPanorama(4), mouseX, mouseY);
-            x = stat(g, x, limit, "political", outUlts.size(), COL_LINK, "Pending ultimatums", () -> openPanorama(5), mouseX, mouseY);
-            if (SiteTerritories.showPlayers() && showPlayers) stat(g, x, limit, "players", OnlinePlayers.list().size(), 0xFF8FD08F, "Online players", null, mouseX, mouseY);
+            boolean mine = myCountry(d) >= 0;
+            String of = mine ? "Your country: " : "";
+            x = stat(g, x, limit, "war", myWarsN, 0xFFF0A090, of + "wars in progress", () -> {
+                mineOnly = true;
+                enterWar();
+            }, mouseX, mouseY);
+            x = stat(g, x, limit, "diplomacy", myAlliesN, COL_TEXT, of + "alliances", () -> openPanorama(0, true), mouseX, mouseY);
+            x = stat(g, x, limit, "treaty", myTrucesN, COL_TEXT, of + "truces", () -> openPanorama(4, true), mouseX, mouseY);
+            x = stat(g, x, limit, "political", myUltsN, COL_LINK, of + "pending ultimatums", () -> openPanorama(5, true), mouseX, mouseY);
+            if (SiteTerritories.showPlayers() && showPlayers) stat(g, x, limit, "players", myPlayersN, 0xFF8FD08F, mine ? "Online players from your country" : "Online players", null, mouseX, mouseY);
         }
     }
 
@@ -1404,6 +1459,7 @@ public class MapScreen extends Screen {
         b.add(new Btn("list", tab == TAB_LIST, true, "Country list", () -> tab = tab == TAB_LIST ? TAB_NONE : TAB_LIST, true));
         b.add(new Btn("treaty", tab == TAB_DIPLOMENU, site, "Diplomatic overview\nAlliances, active NAPs, purge and diplolock." + (site ? "" : needSite),
                 () -> {
+                    mineOnly = false;
                     tab = tab == TAB_DIPLOMENU ? TAB_NONE : TAB_DIPLOMENU;
                     SCROLL[TAB_DIPLOMENU] = 0;
                 }, false));
@@ -1477,11 +1533,10 @@ public class MapScreen extends Screen {
         boolean site = siteMode();
         top.add(new Btn("war", tab == TAB_WAR, site, "Wars\nList, scoreboard, cities and Law 7." + (site ? "" : "\nRequires site data."), () -> {
             if (tab == TAB_WAR) tab = TAB_NONE;
-            else enterWar();
-        }, false));
-        top.add(new Btn("history", tab == TAB_HIST, site, "History\nEvents, world history and ranking." + (site ? "" : "\nRequires site data."), () -> {
-            tab = tab == TAB_HIST ? TAB_NONE : TAB_HIST;
-            SCROLL[TAB_HIST] = 0;
+            else {
+                mineOnly = false;
+                enterWar();
+            }
         }, false));
         right.add(0, new Btn("search", searchOpen, true, "Search\nCountries, cities and players. Also measures distances and marks points.", () -> {
             if (searchOpen) closeSearch();
@@ -1599,7 +1654,7 @@ public class MapScreen extends Screen {
         return switch (tab) {
             case TAB_INFO -> selSite >= 0;
             case TAB_CITY -> selCity >= 0;
-            case TAB_DIPLO, TAB_WAR, TAB_DIPLOMENU, TAB_HIST -> true;
+            case TAB_DIPLO, TAB_WAR, TAB_DIPLOMENU -> true;
             default -> false;
         };
     }
@@ -1617,6 +1672,7 @@ public class MapScreen extends Screen {
         selSite = idx;
         MapStyle.selectedProvince = idx;
         if (d == null) return;
+        setHighlight(d, -1);
         if (old >= 0 && old < d.n) MapData.invalidateRect(d.bounds[old][0], d.bounds[old][1], d.bounds[old][2], d.bounds[old][3]);
         if (idx >= 0 && idx < d.n) MapData.invalidateRect(d.bounds[idx][0], d.bounds[idx][1], d.bounds[idx][2], d.bounds[idx][3]);
     }
@@ -1647,7 +1703,6 @@ public class MapScreen extends Screen {
             case TAB_DIPLO -> drawDiploPanel(g, mouseX, mouseY);
             case TAB_DIPLOMENU -> drawDiploMenu(g, mouseX, mouseY);
             case TAB_WAR -> drawWarPanel(g, mouseX, mouseY);
-            case TAB_HIST -> drawHistoryPanel(g, mouseX, mouseY);
             case TAB_CITY -> drawCityPanel(g, mouseX, mouseY);
             default -> {
                 if (siteMode()) drawCountryPanel(g, mouseX, mouseY);
@@ -2017,8 +2072,8 @@ public class MapScreen extends Screen {
     }
 
     private void selectCountry(int country) {
-        centerCountry(country);
         tab = TAB_INFO;
+        centerCountry(country);
         SCROLL[TAB_INFO] = 0;
     }
 
@@ -2043,10 +2098,54 @@ public class MapScreen extends Screen {
             dipFocus = country;
             dipAlliance = -1;
         }
-        int[] b = d.bounds[bestIdx];
-        viewX = (b[0] + b[2]) / 2.0;
-        viewZ = (b[1] + b[3]) / 2.0;
-        if (scale < 0.25) scale = 0.25;
+        setHighlight(d, country);
+        // enquadra o país inteiro, com a câmera na capital
+        int minX = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (int i = 0; i < d.n; i++) {
+            if (d.provCountry[i] != country) continue;
+            int[] bb = d.bounds[i];
+            minX = Math.min(minX, bb[0]);
+            minZ = Math.min(minZ, bb[1]);
+            maxX = Math.max(maxX, bb[2]);
+            maxZ = Math.max(maxZ, bb[3]);
+        }
+        double cxm = (minX + maxX) / 2.0, czm = (minZ + maxZ) / 2.0;
+        for (SiteTerritories.Locality l : d.localities) {
+            if (l.countryIdx == country && WarFront.isCapital(l)) {
+                cxm = l.x + 0.5;
+                czm = l.z + 0.5;
+                break;
+            }
+        }
+        int panelRight = tab != TAB_NONE ? MARGIN + PW + 8 : 0;
+        double halfW = Math.max(60, Math.min(width / 2.0 - panelRight, width / 2.0) - 24);
+        double halfH = Math.max(60, (height - TOP) / 2.0 - 30);
+        double dx = Math.max(8, Math.max(cxm - minX, maxX + 1 - cxm)), dz = Math.max(8, Math.max(czm - minZ, maxZ + 1 - czm));
+        double fit = Math.min(halfW / dx, halfH / dz);
+        scale = Math.max(0.03, Math.min(8.0, fit));
+        viewX = cxm;
+        viewZ = czm;
+    }
+
+    /** Contorno dourado em volta do país escolhido (-1 apaga). */
+    private static void setHighlight(SiteTerritories.Data d, int country) {
+        if (MapStyle.highlightCountry == country) return;
+        int old = MapStyle.highlightCountry;
+        MapStyle.highlightCountry = country;
+        if (d == null) return;
+        for (int c : new int[]{old, country}) {
+            if (c < 0) continue;
+            int minX = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+            for (int i = 0; i < d.n; i++) {
+                if (d.provCountry[i] != c) continue;
+                int[] bb = d.bounds[i];
+                minX = Math.min(minX, bb[0]);
+                minZ = Math.min(minZ, bb[1]);
+                maxX = Math.max(maxX, bb[2]);
+                maxZ = Math.max(maxZ, bb[3]);
+            }
+            if (minX != Integer.MAX_VALUE) MapData.invalidateRect(minX, minZ, maxX, maxZ);
+        }
     }
 
     /** Leva a câmera até a cidade e a marca (ícone e limite em destaque); o painel atual continua aberto. */
@@ -2438,7 +2537,6 @@ public class MapScreen extends Screen {
         return null;
     }
 
-    private record Event(long at, String text) {}
 
     private void eventRow(GuiGraphics g, String text, String right) {
         int rowTop = cy;
@@ -2450,65 +2548,42 @@ public class MapScreen extends Screen {
         cy += 14;
     }
 
-    private void drawHistoryPanel(GuiGraphics g, int mouseX, int mouseY) {
-        SiteTerritories.Data d = SiteTerritories.data();
-        int top = header(g, NEUTRAL, "History", "What happened on this map", null, mouseX, mouseY, () -> tab = TAB_NONE);
-        top = tabStrip(g, top, new String[]{"Server", "World", "Ranking"}, histTab, mouseX, mouseY, i -> {
-            histTab = i;
-            SCROLL[TAB_HIST] = 0;
-        });
-        beginScroll(g, top, SCROLL[TAB_HIST], 0);
-        if (histTab == 0) {
-            List<Event> list = new ArrayList<>();
-            for (SiteTerritories.WarInfo w : Relations.wars(d)) {
-                long st = parseMs(w.started), en = parseMs(w.ended);
-                if (st != NONE) list.add(new Event(st, "War started: " + warName(w)));
-                if (en != NONE) list.add(new Event(en, "War ended: " + warName(w)));
-            }
-            for (Map.Entry<String, SiteTerritories.Player> e : d.players.entrySet()) {
-                long at = parseMs(e.getValue().lastJoined);
-                if (at != NONE) list.add(new Event(at, e.getKey() + " joined"));
-            }
-            list.sort((a, b) -> Long.compare(b.at(), a.at()));
-            section(g, "Latest events");
-            for (Event ev : list.subList(0, Math.min(16, list.size()))) eventRow(g, ev.text(), dateText(ev.at()));
-            if (list.isEmpty()) paragraph(g, "No events recorded on the site.", COL_DIM);
-        } else if (histTab == 1) {
-            section(g, "World history");
-            List<String[]> list = new ArrayList<>();
-            if (d.war != null && d.war.alliances != null) {
-                for (SiteTerritories.AllianceInfo a : d.war.alliances) if (a.formed != null) list.add(new String[]{"Alliance: " + a.name, a.formed});
-            }
-            for (int c = 0; c < d.ids.length; c++) {
-                String formed = d.info[c] == null ? null : d.info[c].get("formed");
-                if (formed != null && d.provinceCount[c] > 0) list.add(new String[]{"Founded: " + d.labels[c], formed});
-            }
-            list.sort((a, b) -> Long.compare(yearOf(b[1]), yearOf(a[1])));
-            for (String[] row : list.subList(0, Math.min(40, list.size()))) eventRow(g, row[0], row[1]);
-            if (list.isEmpty()) paragraph(g, "The site records no historical dates.", COL_DIM);
-        } else {
-            refreshAreas(d);
-            section(g, "By map area");
-            List<Integer> order = new ArrayList<>();
-            for (int c = 0; c < d.ids.length; c++) if (d.provinceCount[c] > 0) order.add(c);
-            order.sort((a, b) -> Double.compare(countryArea[b], countryArea[a]));
-            int place = 1;
-            for (int c : order) {
-                final int country = c;
-                int rowTop = cy;
-                boolean hover = visible(rowTop, 16) && mouseX >= bx + 4 && mouseX < bx + bw - 4 && mouseY >= rowTop && mouseY < rowTop + 16;
-                zebra(g, rowTop, 16, hover, false);
-                miniFlag(g, d, c, bx + 9, rowTop + 2);
-                String right = areaPct(c);
-                g.drawString(font, fit(place + ". " + d.labels[c], bw - 50 - font.width(right)), bx + 36, rowTop + 4, COL_TEXT, false);
-                g.drawString(font, right, bx + bw - 11 - font.width(right), rowTop + 4, COL_DIM, false);
-                if (visible(rowTop, 16)) hits.add(new Hit(bx + 4, rowTop, bw - 8, 16, () -> selectCountry(country), null));
-                rowIdx++;
-                cy += 16;
-                place++;
-            }
+    private void drawWorldHistory(GuiGraphics g, SiteTerritories.Data d) {
+        section(g, "World history");
+        List<String[]> list = new ArrayList<>();
+        if (d.war != null && d.war.alliances != null) {
+            for (SiteTerritories.AllianceInfo a : d.war.alliances) if (a.formed != null) list.add(new String[]{"Alliance: " + a.name, a.formed});
         }
-        SCROLL[TAB_HIST] = endScroll(g, SCROLL[TAB_HIST]);
+        for (int c = 0; c < d.ids.length; c++) {
+            String formed = d.info[c] == null ? null : d.info[c].get("formed");
+            if (formed != null && d.provinceCount[c] > 0) list.add(new String[]{"Founded: " + d.labels[c], formed});
+        }
+        list.sort((a, b) -> Long.compare(yearOf(b[1]), yearOf(a[1])));
+        for (String[] row : list.subList(0, Math.min(40, list.size()))) eventRow(g, row[0], row[1]);
+        if (list.isEmpty()) paragraph(g, "The site records no historical dates.", COL_DIM);
+    }
+
+    private void drawRanking(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
+        refreshAreas(d);
+        section(g, "By map area");
+        List<Integer> order = new ArrayList<>();
+        for (int c = 0; c < d.ids.length; c++) if (d.provinceCount[c] > 0) order.add(c);
+        order.sort((a, b) -> Double.compare(countryArea[b], countryArea[a]));
+        int place = 1;
+        for (int c : order) {
+            final int country = c;
+            int rowTop = cy;
+            boolean hover = visible(rowTop, 16) && mouseX >= bx + 4 && mouseX < bx + bw - 4 && mouseY >= rowTop && mouseY < rowTop + 16;
+            zebra(g, rowTop, 16, hover, false);
+            miniFlag(g, d, c, bx + 9, rowTop + 2);
+            String right = areaPct(c);
+            g.drawString(font, fit(place + ". " + d.labels[c], bw - 50 - font.width(right)), bx + 36, rowTop + 4, COL_TEXT, false);
+            g.drawString(font, right, bx + bw - 11 - font.width(right), rowTop + 4, COL_DIM, false);
+            if (visible(rowTop, 16)) hits.add(new Hit(bx + 4, rowTop, bw - 8, 16, () -> selectCountry(country), null));
+            rowIdx++;
+            cy += 16;
+            place++;
+        }
     }
 
     /** O maior número do texto, que nas datas do site é o ano. */
@@ -2574,7 +2649,16 @@ public class MapScreen extends Screen {
             for (int i = 0; i < d.ids.length; i++) if (d.provinceCount[i] > 0) legendOrder.add(i);
             legendOrder.sort((a, b) -> Integer.compare(d.provinceCount[b], d.provinceCount[a]));
         }
+        top = tabStrip(g, top, new String[]{"Countries", "Ranking"}, listTab, mouseX, mouseY, i -> {
+            listTab = i;
+            SCROLL[TAB_LIST] = 0;
+        });
         beginScroll(g, top, SCROLL[TAB_LIST], 0);
+        if (listTab == 1) {
+            drawRanking(g, d, mouseX, mouseY);
+            SCROLL[TAB_LIST] = endScroll(g, SCROLL[TAB_LIST]);
+            return;
+        }
         for (int idx : legendOrder) {
             int rowTop = cy;
             boolean vis = visible(rowTop, 16);
@@ -2694,6 +2778,7 @@ public class MapScreen extends Screen {
                 for (SiteTerritories.Ultimatum u : w.ultimatums) kv(g, u.from + " > " + u.to, u.sent);
             }
         }
+        drawWorldHistory(g, d);
         SCROLL[TAB_DIPLO] = endScroll(g, SCROLL[TAB_DIPLO]);
     }
 
@@ -3056,13 +3141,23 @@ public class MapScreen extends Screen {
     }
 
     private void warList(GuiGraphics g, SiteTerritories.Data d, List<SiteTerritories.WarInfo> wars, int mouseX, int mouseY) {
+        mineToggle(g, d, mouseX, mouseY);
+        int me = mineFilter(d);
+        if (me >= 0) {
+            boolean any = false;
+            for (SiteTerritories.WarInfo w : wars) if (warInvolves(d, w, me)) any = true;
+            if (!any) {
+                paragraph(g, "Your country is not at war.", COL_DIM);
+                return;
+            }
+        }
         if (wars.isEmpty()) {
             paragraph(g, "The site records no war right now. When there is one it shows up here: scoreboard, sides, taken cities, fronts and capitulation.", COL_DIM);
             return;
         }
         for (int pass = 0; pass < 2; pass++) {
             List<Integer> idxs = new ArrayList<>();
-            for (int i = 0; i < wars.size(); i++) if (warRunning(wars.get(i)) == (pass == 0)) idxs.add(i);
+            for (int i = 0; i < wars.size(); i++) if (warRunning(wars.get(i)) == (pass == 0) && (me < 0 || warInvolves(d, wars.get(i), me))) idxs.add(i);
             if (idxs.isEmpty()) continue;
             section(g, (pass == 0 ? "In progress" : "Ended") + " (" + idxs.size() + ")");
             for (int i : idxs) warCard(g, d, wars.get(i), i, mouseX, mouseY);
@@ -3079,7 +3174,7 @@ public class MapScreen extends Screen {
         g.fill(x, y, x + wd, y + 1, 0xFF050605);
         g.fill(x, y + h - 1, x + wd, y + h, 0xFF3E4245);
         boolean run = warRunning(w);
-        String tag = !run ? "ENCERRADA" : w.live ? "LIVE" : "ATIVA";
+        String tag = !run ? "ENDED" : w.live ? "LIVE" : "ACTIVE";
         int tagCol = !run ? COL_DIM : COL_WAR;
         g.drawString(font, fit(warName(w), wd - 14 - font.width(tag) - 6), x + 6, y + 4, hover ? 0xFFFFFFFF : COL_TEXT, false);
         g.drawString(font, tag, x + wd - 6 - font.width(tag), y + 4, tagCol, false);
@@ -3548,6 +3643,10 @@ public class MapScreen extends Screen {
             p.simpleMarkers = i == 1;
             Prefs.save();
         });
+        stepsRow(g, "City icon size", p.cityIconPct + "%", 11, indexOfStep(p.cityIconPct, 50, 25, 11), mouseX, mouseY, i -> {
+            p.cityIconPct = 50 + i * 25;
+            Prefs.save();
+        });
         stepsRow(g, "Cities show when zooming in", p.zoomBiasPct + "% (more = earlier)", 7, indexOfStep(p.zoomBiasPct, 50, 25, 7), mouseX, mouseY, i -> {
             p.zoomBiasPct = 50 + i * 25;
             Prefs.save();
@@ -3727,19 +3826,23 @@ public class MapScreen extends Screen {
     }
 
     private void dmAlliances(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
+        mineToggle(g, d, mouseX, mouseY);
+        int meF = mineFilter(d);
         List<SiteTerritories.AllianceInfo> all = d.war == null || d.war.alliances == null ? List.of() : d.war.alliances;
-        if (all.isEmpty()) {
-            paragraph(g, "The site lists no alliances.", COL_DIM);
+        boolean hasMine = false;
+        for (SiteTerritories.AllianceInfo a : all) if (meF < 0 || Relations.countriesOf(d, a).contains(meF)) hasMine = true;
+        if (all.isEmpty() || !hasMine) {
+            paragraph(g, all.isEmpty() ? "The site lists no alliances." : "Your country has no alliances.", COL_DIM);
             return;
         }
         for (int pass = 0; pass < 2; pass++) {
             int count = 0;
-            for (SiteTerritories.AllianceInfo a : all) if (Relations.isBilateral(a) == (pass == 1)) count++;
+            for (SiteTerritories.AllianceInfo a : all) if (Relations.isBilateral(a) == (pass == 1) && (meF < 0 || Relations.countriesOf(d, a).contains(meF))) count++;
             if (count == 0) continue;
             section(g, (pass == 0 ? "Alliances" : "Bilateral alliances") + " (" + count + ")");
             for (int i = 0; i < all.size(); i++) {
                 SiteTerritories.AllianceInfo a = all.get(i);
-                if (Relations.isBilateral(a) != (pass == 1)) continue;
+                if (Relations.isBilateral(a) != (pass == 1) || (meF >= 0 && !Relations.countriesOf(d, a).contains(meF))) continue;
                 int rowTop = cy;
                 if (visible(rowTop, 18)) {
                     boolean hover = mouseX >= bx + 6 && mouseX < bx + bw - 6 && mouseY >= rowTop && mouseY < rowTop + 18;
@@ -3820,25 +3923,29 @@ public class MapScreen extends Screen {
 
     /** Tréguas: as do site, as 3 dias depois de uma guerra e as 3 dias depois de um ultimato aceito. */
     private List<Timed> truceList(SiteTerritories.Data d, long now) {
+        return truceList(d, now, -1);
+    }
+
+    private List<Timed> truceList(SiteTerritories.Data d, long now, int me) {
         List<Timed> list = new ArrayList<>();
         if (d.war != null && d.war.truces != null) {
             for (SiteTerritories.Truce t : d.war.truces) {
                 long until = parseMs(t.until), from = parseMs(t.from);
                 if (until == NONE || until <= now || (from != NONE && from > now)) continue;
-                list.add(new Timed(t.a, t.b, "", until));
+                if (me < 0 || nameIsMe(d, t.a, me) || nameIsMe(d, t.b, me)) list.add(new Timed(t.a, t.b, "", until));
             }
         }
         for (SiteTerritories.WarInfo w : Relations.wars(d)) {       // guerra encerrada deixa 3 dias de trégua entre os lados
             long ended = parseMs(w.ended);
             if (ended == NONE || ended > now || ended + TRUCE_MS <= now) continue;
-            list.add(new Timed("After the war " + warName(w), null, "", ended + TRUCE_MS));
+            if (me < 0 || warInvolves(d, w, me)) list.add(new Timed("After the war " + warName(w), null, "", ended + TRUCE_MS));
         }
         if (d.war != null && d.war.ultimatums != null) {
             for (SiteTerritories.Ultimatum u : d.war.ultimatums) {
                 long sent = parseMs(u.sent);
                 if (sent == NONE) continue;
                 long accepted = sent + ULTIMATUM_MS;
-                if (accepted <= now && accepted + TRUCE_MS > now) list.add(new Timed(u.from, u.to, "ultimatum accepted,", accepted + TRUCE_MS));
+                if (accepted <= now && accepted + TRUCE_MS > now && (me < 0 || nameIsMe(d, u.from, me) || nameIsMe(d, u.to, me))) list.add(new Timed(u.from, u.to, "ultimatum accepted,", accepted + TRUCE_MS));
             }
         }
         list.sort((x, y) -> Long.compare(x.until(), y.until()));
@@ -3848,10 +3955,11 @@ public class MapScreen extends Screen {
     private void dmTruces(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
         long now = System.currentTimeMillis();
         Map<String, Integer> idx = Relations.nameIndex(d);
-        List<Timed> list = truceList(d, now);
+        mineToggle(g, d, mouseX, mouseY);
+        List<Timed> list = truceList(d, now, mineFilter(d));
         section(g, "Truces (" + list.size() + ")");
         if (list.isEmpty()) {
-            paragraph(g, "No truce in force.", COL_DIM);
+            paragraph(g, mineFilter(d) >= 0 ? "Your country has no truce in force." : "No truce in force.", COL_DIM);
             return;
         }
         paragraph(g, "From the soonest to end to the latest. Click a name to go to the country.", COL_DIM);
@@ -3860,12 +3968,16 @@ public class MapScreen extends Screen {
 
     /** Ultimatos pendentes: quem enviou, para quem, e quando o aceite automático acontece (72 h depois). */
     private List<Timed> ultimatumList(SiteTerritories.Data d, long now) {
+        return ultimatumList(d, now, -1);
+    }
+
+    private List<Timed> ultimatumList(SiteTerritories.Data d, long now, int me) {
         List<Timed> list = new ArrayList<>();
         if (d.war != null && d.war.ultimatums != null) {
             for (SiteTerritories.Ultimatum u : d.war.ultimatums) {
                 long sent = parseMs(u.sent);
                 if (sent == NONE || sent + ULTIMATUM_MS <= now) continue;
-                list.add(new Timed(u.from, u.to, "->", sent + ULTIMATUM_MS));
+                if (me < 0 || nameIsMe(d, u.from, me) || nameIsMe(d, u.to, me)) list.add(new Timed(u.from, u.to, "->", sent + ULTIMATUM_MS));
             }
         }
         list.sort((x, y) -> Long.compare(x.until(), y.until()));
@@ -3875,10 +3987,11 @@ public class MapScreen extends Screen {
     private void dmUltimatums(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
         long now = System.currentTimeMillis();
         Map<String, Integer> idx = Relations.nameIndex(d);
-        List<Timed> list = ultimatumList(d, now);
+        mineToggle(g, d, mouseX, mouseY);
+        List<Timed> list = ultimatumList(d, now, mineFilter(d));
         section(g, "Pending ultimatums (" + list.size() + ")");
         if (list.isEmpty()) {
-            paragraph(g, "No pending ultimatum.", COL_DIM);
+            paragraph(g, mineFilter(d) >= 0 ? "Your country has no pending ultimatum." : "No pending ultimatum.", COL_DIM);
             return;
         }
         paragraph(g, "With no answer in 72 hours, the ultimatum is accepted automatically and a 3-day truce begins.", COL_DIM);

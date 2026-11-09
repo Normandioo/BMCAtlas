@@ -189,13 +189,15 @@ final class Minimap {
             // mesma grade de pixels físicos do terreno: o símbolo não balança quando você anda
             double sx = Math.round((tx + (l.x + 0.5) * scale) * gs) / gs, sy = Math.round((ty + (l.z + 0.5) * scale) * gs) / gs;
             if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
-            int isz = l.tier >= 3 ? 12 : l.tier == 2 ? 10 : 8;
-            RemoteImages.Img img = cityImage(l, isz);
+            int isz = Math.max(5, (int) Math.round((l.tier >= 3 ? 12 : l.tier == 2 ? 10 : 8) * Prefs.get().cityIconPct / 100.0));
+            RemoteImages.Img img = cityImage(l, (int) Math.round(isz * gs));
+            if (img != null) {
+                RemoteImages.drawCrisp(g, img, sx, sy);
+                continue;
+            }
             g.pose().pushMatrix();
             g.pose().translate((float) sx, (float) sy);
-            if (img != null) {
-                g.blit(RenderPipelines.GUI_TEXTURED, img.id(), -isz / 2, -isz / 2, 0f, 0f, isz, isz, img.w(), img.h(), img.w(), img.h());
-            } else {
+            {
                 int r = l.tier >= 3 ? 2 : 1;
                 int rgb = l.countryIdx >= 0 ? d.rgb[l.countryIdx] | 0xFF000000 : 0xFF909090;
                 g.fill(-r - 1, -r - 1, r + 2, r + 2, 0xFF05080C);
@@ -264,19 +266,13 @@ final class Minimap {
         }
     }
 
-    /** Você: uma seta branca apontando para onde olha (o norte é sempre para cima). */
+    /** Você: a cabeça da sua skin, com moldura clara para se destacar dos outros jogadores. */
     private static void drawSelf(GuiGraphics g, Minecraft mc, int ox, int oy, float partial) {
-        float yaw = (float) Math.toRadians(net.minecraft.util.Mth.rotLerp(partial, mc.player.yRotO, mc.player.getYRot()) + 180f);   // 0 = sul no jogo; seta desenhada para cima = norte
         g.pose().pushMatrix();
         g.pose().translate(ox, oy);
-        g.pose().rotate(yaw);
-        g.fill(-3, -1, 4, 5, 0xFF05080C);
-        g.fill(-1, -5, 2, 5, 0xFF05080C);
-        g.fill(0, -4, 1, -3, 0xFFFFFFFF);
-        g.fill(-1, -3, 2, -2, 0xFFFFFFFF);
-        g.fill(-2, -2, 3, -1, 0xFFFFFFFF);
-        g.fill(-3, -1, 4, 0, 0xFFE03C3C);
-        g.fill(0, 0, 1, 4, 0xFFE03C3C);
+        g.fill(-7, -7, 7, 7, 0xFF05080C);
+        g.fill(-6, -6, 6, 6, 0xFFFFF2B0);
+        PlayerFaceRenderer.draw(g, mc.player.getSkin(), -5, -5, 10);
         g.pose().popMatrix();
     }
 }
