@@ -285,7 +285,9 @@ public class MapScreen extends Screen {
         MapData.nextFrame();
         RemoteImages.pump();
         if (SiteTerritories.showPlayers()) OnlinePlayers.tick();
+        Perf.begin("tick");
         tickWar();
+        Perf.end("tick");
         layoutBar();
         List<Hit> t = prevHits;
         prevHits = hits;
@@ -294,25 +296,56 @@ public class MapScreen extends Screen {
         panelVisible = false;
         cardVisible = false;
         if (relationalMode() && !siteMode()) mode = MODE_POLITICAL;
+        Perf.begin("cores");
         refreshOverrides();
+        Perf.end("cores");
 
         g.fill(0, 0, width, height, 0xFF0B1628);
+        Perf.begin("mapa total");
         drawMap(g, mouseX, mouseY);
+        Perf.end("mapa total");
         if (photoMode) {
             drawPhotoHint(g);
             return;
         }
 
+        Perf.begin("barra");
         drawBar(g, mouseX, mouseY);
+        Perf.end("barra");
+        Perf.begin("barra de cima");
         drawTopBar(g, mouseX, mouseY);
+        Perf.end("barra de cima");
+        Perf.begin("painel");
         drawPanel(g, mouseX, mouseY);
+        Perf.end("painel");
+        Perf.begin("cartão");
         drawCard(g, mouseX, mouseY);
+        Perf.end("cartão");
+        Perf.begin("outliner");
         drawOutliner(g, mouseX, mouseY);
+        Perf.end("outliner");
         drawHover(g, mouseX, mouseY);
         drawToolBanner(g);
         drawSearch(g, mouseX, mouseY, delta);
         drawTooltip(g, mouseX, mouseY);
+        drawPerf(g);
         if (copiedFrames > 0) copiedFrames--;
+    }
+
+    /** Diagnóstico (F7): quanto cada parte do desenho custa, em milissegundos por quadro. */
+    private void drawPerf(GuiGraphics g) {
+        if (!Perf.on) return;
+        int y = height - 14 - Perf.values().size() * 10 - 12, w = 190;
+        g.fill(6, y - 4, 6 + w, height - 6, 0xD0101214);
+        g.drawString(font, "Desempenho (F7 fecha), ms por quadro", 10, y, COL_TEXT, false);
+        y += 11;
+        for (Map.Entry<String, double[]> e : Perf.values().entrySet()) {
+            double ms = e.getValue()[0];
+            g.drawString(font, e.getKey(), 10, y, COL_DIM, false);
+            String v = String.format(Locale.ROOT, "%.2f", ms);
+            g.drawString(font, v, 6 + w - 6 - font.width(v), y, ms > 3 ? 0xFFE8403A : ms > 1 ? 0xFFE0BE62 : COL_TEXT, false);
+            y += 10;
+        }
     }
 
     /** Chamado pelo minimapa a cada quadro: mantém a guerra atualizada mesmo com o mapa grande fechado. */
@@ -426,6 +459,7 @@ public class MapScreen extends Screen {
         int rz0 = (int) Math.floor(topB / MapData.REGION_PX);
         int rz1 = (int) Math.floor(botB / MapData.REGION_PX);
         int uploads = 0;
+        Perf.begin("terreno");
         for (int rx = rx0; rx <= rx1; rx++) {
             for (int rz = rz0; rz <= rz1; rz++) {
                 MapData.Region r = MapData.region(rx, rz, false);
@@ -447,21 +481,33 @@ public class MapScreen extends Screen {
             }
         }
 
+        Perf.end("terreno");
+
         SiteTerritories.Data d = SiteTerritories.data();
         if (!site) {
             if (mode == MODE_PROVINCES) drawGrid(g, leftB, rightB, topB, botB);
             if (mode == MODE_POLITICAL) drawManualNames(g);
             drawManualSelection(g);
         } else if (d != null) {
+            Perf.begin("ondas");
             if (mode == MODE_WAR) drawWaves(g);
+            Perf.end("ondas");
             if (mode == MODE_POLITICAL || rel) drawSiteNames(g, d);
+            Perf.begin("frente");
             drawWarFront(g, d);
+            Perf.end("frente");
+            Perf.begin("cidades");
             drawCities(g, d, mouseX, mouseY);
+            Perf.end("cidades");
+            Perf.begin("espadas");
             drawWarMarkers(g, d);
+            Perf.end("espadas");
         }
         if (site && d != null && simActive()) drawSimRings(g, d);
         drawMarksAndMeasure(g, mouseX, mouseY);
+        Perf.begin("jogadores");
         drawOnlinePlayers(g, site ? d : null, mouseX, mouseY);
+        Perf.end("jogadores");
         drawPlayer(g);
     }
 
@@ -4473,6 +4519,10 @@ public class MapScreen extends Screen {
                 return true;
             }
             return false;
+        }
+        if (key0 == GLFW.GLFW_KEY_F7) {
+            Perf.on = !Perf.on;
+            return true;
         }
         if (searchOpen) {
             if (key0 == GLFW.GLFW_KEY_ESCAPE) {
