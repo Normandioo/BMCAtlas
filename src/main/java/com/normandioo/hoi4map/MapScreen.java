@@ -2760,7 +2760,7 @@ public class MapScreen extends Screen {
             p.reliefPct = 100 + i * 25;
             Prefs.changed();
         });
-        stepsRow(g, "Suavização do terreno (menos granulado)", p.smoothPct + "%", 11, indexOfStep(p.smoothPct, 0, 10, 11), mouseX, mouseY, i -> {
+        stepsRow(g, "Suavização do ruído do terreno", p.smoothPct + "%", 11, indexOfStep(p.smoothPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.smoothPct = i * 10;
             Prefs.changed();
         });

@@ -290,32 +290,45 @@ final class MapStyle {
     // ------------------------------------------------------------------- cores
 
     /** Terra: um pouco dessaturada, mais escura e com mais contraste. */
-    /** Terra: suaviza o ruído entre blocos vizinhos (menos granulado, como no Xaero's) e aplica o realce do relevo. */
+    /**
+     * Terra. Relevo: a diferença de brilho de cada bloco para os vizinhos é ampliada (só brilho, sem mexer na saturação).
+     * Granulado: só o ruído fraco entre blocos parecidos é achatado; os degraus do relevo (diferenças grandes) ficam nítidos.
+     */
     private static int land(int[] px, int size, int x, int y, int raw) {
         Prefs.Data p = Prefs.get();
-        float w = p.smoothPct / 100f * 0.65f;
-        if (w > 0f) {
-            int sr = 0, sg = 0, sb = 0, n = 0;
-            for (int d = 0; d < 4; d++) {
-                int nx = x + (d == 0 ? -1 : d == 1 ? 1 : 0), ny = y + (d == 2 ? -1 : d == 3 ? 1 : 0);
-                if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
-                int q = px[ny * size + nx];
-                if (q == 0 || isWater(q)) continue;
-                sr += (q >> 16) & 0xFF;
-                sg += (q >> 8) & 0xFF;
-                sb += q & 0xFF;
-                n++;
-            }
-            if (n > 0) {
-                float r0 = (raw >> 16) & 0xFF, g0 = (raw >> 8) & 0xFF, b0 = raw & 0xFF;
-                raw = pack(r0 + (sr / (float) n - r0) * w, g0 + (sg / (float) n - g0) * w, b0 + (sb / (float) n - b0) * w);
+        float w = p.smoothPct / 100f * 0.85f;
+        float k = p.reliefPct / 100f;
+        float r0 = (raw >> 16) & 0xFF, g0 = (raw >> 8) & 0xFF, b0 = raw & 0xFF;
+        float lum0 = 0.30f * r0 + 0.59f * g0 + 0.11f * b0;
+        float sr = 0, sg = 0, sb = 0;
+        int n = 0;
+        for (int d = 0; d < 4; d++) {
+            int nx = x + (d == 0 ? -1 : d == 1 ? 1 : 0), ny = y + (d == 2 ? -1 : d == 3 ? 1 : 0);
+            if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+            int q = px[ny * size + nx];
+            if (q == 0 || isWater(q)) continue;
+            sr += (q >> 16) & 0xFF;
+            sg += (q >> 8) & 0xFF;
+            sb += q & 0xFF;
+            n++;
+        }
+        float delta = 0f;
+        if (n > 0) {
+            sr /= n;
+            sg /= n;
+            sb /= n;
+            float lumAvg = 0.30f * sr + 0.59f * sg + 0.11f * sb;
+            delta = lum0 - lumAvg;
+            // ruído fraco (diferença pequena de brilho): mistura com os vizinhos; degraus de relevo ficam como estão
+            if (w > 0f && Math.abs(delta) < 9f) {
+                float f = w * (1f - Math.abs(delta) / 9f);
+                raw = pack(r0 + (sr - r0) * f, g0 + (sg - g0) * f, b0 + (sb - b0) * f);
             }
         }
         int c = landBase(raw);
-        float k = p.reliefPct / 100f;
-        if (k == 1f) return c;
-        float r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
-        return pack(96f + (r - 96f) * k, 96f + (g - 96f) * k, 96f + (b - 96f) * k);
+        if (k == 1f || n == 0) return c;
+        float shift = delta * (k - 1f) * 1.6f;
+        return pack(((c >> 16) & 0xFF) + shift, ((c >> 8) & 0xFF) + shift, (c & 0xFF) + shift);
     }
 
     private static int landBase(int raw) {
