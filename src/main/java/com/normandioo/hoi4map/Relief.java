@@ -116,6 +116,8 @@ final class Relief {
 
     private static final double LIGHT_X = -0.6, LIGHT_Y = 1.0, LIGHT_Z = -0.6;   // de noroeste, de cima
     private static final int MAX_VERTICES = 600_000;
+    /** a partir de quantos pixels por bloco o relevo vira blocos de verdade */
+    static final double BLOCK_MIN_S = 3.0;
 
     private float[] gx = new float[0], gy = new float[0], gq = new float[0], gl = new float[0];
     private float[] zbuf = new float[0], hyBuf = new float[0];
@@ -160,6 +162,8 @@ final class Relief {
     /** O que o quadro precisa: a área do mundo, o tamanho da célula (potência de 2, em blocos) e os níveis de redução das alturas e das texturas. */
     static final class Plan {
         int x0, z0, x1, z1, step, lh, lt;
+        /** cada coluna de blocos vira um prisma de verdade (célula = 1 bloco, de perto) */
+        boolean blocky;
     }
 
     Plan plan() {
@@ -168,9 +172,10 @@ final class Relief {
         pl.x0 = b[0]; pl.z0 = b[1]; pl.x1 = b[2]; pl.z1 = b[3];
         // tamanho da célula: potência de 2, de modo que cada uma tenha uns 4 a 9 pixels
         int step = 1;
-        while (step < 64 && step * s < 4.5) step <<= 1;
+        if (s < BLOCK_MIN_S) while (step < 64 && step * s < 4.5) step <<= 1;
         while (((long) (b[2] - b[0]) / step + 2) * ((b[3] - b[1]) / step + 2) > MAX_VERTICES && step < 256) step <<= 1;
         pl.step = step;
+        pl.blocky = step == 1 && s >= BLOCK_MIN_S;
         pl.lh = Math.min(MAX_LEVEL, Integer.numberOfTrailingZeros(step));
         pl.lt = (int) Math.max(0, Math.min(MAX_LEVEL, Math.floor(Math.log(1.0 / s) / Math.log(2))));
         return pl;
@@ -208,7 +213,8 @@ final class Relief {
                 hy[j * nx + i] = v == 0 ? Float.NaN : v - 64f;
             }
         }
-        cleanHeights(hy, nx, nz, step);
+        cleanHeights(hy, nx, nz, step, !pl.blocky);
+        if (pl.blocky) { renderBlocky(out, src, pl, hy, nx, nz, i0, j0); return; }
         double ll = Math.sqrt(LIGHT_X * LIGHT_X + LIGHT_Y * LIGHT_Y + LIGHT_Z * LIGHT_Z);
         double dot0 = LIGHT_Y / ll;
         double[] p = new double[3];
@@ -265,7 +271,7 @@ final class Relief {
 
 
     /** Preenche alturas desconhecidas pelos vizinhos, tira torres finas (prédios, árvores) e limita a inclinação. */
-    private static void cleanHeights(float[] hy, int nx, int nz, int step) {
+    private static void cleanHeights(float[] hy, int nx, int nz, int step, boolean smooth) {
         int n = nx * nz;
         // 1) desconhecidos: média dos vizinhos conhecidos, espalhando
         for (int pass = 0; pass < 24; pass++) {
@@ -283,6 +289,7 @@ final class Relief {
             if (!any) break;
         }
         for (int k = 0; k < n; k++) if (Float.isNaN(hy[k])) hy[k] = UNKNOWN_H - 64f;
+        if (!smooth) return;
         // 2) abertura (erode + dilata): some o que for mais estreito que ~5 blocos
         int r = Math.max(1, (int) Math.ceil(2.5 / step));
         float[] t = new float[n];
@@ -320,6 +327,114 @@ final class Relief {
             float m = tmp[j * nx + i];
             for (int b = Math.max(0, j - r); b <= Math.min(nz - 1, j + r); b++) { float v = tmp[b * nx + i]; m = min ? Math.min(m, v) : Math.max(m, v); }
             out[j * nx + i] = m;
+        }
+    }
+
+
+    // ------------------------------------------------------------------ blocos de verdade
+
+    private static final float TOP_L = 1.0f, WEST_L = 0.82f, EAST_L = 0.62f, NORTH_L = 0.76f, SOUTH_L = 0.56f;
+
+    /** De perto: cada coluna é um prisma, com o topo e as paredes até o vizinho mais baixo, no bloco exato. */
+    private void renderBlocky(int[] out, Source src, Plan pl, float[] hy, int nx, int nz, int i0, int j0) {
+        // projeção de cada canto da grade no plano y = ty; a altura entra depois, linearmente
+        if (gx.length < nx * nz) { gx = new float[nx * nz]; gy = new float[nx * nz]; gq = new float[nx * nz]; gl = new float[nx * nz]; }
+        final float[] px = gx, py = gy, pq = gq;
+        IntStream.range(0, nz).parallel().forEach(j -> {
+            double[] p = new double[3];
+            for (int i = 0; i < nx; i++) {
+                project(i0 + i, ty, j0 + j, p);
+                int k = j * nx + i;
+                px[k] = (float) p[0]; py[k] = (float) p[1]; pq[k] = (float) p[2];
+            }
+        });
+        final float kY = (float) (exag * cosP * s), kQ = (float) (exag * sinP), fty = (float) ty;
+        int bands = Math.max(1, Math.min(32, h / 16));
+        IntStream.range(0, bands).parallel().forEach(band -> {
+            int ya = h * band / bands, yb = h * (band + 1) / bands;
+            int curRx = Integer.MIN_VALUE, curRz = Integer.MIN_VALUE;
+            int[] tex = null;
+            for (int j = 0; j < nz - 1; j++) {
+                for (int i = 0; i < nx - 1; i++) {
+                    int a = j * nx + i, bI = a + 1, c = a + nx, d = c + 1;
+                    float t = hy[a] + 1;
+                    float low = t;
+                    if (i > 0) low = Math.min(low, hy[a - 1] + 1);
+                    if (i < nx - 2) low = Math.min(low, hy[a + 1] + 1);
+                    if (j > 0) low = Math.min(low, hy[a - nx] + 1);
+                    if (j < nz - 2) low = Math.min(low, hy[a + nx] + 1);
+                    float sTop = Math.min(Math.min(py[a], py[bI]), Math.min(py[c], py[d])) - (t - fty) * kY;
+                    float sLow = Math.max(Math.max(py[a], py[bI]), Math.max(py[c], py[d])) - (low - fty) * kY;
+                    if (sLow < ya || sTop >= yb) continue;
+                    float minX = Math.min(Math.min(px[a], px[bI]), Math.min(px[c], px[d])), maxX = Math.max(Math.max(px[a], px[bI]), Math.max(px[c], px[d]));
+                    if (maxX < 0 || minX >= w) continue;
+                    int wx = i0 + i, wz = j0 + j;
+                    int rx = Math.floorDiv(wx, REGION), rz = Math.floorDiv(wz, REGION);
+                    if (rx != curRx || rz != curRz) { tex = src.tex(rx, rz, 0); curRx = rx; curRz = rz; }
+                    if (tex == null) continue;
+                    int col = tex[Math.floorMod(wz, REGION) * REGION + Math.floorMod(wx, REGION)];
+                    if ((col >>> 24) < 128) continue;
+                    float dt = t - fty;
+                    // topo
+                    float ax = px[a], ay = py[a] - dt * kY, aq = pq[a] + dt * kQ;
+                    float bx = px[bI], by = py[bI] - dt * kY, bq = pq[bI] + dt * kQ;
+                    float cx_ = px[c], cy_ = py[c] - dt * kY, cq = pq[c] + dt * kQ;
+                    float dx = px[d], dy = py[d] - dt * kY, dq = pq[d] + dt * kQ;
+                    int top = shade(col, TOP_L);
+                    triFlat(out, ya, yb, ax, ay, aq, bx, by, bq, cx_, cy_, cq, top);
+                    triFlat(out, ya, yb, bx, by, bq, dx, dy, dq, cx_, cy_, cq, top);
+                    // paredes até o vizinho mais baixo
+                    if (i > 0 && hy[a - 1] + 1 < t) wall(out, ya, yb, px, py, pq, a, c, t, hy[a - 1] + 1, fty, kY, kQ, shade(col, WEST_L));
+                    if (i < nx - 2 && hy[a + 1] + 1 < t) wall(out, ya, yb, px, py, pq, bI, d, t, hy[a + 1] + 1, fty, kY, kQ, shade(col, EAST_L));
+                    if (j > 0 && hy[a - nx] + 1 < t) wall(out, ya, yb, px, py, pq, a, bI, t, hy[a - nx] + 1, fty, kY, kQ, shade(col, NORTH_L));
+                    if (j < nz - 2 && hy[a + nx] + 1 < t) wall(out, ya, yb, px, py, pq, c, d, t, hy[a + nx] + 1, fty, kY, kQ, shade(col, SOUTH_L));
+                }
+            }
+        });
+    }
+
+    private static int shade(int c, float l) {
+        int r = (int) (((c >> 16) & 255) * l), g = (int) (((c >> 8) & 255) * l), b = (int) ((c & 255) * l);
+        return 0xFF000000 | (r > 255 ? 255 : r) << 16 | (g > 255 ? 255 : g) << 8 | (b > 255 ? 255 : b);
+    }
+
+    /** Parede entre os cantos p1 e p2 da grade, do y {@code top} até {@code bottom}. */
+    private void wall(int[] out, int ya, int yb, float[] px, float[] py, float[] pq, int p1, int p2,
+                      float top, float bottom, float fty, float kY, float kQ, int colour) {
+        float dt = top - fty, db = bottom - fty;
+        float x1 = px[p1], y1t = py[p1] - dt * kY, q1t = pq[p1] + dt * kQ, y1b = py[p1] - db * kY, q1b = pq[p1] + db * kQ;
+        float x2 = px[p2], y2t = py[p2] - dt * kY, q2t = pq[p2] + dt * kQ, y2b = py[p2] - db * kY, q2b = pq[p2] + db * kQ;
+        triFlat(out, ya, yb, x1, y1t, q1t, x2, y2t, q2t, x1, y1b, q1b, colour);
+        triFlat(out, ya, yb, x2, y2t, q2t, x2, y2b, q2b, x1, y1b, q1b, colour);
+    }
+
+    /** Triângulo de uma cor só, com teste de profundidade, nas linhas [ya, yb). */
+    private void triFlat(int[] out, int ya, int yb, float x0, float y0, float q0, float x1, float y1, float q1,
+                         float x2, float y2, float q2, int colour) {
+        float area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+        if (Math.abs(area) < 1e-9f) return;
+        int minX = Math.max(0, (int) Math.floor(Math.min(x0, Math.min(x1, x2))));
+        int maxX = Math.min(w - 1, (int) Math.ceil(Math.max(x0, Math.max(x1, x2))));
+        int minY = Math.max(ya, (int) Math.floor(Math.min(y0, Math.min(y1, y2))));
+        int maxY = Math.min(yb - 1, (int) Math.ceil(Math.max(y0, Math.max(y1, y2))));
+        if (minX > maxX || minY > maxY) return;
+        float inv = 1f / area;
+        float b1x = (y2 - y0) * inv, b1y = -(x2 - x0) * inv;
+        float b2x = -(y1 - y0) * inv, b2y = (x1 - x0) * inv;
+        final float eps = -0.0015f;
+        for (int y = minY; y <= maxY; y++) {
+            float pyy = y + 0.5f - y0, pxs = minX + 0.5f - x0;
+            float b1 = pxs * b1x + pyy * b1y, b2 = pxs * b2x + pyy * b2y;
+            int row = y * w;
+            for (int x = minX; x <= maxX; x++, b1 += b1x, b2 += b2x) {
+                float b0 = 1f - b1 - b2;
+                if (b0 < eps || b1 < eps || b2 < eps) continue;
+                float q = q0 + (q1 - q0) * b1 + (q2 - q0) * b2;
+                int idx = row + x;
+                if (q <= zbuf[idx]) continue;
+                out[idx] = colour;
+                zbuf[idx] = q;
+            }
         }
     }
 
