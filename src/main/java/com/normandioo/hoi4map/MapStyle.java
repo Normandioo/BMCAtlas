@@ -135,14 +135,9 @@ final class MapStyle {
             for (int x = 0; x < W - 1; x++) {
                 int idx = y * W + x;
                 int k = key[PROV_GRID[idx]];
-                if (k != key[PROV_GRID[idx + 1]]) {
-                    DIST[idx] = 0;
-                    DIST[idx + 1] = 0;
-                }
-                if (k != key[PROV_GRID[idx + W]]) {
-                    DIST[idx] = 0;
-                    DIST[idx + W] = 0;
-                }
+                // a linha é só o pixel de dentro da borda (esquerda/cima da mudança), 1 bloco em qualquer direção;
+                // marcar os dois lados fazia 2 blocos nas retas e mais ainda nas diagonais
+                if (k != key[PROV_GRID[idx + 1]] || k != key[PROV_GRID[idx + W]]) DIST[idx] = 0;
             }
         }
         // distância (chamfer 3-4) até a fronteira mais próxima
