@@ -41,8 +41,8 @@ final class Minimap {
 
         // moldura
         g.fill(x - 3, y - 3, x + size + 3, y + size + 3, 0xFF0E0C08);
-        g.fill(x - 2, y - 2, x + size + 2, y + size + 2, 0xFF7A6538);
-        g.fill(x - 2, y - 2, x + size + 2, y - 1, 0xFFB89C5C);
+        g.fill(x - 2, y - 2, x + size + 2, y + size + 2, 0xFF6A6F72);
+        g.fill(x - 2, y - 2, x + size + 2, y - 1, 0xFF7E8387);
         g.fill(x - 1, y - 1, x + size + 1, y + size + 1, 0xFF0B1628);
 
         g.enableScissor(x, y, x + size, y + size);
@@ -82,7 +82,8 @@ final class Minimap {
         g.disableScissor();
 
         // norte e coordenadas
-        g.drawString(font, "N", x + size / 2 - 2, y + 2, 0xFFF2E3B0, true);
+        g.drawString(font, "N", x + size / 2 - 2, y + 2, 0xFFECEBE4, true);
+        g.fill(x - 3, y + size + 3, x + size + 3, y + size + (d != null ? 26 : 16), 0xE01E2123);
         String coords = (int) Math.floor(cx) + ", " + (int) Math.floor(cz);
         g.drawString(font, coords, x + (size - font.width(coords)) / 2, y + size + 5, 0xFFE8E2D0, true);
         if (d != null) {

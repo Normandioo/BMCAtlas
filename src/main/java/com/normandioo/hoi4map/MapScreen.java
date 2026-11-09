@@ -30,6 +30,8 @@ public class MapScreen extends Screen {
     private static final int PW = 272;       // largura do painel
     private static final int CARD_W = 244;   // largura do cartão do jogador
     private static final int MARGIN = 8;
+    private static final int TOP = 32;       // altura da barra superior
+    private static final int OUTLINE_W = 148; // largura do resumo à direita
 
     private static final int MODE_PHYSICAL = MapStyle.MODE_PHYSICAL;
     private static final int MODE_POLITICAL = MapStyle.MODE_POLITICAL;
@@ -37,14 +39,14 @@ public class MapScreen extends Screen {
     private static final int MODE_DIPLOMACY = MapStyle.MODE_DIPLOMACY;
     private static final int MODE_WAR = MapStyle.MODE_WAR;
 
-    // paleta bronze e ardósia, como os menus do Hearts of Iron IV
-    private static final int COL_GOLD = 0xFFD9B45A;
-    private static final int COL_GOLD_DIM = 0xFF6B5A2A;
-    private static final int COL_PANEL = 0xF2252826;
+    // paleta aço e grafite; o dourado fica só no que está ativo
+    private static final int COL_GOLD = 0xFFCFD3D1;
+    private static final int COL_GOLD_DIM = 0xFF4A4F52;
+    private static final int COL_PANEL = 0xF226292B;
     private static final int COL_PANEL_2 = 0xFF1A1C1B;
     private static final int COL_TEXT = 0xFFE8E2D0;
-    private static final int COL_DIM = 0xFF9A978A;
-    private static final int COL_LINK = 0xFFE0C068;
+    private static final int COL_DIM = 0xFFA3A7A8;
+    private static final int COL_LINK = 0xFFB4C3CE;
     /** Cabeçalho sem país (sem caixa de bandeira). */
     private static final int NEUTRAL = -1;
 
@@ -56,6 +58,7 @@ public class MapScreen extends Screen {
     private static boolean viewInit;
     private static int mode = MODE_POLITICAL;
     private static int tab = TAB_NONE;
+    private static int infoTab;            // aba da janela do país
     private static final double[] SCROLL = new double[10];
     private static double cardScroll;
     private static boolean showCities = true;
@@ -115,6 +118,14 @@ public class MapScreen extends Screen {
 
     // altura e posição dos botões da barra (calculadas a cada quadro)
     private int barH = 34;
+    private List<Btn> nav = List.of(), tools = List.of();
+    private boolean headRed;              // próximo cabeçalho em vermelho (guerra)
+
+    // resumo à direita: recalculado uma vez por segundo
+    private long outlineAt;
+    private int outlineVer = -1;
+    private List<SiteTerritories.WarInfo> outWars = List.of();
+    private List<Timed> outTruces = List.of(), outUlts = List.of();
 
     // cache do modo manual: país -> {somaX, somaZ, n, somaXX, somaZZ, somaXZ} (em províncias)
     private int cacheVersion = -1;
@@ -228,10 +239,11 @@ public class MapScreen extends Screen {
         g.fill(0, 0, width, height, 0xFF0B1628);
         drawMap(g, mouseX, mouseY);
 
+        drawBar(g, mouseX, mouseY);
+        drawTopBar(g, mouseX, mouseY);
         drawPanel(g, mouseX, mouseY);
         drawCard(g, mouseX, mouseY);
-        drawLegend(g);
-        drawBar(g, mouseX, mouseY);
+        drawOutliner(g, mouseX, mouseY);
         drawHover(g, mouseX, mouseY);
         drawTooltip(g, mouseX, mouseY);
         if (copiedFrames > 0) copiedFrames--;
@@ -821,7 +833,7 @@ public class MapScreen extends Screen {
         int fill = lighten(rgb, 1.3f);
         int dark = 0xFF05080C;
         if (hot) g.fill(x - r - 2, y - r - 2, x + r + 3, y + r + 3, 0xFFFFF2B0);
-        g.fill(x - r - 1, y - r - 1, x + r + 2, y + r + 2, l.tier == 4 ? COL_GOLD : dark);
+        g.fill(x - r - 1, y - r - 1, x + r + 2, y + r + 2, l.tier == 4 ? 0xFFD9B45A : dark);
         g.fill(x - r, y - r, x + r + 1, y + r + 1, fill);
     }
 
@@ -910,8 +922,11 @@ public class MapScreen extends Screen {
     // ------------------------------------------------------------- coordenadas
 
     private void drawHover(GuiGraphics g, int mouseX, int mouseY) {
+        if (panelVisible && tab == TAB_SET) return;
+        boolean side = panelVisible && panelX <= MARGIN;
+        int hx = side ? panelX + panelW + 8 : MARGIN;
         String hint = "Arraste: mover  |  Roda: zoom  |  Clique: selecionar  |  1-5: modos";
-        g.drawString(font, hint, MARGIN, height - 12, COL_DIM, true);
+        if (!side) g.drawString(font, hint, MARGIN, height - 12, COL_DIM, true);
         if (blockedAt(hits, mouseX, mouseY)) return;
         int bxx = (int) Math.floor(toBlockX(mouseX));
         int bzz = (int) Math.floor(toBlockZ(mouseY));
@@ -927,31 +942,212 @@ public class MapScreen extends Screen {
             }
         }
         int w = font.width(text) + 10;
-        int y = height - 34;
-        g.fill(MARGIN - 2, y - 3, MARGIN - 2 + w, y + 12, 0xFF0E0C08);
-        g.fill(MARGIN - 1, y - 2, MARGIN - 3 + w, y + 11, 0xF2252826);
-        g.fill(MARGIN - 1, y - 2, MARGIN - 3 + w, y - 1, 0xFF7A6538);
-        g.drawString(font, text, MARGIN + 3, y, COL_TEXT, false);
+        int y = side ? TOP + 11 : height - 34;
+        g.fill(hx - 2, y - 3, hx - 2 + w, y + 12, 0xFF0E0C08);
+        g.fill(hx - 1, y - 2, hx - 3 + w, y + 11, 0xF226292B);
+        g.fill(hx - 1, y - 2, hx - 3 + w, y - 1, 0xFF6A6F72);
+        g.drawString(font, text, hx + 3, y, COL_TEXT, false);
     }
 
-    /** Legenda dos modos diplomacia e guerra, no canto inferior esquerdo. */
-    private void drawLegend(GuiGraphics g) {
-        if (!relationalMode() || legend.isEmpty()) return;
-        int rows = Math.min(legend.size(), 9);
-        int w = 150;
-        for (int i = 0; i < rows; i++) w = Math.max(w, font.width(legend.get(i).label()) + 46);
-        int h = rows * 13 + 14;
-        int x = MARGIN - 2;
-        int y = height - 34 - 8 - h;
-        box(g, x, y, w, h, COL_PANEL);
-        for (int i = 0; i < rows; i++) {
-            Relations.Rel rel = legend.get(i);
-            int yy = y + 7 + i * 13;
-            g.fill(x + 9, yy, x + 23, yy + 9, 0xFF05080C);
-            g.fill(x + 10, yy + 1, x + 22, yy + 8, 0xFF000000 | rel.rgb());
-            String label = rel.label();
-            if (!rel.countries().isEmpty() && rel.countries().size() > 1) label += " (" + rel.countries().size() + ")";
-            g.drawString(font, label, x + 28, yy + 1, COL_TEXT, false);
+    // ------------------------------------------------------------ barra superior e resumo
+
+    /** País do jogador local, ou -1. */
+    private int myCountry(SiteTerritories.Data d) {
+        Minecraft mc = Minecraft.getInstance();
+        if (d == null || mc.player == null) return -1;
+        String low = mc.player.getName().getString().toLowerCase(Locale.ROOT);
+        String site = d.ignToSite.get(low);
+        Integer ci = d.countryOfPlayer.get(site != null ? site.toLowerCase(Locale.ROOT) : low);
+        return ci == null ? -1 : ci;
+    }
+
+    private void refreshOutline(SiteTerritories.Data d) {
+        long now = System.currentTimeMillis();
+        if (now - outlineAt < 1000 && outlineVer == SiteTerritories.version()) return;
+        outlineAt = now;
+        outlineVer = SiteTerritories.version();
+        List<SiteTerritories.WarInfo> running = new ArrayList<>();
+        for (SiteTerritories.WarInfo w : Relations.wars(d)) if (warRunning(w)) running.add(w);
+        outWars = running;
+        outTruces = truceList(d, now);
+        outUlts = ultimatumList(d, now);
+    }
+
+    /** Mostrador da barra superior; devolve o x seguinte (pula se não couber). */
+    private int stat(GuiGraphics g, int x, int limit, String glyph, int value, int color, String tip, Runnable action, int mouseX, int mouseY) {
+        String t = String.valueOf(value);
+        int w = 27 + font.width(t), y = 4, h = 22;
+        if (x + w > limit) return x;
+        boolean hover = action != null && mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
+        g.fill(x, y, x + w, y + h, 0xFF0A0B08);
+        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, hover ? 0xFF22272B : 0xFF131517);
+        Glyphs.draw(g, glyph, x + 4, y + 4, 0xFFD6D6D0, 0xFF8F959A, 0xFF4A4F52);
+        g.drawString(font, t, x + 21, y + 7, color, false);
+        hits.add(new Hit(x, y, w, h, action, tip));
+        return x + w + 3;
+    }
+
+    private void openPanorama(int sub) {
+        tab = TAB_DIPLOMENU;
+        dmTab = sub;
+        SCROLL[TAB_DIPLOMENU] = 0;
+    }
+
+    private void drawTopBar(GuiGraphics g, int mouseX, int mouseY) {
+        g.fill(0, 0, width, TOP - 2, 0xFF1E2123);
+        g.fill(0, TOP - 2, width, TOP, 0xFF7E8387);
+        g.fill(0, TOP, width, TOP + 1, 0xFF0A0B08);
+        hits.add(new Hit(0, 0, width, TOP + 1, null, null));
+        SiteTerritories.Data d = SiteTerritories.data();
+        boolean site = siteMode() && d != null;
+        if (site) refreshOutline(d);
+
+        int x = 4;
+        final int me = site ? myCountry(d) : -1;
+        if (me >= 0) {
+            g.fill(x, 3, x + 38, 27, 0xFF0A0B08);
+            g.fill(x + 1, 4, x + 37, 26, 0xFF6A6F72);
+            g.fill(x + 2, 5, x + 36, 25, 0xFF05080C);
+            RemoteImages.Img flag = RemoteImages.flag(flagOf(d, me));
+            if (flag != null) drawImage(g, flag, x + 2, 5, 34, 20);
+            else g.fill(x + 2, 5, x + 36, 25, 0xFF000000 | d.rgb[me]);
+            g.drawString(font, fit(d.labels[me].toUpperCase(Locale.ROOT), 62), x + 42, 6, 0xFFECEBE4, false);
+            g.drawString(font, "Seu país", x + 42, 17, COL_DIM, false);
+            hits.add(new Hit(x, 3, 106, 24, () -> selectCountry(me), d.names[me]));
+            x += 108;
+            g.fill(x, 5, x + 1, 25, 0xFF3E4245);
+            x += 4;
+        }
+        for (Btn b : nav) {
+            iconButton(g, x, 2, BTN, b.glyph(), b.active(), b.enabled(), mouseX, mouseY, b.tip(), b.action());
+            if (b.glyph().equals("war") && b.enabled()) {
+                int n = activeWarCount();
+                if (n > 0) {
+                    String txt = String.valueOf(n);
+                    int tw = font.width(txt) + 5;
+                    g.fill(x + BTN - tw - 1, 0, x + BTN + 2, 12, 0xFF0E0C08);
+                    g.fill(x + BTN - tw, 1, x + BTN + 1, 11, 0xFFC02B2B);
+                    g.drawString(font, txt, x + BTN - tw + 3, 3, 0xFFFFFFFF, false);
+                }
+            }
+            x += BTN + 4;
+        }
+        g.fill(x, 5, x + 1, 25, 0xFF3E4245);
+        x += 4;
+
+        int rx = width - 4;
+        for (int i = tools.size() - 1; i >= 0; i--) {
+            Btn b = tools.get(i);
+            rx -= 22;
+            iconButton(g, rx, 4, 22, b.glyph(), b.active(), b.enabled(), mouseX, mouseY, b.tip(), b.action());
+            rx -= 3;
+        }
+        MapCatalog.Entry cur = SiteTerritories.activeMap();
+        String mapName = fit(cur == null ? "MAPA" : cur.name.toUpperCase(Locale.ROOT), 80);
+        String src = site ? "Fonte: site" : "Fonte: manual";
+        int nameW = Math.max(font.width(mapName), font.width(src));
+        rx -= 3;
+        g.drawString(font, mapName, rx - font.width(mapName), 6, 0xFFECEBE4, false);
+        g.drawString(font, src, rx - font.width(src), 17, COL_DIM, false);
+        int limit = rx - nameW - 8;
+
+        if (site) {
+            x = stat(g, x, limit, "war", activeWarCount(), 0xFFF0A090, "Guerras em andamento", this::enterWar, mouseX, mouseY);
+            int allies = d.war == null || d.war.alliances == null ? 0 : d.war.alliances.size();
+            x = stat(g, x, limit, "diplomacy", allies, COL_TEXT, "Alianças", () -> openPanorama(0), mouseX, mouseY);
+            x = stat(g, x, limit, "treaty", outTruces.size(), COL_TEXT, "Tréguas", () -> openPanorama(4), mouseX, mouseY);
+            x = stat(g, x, limit, "political", outUlts.size(), COL_LINK, "Ultimatos pendentes", () -> openPanorama(5), mouseX, mouseY);
+            if (SiteTerritories.showPlayers() && showPlayers) stat(g, x, limit, "players", OnlinePlayers.list().size(), 0xFF8FD08F, "Jogadores online", null, mouseX, mouseY);
+        }
+    }
+
+    /** Moldura de um grupo do resumo; devolve o y da primeira linha. */
+    private int outlineFrame(GuiGraphics g, int x, int y, int w, int h, String title, String count) {
+        g.fill(x, y, x + w, y + h, 0xFF0A0B08);
+        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, 0xFF4A4F52);
+        g.fill(x + 2, y + 2, x + w - 2, y + h - 2, 0xF21E2123);
+        g.fill(x + 2, y + 2, x + w - 2, y + 14, 0xFF33373A);
+        g.fill(x + 2, y + 14, x + w - 2, y + 15, 0xFF0A0B08);
+        spaced(g, fitSpaced(title, w - 30), x + 6, y + 4, 0xFFCFD3D1, false);
+        g.drawString(font, count, x + w - 6 - font.width(count), y + 4, 0xFFCFD3D1, false);
+        hits.add(new Hit(x, y, w, h, null, null));
+        return y + 16;
+    }
+
+    private int outlineTimed(GuiGraphics g, SiteTerritories.Data d, String title, List<Timed> list, int sub, int x, int y, int w, int maxY, long now, int mouseX, int mouseY) {
+        if (list.isEmpty()) return y;
+        int n = Math.min(3, list.size()), h = 18 + n * 14;
+        if (y + h > maxY) return y;
+        Map<String, Integer> idx = Relations.nameIndex(d);
+        int ry = outlineFrame(g, x, y, w, h, title, String.valueOf(list.size()));
+        for (int i = 0; i < n; i++) {
+            Timed t = list.get(i);
+            boolean hover = mouseX >= x + 2 && mouseX < x + w - 2 && mouseY >= ry && mouseY < ry + 14;
+            if (hover) g.fill(x + 2, ry, x + w - 2, ry + 14, 0x308F959A);
+            Integer ia = idx.get(Relations.norm(t.a())), ib = t.b() == null ? null : idx.get(Relations.norm(t.b()));
+            if (ia != null) miniFlag(g, d, ia, x + 5, ry + 1);
+            String left = countdown(t.until() - now).replace("em ", "");
+            String name = (ia != null ? d.labels[ia] : t.a()) + (t.b() == null ? "" : " e " + (ib != null ? d.labels[ib] : t.b()));
+            int lw = font.width(left);
+            g.drawString(font, fit(name, w - 40 - lw), x + 30, ry + 3, COL_TEXT, false);
+            g.drawString(font, left, x + w - 6 - lw, ry + 3, COL_LINK, false);
+            hits.add(new Hit(x + 2, ry, w - 4, 14, () -> openPanorama(sub), name));
+            ry += 14;
+        }
+        return y + h + 3;
+    }
+
+    /** Resumo à direita: guerras, ultimatos, tréguas e a legenda dos modos diplomacia e guerra. */
+    private void drawOutliner(GuiGraphics g, int mouseX, int mouseY) {
+        SiteTerritories.Data d = SiteTerritories.data();
+        if (!siteMode() || d == null || tab == TAB_SET) return;
+        int w = OUTLINE_W, x = width - w - MARGIN, y = TOP + 8, maxY = height - barH - MARGIN - 6;
+        if (panelVisible && panelX + panelW + 6 > x) return;
+        if (cardVisible && cardX + CARD_W + 6 > x) return;
+        long now = System.currentTimeMillis();
+
+        if (!outWars.isEmpty()) {
+            int n = Math.min(3, outWars.size()), h = 18 + n * 28;
+            if (y + h <= maxY) {
+                List<SiteTerritories.WarInfo> all = Relations.wars(d);
+                int ry = outlineFrame(g, x, y, w, h, "GUERRAS", String.valueOf(outWars.size()));
+                for (int i = 0; i < n; i++) {
+                    SiteTerritories.WarInfo war = outWars.get(i);
+                    boolean hover = mouseX >= x + 2 && mouseX < x + w - 2 && mouseY >= ry && mouseY < ry + 28;
+                    if (hover) g.fill(x + 2, ry, x + w - 2, ry + 28, 0x308F959A);
+                    long end = parseMs(war.ended);
+                    String left = end != NONE && end > now ? countdown(end - now).replace("em ", "") : "";
+                    int lw = font.width(left);
+                    g.drawString(font, fit(warName(war), w - 14 - lw), x + 6, ry + 2, COL_TEXT, false);
+                    g.drawString(font, left, x + w - 6 - lw, ry + 2, COL_LINK, false);
+                    sideBar(g, war, WarScore.of(d, war).points(), x + 6, ry + 13, w - 12);
+                    final int at = all.indexOf(war);
+                    hits.add(new Hit(x + 2, ry, w - 4, 28, () -> {
+                        enterWar();
+                        warSel = at;
+                    }, warName(war)));
+                    ry += 28;
+                }
+                y += h + 3;
+            }
+        }
+        y = outlineTimed(g, d, "ULTIMATOS", outUlts, 5, x, y, w, maxY, now, mouseX, mouseY);
+        y = outlineTimed(g, d, "TRÉGUAS", outTruces, 4, x, y, w, maxY, now, mouseX, mouseY);
+
+        if (relationalMode() && !legend.isEmpty()) {
+            int rows = Math.min(Math.min(legend.size(), 9), (maxY - y - 18) / 12);
+            if (rows > 0) {
+                int ry = outlineFrame(g, x, y, w, 18 + rows * 12, "LEGENDA", "");
+                for (int i = 0; i < rows; i++) {
+                    Relations.Rel rel = legend.get(i);
+                    g.fill(x + 6, ry + 1, x + 20, ry + 10, 0xFF05080C);
+                    g.fill(x + 7, ry + 2, x + 19, ry + 9, 0xFF000000 | rel.rgb());
+                    String label = rel.label();
+                    if (rel.countries().size() > 1) label += " (" + rel.countries().size() + ")";
+                    g.drawString(font, fit(label, w - 32), x + 25, ry + 2, COL_TEXT, false);
+                    ry += 12;
+                }
+            }
         }
     }
 
@@ -960,26 +1156,26 @@ public class MapScreen extends Screen {
     /** Moldura de bronze chanfrada, com rebites nos cantos (molduras grandes). */
     private void box(GuiGraphics g, int x, int y, int w, int h, int fill) {
         g.fill(x, y, x + w, y + h, 0xFF0E0C08);
-        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, 0xFF7A6538);
-        g.fill(x + 1, y + 1, x + w - 1, y + 2, 0xFFB89C5C);
-        g.fill(x + 1, y + 1, x + 2, y + h - 1, 0xFFA3874D);
-        g.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, 0xFF4B3C21);
-        g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, 0xFF4B3C21);
+        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, 0xFF6A6F72);
+        g.fill(x + 1, y + 1, x + w - 1, y + 2, 0xFF7E8387);
+        g.fill(x + 1, y + 1, x + 2, y + h - 1, 0xFF7E8387);
+        g.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, 0xFF3E4245);
+        g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, 0xFF3E4245);
         g.fill(x + 3, y + 3, x + w - 3, y + h - 3, 0xFF0E0C08);
         g.fill(x + 4, y + 4, x + w - 4, y + h - 4, fill);
         if (w >= 60 && h >= 40) {
             int[][] corner = {{x + 1, y + 1}, {x + w - 4, y + 1}, {x + 1, y + h - 4}, {x + w - 4, y + h - 4}};
             for (int[] c : corner) {
-                g.fill(c[0], c[1], c[0] + 3, c[1] + 3, 0xFFD9B45A);
-                g.fill(c[0] + 2, c[1] + 2, c[0] + 3, c[1] + 3, 0xFF8A6F32);
+                g.fill(c[0], c[1], c[0] + 3, c[1] + 3, 0xFFCFD3D1);
+                g.fill(c[0] + 2, c[1] + 2, c[0] + 3, c[1] + 3, 0xFF6A6F72);
             }
         }
     }
 
     /** Botão chanfrado de bronze (ativo = aceso em dourado). */
     private void bevel(GuiGraphics g, int x, int y, int w, int h, boolean hover, boolean active) {
-        int base = active ? 0xFF4A3F22 : hover ? 0xFF3C3727 : 0xFF2A2B25;
-        int light = active ? 0xFFE0BE62 : hover ? 0xFFB59A5E : 0xFF7A6538;
+        int base = active ? 0xFF4A3F22 : hover ? 0xFF3A3E42 : 0xFF2A2D30;
+        int light = active ? 0xFFE0BE62 : hover ? 0xFF9AA0A4 : 0xFF6A6F72;
         g.fill(x, y, x + w, y + h, 0xFF0E0F0D);
         g.fill(x + 1, y + 1, x + w - 1, y + h - 1, base);
         g.fill(x + 1, y + 1, x + w - 1, y + 2, light);
@@ -988,15 +1184,15 @@ public class MapScreen extends Screen {
         g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, 0xFF14110A);
     }
 
-    private void iconButton(GuiGraphics g, int x, int y, String glyph, boolean active, boolean enabled,
+    private void iconButton(GuiGraphics g, int x, int y, int size, String glyph, boolean active, boolean enabled,
                             int mouseX, int mouseY, String tip, Runnable action) {
-        boolean hover = enabled && mouseX >= x && mouseX < x + BTN && mouseY >= y && mouseY < y + BTN;
-        bevel(g, x, y, BTN, BTN, hover, active);
-        int main = !enabled ? 0xFF6F6D63 : active ? 0xFFF6E7AE : hover ? 0xFFF2ECD8 : 0xFFD8D2BE;
-        int accent = !enabled ? 0xFF5A584E : active ? 0xFFE0B840 : 0xFFB9A35E;
-        int shade = !enabled ? 0xFF3A3932 : 0xFF6B5A2A;
-        Glyphs.draw(g, glyph, x + (BTN - 14) / 2, y + (BTN - 14) / 2, main, accent, shade);
-        hits.add(new Hit(x, y, BTN, BTN, enabled ? action : null, tip));
+        boolean hover = enabled && mouseX >= x && mouseX < x + size && mouseY >= y && mouseY < y + size;
+        bevel(g, x, y, size, size, hover, active);
+        int main = !enabled ? 0xFF6F6D63 : active ? 0xFFF6E7AE : hover ? 0xFFF2ECD8 : 0xFFD6D6D0;
+        int accent = !enabled ? 0xFF5A584E : active ? 0xFFE0B840 : 0xFF8F959A;
+        int shade = !enabled ? 0xFF3A3932 : 0xFF4A4F52;
+        Glyphs.draw(g, glyph, x + (size - 14) / 2, y + (size - 14) / 2, main, accent, shade);
+        hits.add(new Hit(x, y, size, size, enabled ? action : null, tip));
     }
 
     private boolean visible(int y, int h) {
@@ -1008,7 +1204,7 @@ public class MapScreen extends Screen {
         boolean vis = visible(y, h);
         boolean hover = vis && enabled && mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
         bevel(g, x, y, w, h, hover, false);
-        g.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, enabled ? (hover ? 0xFFFFF2B0 : COL_TEXT) : COL_DIM, false);
+        g.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, enabled ? (hover ? 0xFFFFFFFF : COL_TEXT) : COL_DIM, false);
         if (vis && enabled) hits.add(new Hit(x, y, w, h, action, null));
     }
 
@@ -1053,7 +1249,7 @@ public class MapScreen extends Screen {
                     tab = tab == TAB_DIPLOMENU ? TAB_NONE : TAB_DIPLOMENU;
                     SCROLL[TAB_DIPLOMENU] = 0;
                 }, false));
-        b.add(new Btn("cities", showCities, site, "Cidades\n" + (showCities ? "Ligado" : "Desligado") + (site ? "" : needSite), () -> showCities = !showCities, false));
+        b.add(new Btn("cities", showCities, site, "Cidades\n" + (showCities ? "Ligado" : "Desligado") + (site ? "" : needSite), () -> showCities = !showCities, true));
         b.add(new Btn("limits", showLimits, site, "Limites das cidades\n" + (showLimits ? "Ligado" : "Desligado") + (site ? "" : needSite), () -> showLimits = !showLimits, false));
         boolean dyn = SiteTerritories.showPlayers();
         String playersTip = "Jogadores online\n" + (!dyn ? "Desativado em site.json" : !showPlayers ? "Desligado"
@@ -1097,7 +1293,7 @@ public class MapScreen extends Screen {
                 genRunning ? "Gerador de chunks\nEm andamento." : "Gerar todos os chunks do mapa", () -> {
                     genConfirm = false;
                     tab = tab == TAB_GEN ? TAB_NONE : TAB_GEN;
-                }, true));
+                }, false));
         return b;
     }
 
@@ -1107,7 +1303,22 @@ public class MapScreen extends Screen {
 
     /** Distribui os botões em linhas conforme a largura da janela e calcula a altura da barra. */
     private void layoutBar() {
-        bar = barButtons();
+        List<Btn> dock = new ArrayList<>(), top = new ArrayList<>(), right = new ArrayList<>();
+        for (Btn b : barButtons()) {
+            switch (b.glyph()) {
+                case "list", "treaty" -> top.add(b);
+                case "source", "reload", "maps", "settings" -> right.add(b);
+                default -> dock.add(b);
+            }
+        }
+        boolean site = siteMode();
+        top.add(new Btn("war", tab == TAB_WAR, site, "Guerras\nLista, placar, cidades e Lei 7." + (site ? "" : "\nRequer dados do site."), () -> {
+            if (tab == TAB_WAR) tab = TAB_NONE;
+            else enterWar();
+        }, false));
+        bar = dock;
+        nav = top;
+        tools = right;
         int n = bar.size();
         barX = new int[n];
         barRow = new int[n];
@@ -1127,7 +1338,7 @@ public class MapScreen extends Screen {
             wMax = Math.max(wMax, x - 4);
         }
         barW = wMax + 16;
-        barH = (row + 1) * (BTN + 4) + 12;
+        barH = (row + 1) * (BTN + 4) + 25;
     }
 
     private void drawBar(GuiGraphics g, int mouseX, int mouseY) {
@@ -1135,21 +1346,20 @@ public class MapScreen extends Screen {
         int y0 = height - barH - MARGIN;
         box(g, x0, y0, barW, barH, COL_PANEL);
         hits.add(new Hit(x0, y0, barW, barH, null, null));
+        g.fill(x0 + 4, y0 + 4, x0 + barW - 4, y0 + 16, 0xFF33373A);
+        g.fill(x0 + 4, y0 + 16, x0 + barW - 4, y0 + 17, 0xFF0A0B08);
+        String name = !siteMode() ? "MODO MANUAL" : switch (mode) {
+            case MODE_PHYSICAL -> "MAPA FÍSICO";
+            case MODE_PROVINCES -> "PROVÍNCIAS";
+            case MODE_DIPLOMACY -> "DIPLOMACIA";
+            case MODE_WAR -> "GUERRA";
+            default -> "MAPA POLÍTICO";
+        };
+        spaced(g, name, x0 + (barW - spacedWidth(name)) / 2, y0 + 6, 0xFFCFD3D1, false);
         for (int i = 0; i < bar.size(); i++) {
             Btn b = bar.get(i);
-            int bx0 = x0 + 8 + barX[i], by0 = y0 + 8 + barRow[i] * (BTN + 4);
-            iconButton(g, bx0, by0, b.glyph(), b.active(), b.enabled(), mouseX, mouseY, b.tip(), b.action());
-            if (b.glyph().equals("war") && b.enabled()) {
-                int n = activeWarCount();
-                if (n > 0) {
-                    g.fill(bx0 + 2, by0 + 2, bx0 + BTN - 2, by0 + BTN - 2, 0x40D83A3A);
-                    String txt = String.valueOf(n);
-                    int tw = font.width(txt) + 5;
-                    g.fill(bx0 + BTN - tw - 1, by0 - 3, bx0 + BTN + 2, by0 + 9, 0xFF0E0C08);
-                    g.fill(bx0 + BTN - tw, by0 - 2, bx0 + BTN + 1, by0 + 8, 0xFFC02B2B);
-                    g.drawString(font, txt, bx0 + BTN - tw + 3, by0, 0xFFFFFFFF, false);
-                }
-            }
+            int bx0 = x0 + 8 + barX[i], by0 = y0 + 21 + barRow[i] * (BTN + 4);
+            iconButton(g, bx0, by0, BTN, b.glyph(), b.active(), b.enabled(), mouseX, mouseY, b.tip(), b.action());
         }
     }
 
@@ -1196,13 +1406,14 @@ public class MapScreen extends Screen {
         int w = 0;
         for (String l : lines) w = Math.max(w, font.width(l));
         w += 18;
-        int h = lines.length * 11 + 11;
+        int h = lines.length * 11 + 12;
         int x = Math.min(mouseX + 10, width - w - 4);
         int y = Math.max(4, Math.min(mouseY + 12, height - h - 4));
-        box(g, x, y, w, h, 0xFF161815);
+        box(g, x, y, w, h, 0xFF1A1C1E);
+        if (lines.length > 1) g.fill(x + 4, y + 4, x + w - 4, y + 17, 0xFF33373A);
         for (int i = 0; i < lines.length; i++) {
             int color = i == 0 && lines.length > 1 ? COL_GOLD : i == 0 ? COL_TEXT : COL_DIM;
-            g.drawString(font, lines[i], x + 9, y + 7 + i * 11, color, false);
+            g.drawString(font, lines[i], x + 9, y + 7 + i * 11 + (i > 0 ? 1 : 0), color, false);
         }
     }
 
@@ -1241,10 +1452,12 @@ public class MapScreen extends Screen {
 
     private void drawPanel(GuiGraphics g, int mouseX, int mouseY) {
         if (!panelOpen()) return;
-        panelX = width - PW - MARGIN;
-        panelY = MARGIN;
-        panelW = PW;
-        panelH = height - MARGIN * 2 - barH - 8;
+        boolean wide = tab == TAB_SET && width >= 480;
+        panelW = wide ? Math.min(520, width - 2 * MARGIN) : PW;
+        panelX = wide ? (width - panelW) / 2 : MARGIN;
+        panelY = TOP + 8;
+        panelH = height - panelY - MARGIN;
+        if (!wide && panelX + panelW > width - barW - MARGIN) panelH -= barH + 8;
         panelVisible = true;
         bx = panelX;
         by = panelY;
@@ -1293,14 +1506,16 @@ public class MapScreen extends Screen {
         boolean country = rgb != NEUTRAL;
         int x = bx, y = by, w = bw;
         int hh = country ? 46 : subtitle != null ? 36 : 28;
-        g.fill(x + 4, y + 4, x + w - 4, y + hh, 0xFF121312);
+        g.fill(x + 4, y + 4, x + w - 4, y + hh, 0xFF33373A);
         g.fill(x + 4, y + 4, x + w - 4, y + 5, 0xFF050605);
         g.fill(x + 4, y + hh, x + w - 4, y + hh + 1, COL_GOLD_DIM);
+        if (headRed) g.fill(x + 4, y + 4, x + w - 4, y + hh, 0xFF4A1E19);
+        if (!country) g.fill(x + 4, y + hh - 3, x + w - 4, y + hh, headRed ? 0xFFB0382C : 0xFF7E8387);
         int tx = x + 12;
         if (country) {
             g.fill(x + 4, y + hh - 3, x + w - 4, y + hh, 0xFF000000 | rgb);
             g.fill(x + 9, y + 9, x + 51, y + 37, 0xFF0E0C08);
-            g.fill(x + 10, y + 10, x + 50, y + 36, 0xFF7A6538);
+            g.fill(x + 10, y + 10, x + 50, y + 36, 0xFF6A6F72);
             g.fill(x + 11, y + 11, x + 49, y + 35, 0xFF05080C);
             RemoteImages.Img flag = RemoteImages.flag(flagUrl);
             if (flag != null) {
@@ -1313,13 +1528,17 @@ public class MapScreen extends Screen {
         }
         int maxW = x + w - 30 - tx;
         int ty = country ? y + 12 : subtitle != null ? y + 9 : y + 3 + (hh - 3 - 8) / 2;
-        spaced(g, fitSpaced(title.toUpperCase(Locale.ROOT), maxW), tx, ty, 0xFFF2E3B0, true);
+        spaced(g, fitSpaced(title.toUpperCase(Locale.ROOT), maxW), tx, ty, 0xFFECEBE4, true);
         if (subtitle != null) g.drawString(font, fit(subtitle, maxW), tx, ty + 13, COL_DIM, false);
         int cx = x + w - 22, cyy = y + 7;
         boolean hover = mouseX >= cx && mouseX < cx + 14 && mouseY >= cyy && mouseY < cyy + 14;
-        bevel(g, cx, cyy, 14, 14, hover, false);
-        g.drawString(font, "x", cx + 5, cyy + 3, hover ? 0xFFFFF2B0 : COL_TEXT, false);
+        g.fill(cx, cyy, cx + 14, cyy + 14, 0xFF0A0B08);
+        g.fill(cx + 1, cyy + 1, cx + 13, cyy + 13, hover ? 0xFF7A2A22 : 0xFF5A1F1A);
+        g.fill(cx + 1, cyy + 1, cx + 13, cyy + 2, 0xFFA24A3F);
+        g.fill(cx + 1, cyy + 1, cx + 2, cyy + 13, 0xFFA24A3F);
+        g.drawString(font, "X", cx + 5, cyy + 3, 0xFFF4C4B4, false);
         hits.add(new Hit(cx, cyy, 14, 14, close, "Fechar"));
+        headRed = false;
         return y + hh + 5;
     }
 
@@ -1383,14 +1602,17 @@ public class MapScreen extends Screen {
 
     private void section(GuiGraphics g, String title) {
         cy += 4;
-        g.fill(bx + 6, cy, bx + bw - 6, cy + 13, 0xFF141513);
+        g.fill(bx + 6, cy, bx + bw - 6, cy + 13, 0xFF18191B);
         g.fill(bx + 6, cy, bx + bw - 6, cy + 1, 0xFF050605);
-        g.fill(bx + 6, cy + 12, bx + bw - 6, cy + 13, 0xFF4B3C21);
+        g.fill(bx + 6, cy + 12, bx + bw - 6, cy + 13, 0xFF3E4245);
         int dx = bx + 13, dy = cy + 6;
         g.fill(dx, dy - 3, dx + 1, dy + 4, COL_GOLD);
         g.fill(dx - 3, dy, dx + 4, dy + 1, COL_GOLD);
         g.fill(dx - 1, dy - 1, dx + 2, dy + 2, COL_GOLD);
-        spaced(g, fitSpaced(title.toUpperCase(Locale.ROOT), bw - 40), bx + 22, cy + 3, COL_GOLD, false);
+        String shown = fitSpaced(title.toUpperCase(Locale.ROOT), bw - 40);
+        spaced(g, shown, bx + 22, cy + 3, COL_GOLD, false);
+        int ruleX = bx + 22 + spacedWidth(shown) + 6;
+        if (ruleX < bx + bw - 12) g.fill(ruleX, cy + 6, bx + bw - 12, cy + 7, 0xFF3E4245);
         cy += 17;
         rowIdx = 0;
     }
@@ -1413,11 +1635,11 @@ public class MapScreen extends Screen {
         rowIdx++;
         g.fill(valueX - 4, cy - 1, bx + bw - 7, cy + h - 1, 0xFF161816);
         g.fill(valueX - 4, cy - 1, bx + bw - 7, cy, 0xFF0A0B0A);
-        g.fill(valueX - 4, cy + h - 2, bx + bw - 7, cy + h - 1, 0xFF2E2A1E);
+        g.fill(valueX - 4, cy + h - 2, bx + bw - 7, cy + h - 1, 0xFF2E3235);
         g.drawString(font, label, bx + 9, cy + 1, COL_DIM, false);
         boolean vis = visible(cy, h);
         boolean hover = link != null && vis && mouseX >= valueX && mouseX < bx + bw - 8 && mouseY >= cy && mouseY < cy + h;
-        int color = link == null ? COL_TEXT : hover ? 0xFFFFE27A : COL_LINK;
+        int color = link == null ? COL_TEXT : hover ? 0xFFDDE7EE : COL_LINK;
         int ly = cy + 1;
         for (String line : lines) {
             g.drawString(font, line, valueX, ly, color, false);
@@ -1473,14 +1695,14 @@ public class MapScreen extends Screen {
             }
             boolean vis = visible(lineY, rowH);
             boolean hover = vis && mouseX >= x && mouseX < x + w && mouseY >= lineY && mouseY < lineY + rowH;
-            g.fill(x, lineY, x + w, lineY + rowH, hover ? 0xFF40392A : 0xFF222421);
+            g.fill(x, lineY, x + w, lineY + rowH, hover ? 0xFF3A3E42 : 0xFF2A2D30);
             g.fill(x, lineY, x + w, lineY + 1, COL_GOLD_DIM);
             g.fill(x, lineY + rowH - 1, x + w, lineY + rowH, COL_GOLD_DIM);
             if (online) {
                 g.fill(x + 3, lineY + 4, x + 8, lineY + 9, 0xFF0E0C08);
                 g.fill(x + 4, lineY + 5, x + 7, lineY + 8, 0xFF4CD964);
             }
-            g.drawString(font, n, x + 4 + (online ? 7 : 0), lineY + 3, hover ? 0xFFFFE27A : COL_TEXT, false);
+            g.drawString(font, n, x + 4 + (online ? 7 : 0), lineY + 3, hover ? 0xFFDDE7EE : COL_TEXT, false);
             if (vis) hits.add(new Hit(x, lineY, w, rowH, () -> click.accept(n), null));
             x += w + 4;
         }
@@ -1503,8 +1725,13 @@ public class MapScreen extends Screen {
         int c = d.provCountry[selSite];
         Map<String, String> info = d.info[c];
         int top = header(g, d.rgb[c], d.names[c], info.get("type"), flagOf(d, c), mouseX, mouseY, this::closePanel);
+        top = tabStrip(g, top, new String[]{"Geral", "Localidades", "Diplomacia", "População"}, infoTab, mouseX, mouseY, i -> {
+            infoTab = i;
+            SCROLL[TAB_INFO] = 0;
+        });
 
         beginScroll(g, top, SCROLL[TAB_INFO], 0);
+        if (infoTab == 0) {
         int bxx = bx + 9;
         textButton(g, bxx, cy, 124, 16, "Ver relações", mouseX, mouseY, true, () -> {
             dipFocus = c;
@@ -1532,17 +1759,19 @@ public class MapScreen extends Screen {
         for (SiteTerritories.Locality l : d.localities) if (l.countryIdx == c) cities++;
         kv(g, "Localidades", String.valueOf(cities));
         kv(g, "População", String.valueOf(d.population[c]));
+        }
 
         List<SiteTerritories.Locality> places = placesOf(d, c);
-        if (!places.isEmpty()) {
+        if (infoTab == 1 && places.isEmpty()) paragraph(g, "Nenhuma localidade registrada.", COL_DIM);
+        if (infoTab == 1 && !places.isEmpty()) {
             section(g, "LOCALIDADES (" + places.size() + ")  -  clique para ir");
             for (SiteTerritories.Locality l : places) {
                 int rowTop = cy;
                 if (visible(rowTop, 16)) {
                     boolean isSel = l.idx == selCity;
                     boolean hover = mouseX >= bx + 6 && mouseX < bx + bw - 6 && mouseY >= rowTop && mouseY < rowTop + 16;
-                    if (isSel) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + 16, 0x50D9B45A);
-                    else if (hover) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + 16, 0x40D9B45A);
+                    if (isSel) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + 16, 0x508F959A);
+                    else if (hover) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + 16, 0x408F959A);
                     else if ((rowIdx & 1) == 0) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + 16, 0x16FFFFFF);
                     RemoteImages.Img ic = cityImage(l, 14);
                     if (ic != null) {
@@ -1562,7 +1791,8 @@ public class MapScreen extends Screen {
         }
 
         SiteTerritories.Diplomacy dip = d.diplomacy[c];
-        if (dip != null) {
+        if (infoTab == 2 && dip == null) paragraph(g, "Nenhuma relação registrada.", COL_DIM);
+        if (infoTab == 2 && dip != null) {
             section(g, "DIPLOMACIA");
             kv(g, "Suserano", join(dip.overlord));
             kv(g, "Súditos", join(dip.subject));
@@ -1580,7 +1810,8 @@ public class MapScreen extends Screen {
         }
 
         List<String> people = d.people[c];
-        if (people != null && !people.isEmpty()) {
+        if (infoTab == 3 && (people == null || people.isEmpty())) paragraph(g, "Nenhum jogador registrado.", COL_DIM);
+        if (infoTab == 3 && people != null && !people.isEmpty()) {
             section(g, "POPULAÇÃO (" + people.size() + ")  -  clique num nome");
             chips(g, people.size() > 80 ? people.subList(0, 80) : people, mouseX, mouseY, this::openPlayer, true);
         }
@@ -1702,7 +1933,7 @@ public class MapScreen extends Screen {
             boolean vis = visible(rowTop, 16);
             if (vis) {
                 boolean hover = mouseX >= bx + 4 && mouseX < bx + bw - 4 && mouseY >= rowTop && mouseY < rowTop + 16;
-                if (hover) g.fill(bx + 4, rowTop, bx + bw - 4, rowTop + 16, 0x40C8A64A);
+                if (hover) g.fill(bx + 4, rowTop, bx + bw - 4, rowTop + 16, 0x408F959A);
                 else if ((rowIdx & 1) == 0) g.fill(bx + 4, rowTop, bx + bw - 4, rowTop + 16, 0x16FFFFFF);
                 g.fill(bx + 8, rowTop + 2, bx + 30, rowTop + 14, 0xFF05080C);
                 RemoteImages.Img flag = RemoteImages.flag(flagOf(d, idx));
@@ -1771,8 +2002,8 @@ public class MapScreen extends Screen {
                 if (vis) {
                     boolean sel = i == dipAlliance;
                     boolean hover = mouseX >= bx + 4 && mouseX < bx + bw - 4 && mouseY >= rowTop && mouseY < rowTop + 16;
-                    if (sel) g.fill(bx + 4, rowTop, bx + bw - 4, rowTop + 16, 0x50C8A64A);
-                    else if (hover) g.fill(bx + 4, rowTop, bx + bw - 4, rowTop + 16, 0x40C8A64A);
+                    if (sel) g.fill(bx + 4, rowTop, bx + bw - 4, rowTop + 16, 0x508F959A);
+                    else if (hover) g.fill(bx + 4, rowTop, bx + bw - 4, rowTop + 16, 0x408F959A);
                     else if ((rowIdx & 1) == 0) g.fill(bx + 4, rowTop, bx + bw - 4, rowTop + 16, 0x16FFFFFF);
                     g.fill(bx + 8, rowTop + 2, bx + 30, rowTop + 14, 0xFF05080C);
                     RemoteImages.Img flag = a.flag == null ? null : RemoteImages.flag(SiteTerritories.assetUrl(a.flag, true));
@@ -2001,7 +2232,7 @@ public class MapScreen extends Screen {
         for (double v : weights) total += v;
         g.fill(x - 1, y - 1, x + w + 1, y + 13, 0xFF0E0C08);
         if (total <= 0) {
-            g.fill(x, y, x + w, y + 12, 0xFF2A2B25);
+            g.fill(x, y, x + w, y + 12, 0xFF2A2D30);
             return;
         }
         int used = 0;
@@ -2032,8 +2263,10 @@ public class MapScreen extends Screen {
         List<SiteTerritories.WarInfo> wars = Relations.wars(d);
         SiteTerritories.WarInfo sel = viewedWar(d);
         int running = activeWarCount();
-        String subtitle = sel == null ? running + " em andamento, " + (wars.size() - running) + " encerrada(s)" : warName(sel);
-        int top = header(g, NEUTRAL, "Guerra", subtitle, null, mouseX, mouseY, () -> {
+        String subtitle = sel == null ? running + " em andamento, " + (wars.size() - running) + " encerrada(s)"
+                : sel.sides != null && sel.sides.size() >= 2 ? sideName(sel, 0) + " contra " + sideName(sel, 1) : "";
+        headRed = true;
+        int top = header(g, NEUTRAL, sel == null ? "Guerras" : warName(sel), subtitle.isEmpty() ? null : subtitle, null, mouseX, mouseY, () -> {
             tab = TAB_NONE;
             warSel = -1;
         });
@@ -2065,7 +2298,7 @@ public class MapScreen extends Screen {
     private void textButtonFixed(GuiGraphics g, int x, int y, int w, int h, String label, int mouseX, int mouseY, Runnable action) {
         boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
         bevel(g, x, y, w, h, hover, false);
-        g.drawString(font, label, x + 6, y + (h - 8) / 2, hover ? 0xFFFFF2B0 : COL_TEXT, false);
+        g.drawString(font, label, x + 6, y + (h - 8) / 2, hover ? 0xFFFFFFFF : COL_TEXT, false);
         hits.add(new Hit(x, y, w, h, action, null));
     }
 
@@ -2091,11 +2324,11 @@ public class MapScreen extends Screen {
         boolean hover = vis && mouseX >= x && mouseX < x + wd && mouseY >= y && mouseY < y + h;
         g.fill(x, y, x + wd, y + h, hover ? 0xFF2A2820 : 0xFF181A18);
         g.fill(x, y, x + wd, y + 1, 0xFF050605);
-        g.fill(x, y + h - 1, x + wd, y + h, 0xFF4B3C21);
+        g.fill(x, y + h - 1, x + wd, y + h, 0xFF3E4245);
         boolean run = warRunning(w);
         String tag = !run ? "ENCERRADA" : w.live ? "AO VIVO" : "ATIVA";
         int tagCol = !run ? COL_DIM : COL_WAR;
-        g.drawString(font, fit(warName(w), wd - 14 - font.width(tag) - 6), x + 6, y + 4, hover ? 0xFFFFF2B0 : COL_TEXT, false);
+        g.drawString(font, fit(warName(w), wd - 14 - font.width(tag) - 6), x + 6, y + 4, hover ? 0xFFFFFFFF : COL_TEXT, false);
         g.drawString(font, tag, x + wd - 6 - font.width(tag), y + 4, tagCol, false);
         if (w.sides != null && w.sides.size() >= 2) {
             WarScore.Result r = WarScore.of(d, w);
@@ -2212,7 +2445,7 @@ public class MapScreen extends Screen {
                     WarFront.Score sc = scoreBy.get(c.toLowerCase(Locale.ROOT));
                     if (sc != null && sc.capitulated()) tail = "CAPITULOU";
                     int tw = font.width(tail);
-                    g.drawString(font, fit(ci >= 0 ? d.labels[ci] : c, bw - 60 - tw), bx + 36, rowTop + 3, hover ? 0xFFFFE27A : COL_TEXT, false);
+                    g.drawString(font, fit(ci >= 0 ? d.labels[ci] : c, bw - 60 - tw), bx + 36, rowTop + 3, hover ? 0xFFDDE7EE : COL_TEXT, false);
                     g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 3, sc != null && sc.capitulated() ? COL_WAR : COL_DIM, false);
                     final int cc = ci;
                     if (vis && ci >= 0) hits.add(new Hit(bx + 6, rowTop, bw - 12, 14, () -> selectCountry(cc), null));
@@ -2300,7 +2533,7 @@ public class MapScreen extends Screen {
                 if (ci >= 0) miniFlag(g, d, ci, bx + 20, rowTop + 1);
                 String tail = list.size() + (list.size() == 1 ? " cidade" : " cidades") + (lost > 0 ? ", " + lost + " perdida(s)" : "");
                 int tw = font.width(tail);
-                g.drawString(font, fit(ci >= 0 ? d.labels[ci] : e.getKey(), bw - 64 - tw), bx + 46, rowTop + 4, hover ? 0xFFFFE27A : COL_TEXT, false);
+                g.drawString(font, fit(ci >= 0 ? d.labels[ci] : e.getKey(), bw - 64 - tw), bx + 46, rowTop + 4, hover ? 0xFFDDE7EE : COL_TEXT, false);
                 g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 4, lost > 0 ? COL_WAR : COL_DIM, false);
                 if (vis) hits.add(new Hit(bx + 6, rowTop, bw - 12, 15, () -> {
                     if (!WAR_CLOSED.remove(key)) WAR_CLOSED.add(key);
@@ -2332,7 +2565,7 @@ public class MapScreen extends Screen {
         if (status != null) tail = (tail.isEmpty() ? "" : tail + "  ") + status;
         int tw = font.width(tail);
         String name = pretty(l.name) + (withCountry && l.country != null && !l.country.isBlank() ? " (" + l.country + ")" : "");
-        g.drawString(font, fit(name, bw - 56 - tw), bx + 29, rowTop + 2, hover ? 0xFFFFE27A : COL_LINK, false);
+        g.drawString(font, fit(name, bw - 56 - tw), bx + 29, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
         g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 2, status != null ? COL_WAR : COL_DIM, false);
         if (vis) {
             final SiteTerritories.Locality ll = l;
@@ -2406,7 +2639,7 @@ public class MapScreen extends Screen {
             String tail = st == null ? "In Play" : st;
             int tw = font.width(tail);
             String name = pretty(l.name) + (l.country == null || l.country.isBlank() ? "" : " (" + l.country + ")");
-            g.drawString(font, fit(name, bw - 56 - tw), bx + 29, rowTop + 2, hover ? 0xFFFFE27A : COL_LINK, false);
+            g.drawString(font, fit(name, bw - 56 - tw), bx + 29, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
             g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 2, COL_WAR, false);
             if (vis) hits.add(new Hit(bx + 6, rowTop, bw - 12, 12, () -> focusPoint(l), null));
             cy += 12;
@@ -2429,7 +2662,7 @@ public class MapScreen extends Screen {
             int barW = bw - 18;
             g.fill(bx + 9, cy, bx + 9 + barW, cy + 4, 0xFF0E0C08);
             int fill = (int) Math.min(barW - 2, Math.round((barW - 2) * Math.min(1.0, s.score() / 100.0)));
-            g.fill(bx + 10, cy + 1, bx + 10 + fill, cy + 3, s.capitulated() ? 0xFFC02B2B : 0xFFD9B45A);
+            g.fill(bx + 10, cy + 1, bx + 10 + fill, cy + 3, s.capitulated() ? 0xFFC02B2B : 0xFFCFD3D1);
             cy += 8;
         }
 
@@ -2468,9 +2701,9 @@ public class MapScreen extends Screen {
         for (int i = 0; i < count; i++) {
             int sx = x + i * seg;
             boolean hover = vis && mouseX >= sx && mouseX < sx + seg && mouseY >= y && mouseY < y + 12;
-            int fill = i <= current ? (hover ? 0xFFE0BE62 : 0xFFB89C5C) : (hover ? 0xFF4A4636 : 0xFF2A2B25);
+            int fill = i <= current ? (hover ? 0xFF9AA0A4 : 0xFF7E8387) : (hover ? 0xFF3E4245 : 0xFF2A2D30);
             g.fill(sx, y, sx + seg - 1, y + 12, fill);
-            g.fill(sx, y, sx + seg - 1, y + 1, i <= current ? 0xFFF0DC9A : 0xFF3A3B33);
+            g.fill(sx, y, sx + seg - 1, y + 1, i <= current ? 0xFF9AA0A4 : 0xFF3A3E42);
             final int idx = i;
             if (vis) hits.add(new Hit(sx, y, seg, 12, () -> pick.accept(idx), null));
         }
@@ -2505,6 +2738,9 @@ public class MapScreen extends Screen {
         Prefs.Data p = Prefs.get();
         int top = header(g, NEUTRAL, "Configurações", "Salvas em config/hoi4map", null, mouseX, mouseY, () -> tab = TAB_NONE);
         beginScroll(g, top, SCROLL[TAB_SET], 0);
+        final int fullX = bx, fullW = bw, colTop = cy;
+        boolean twoCols = bw >= 440;
+        if (twoCols) bw = fullW / 2;
 
         section(g, "Aparência do mapa");
         stepsRow(g, "Intensidade da cor dos países", p.fillPct + "%", 11, indexOfStep(p.fillPct, 0, 10, 11), mouseX, mouseY, i -> {
@@ -2562,6 +2798,12 @@ public class MapScreen extends Screen {
             Prefs.save();
         });
 
+        int col1End = cy;
+        if (twoCols) {
+            bx = fullX + fullW / 2;
+            cy = colTop;
+            rowIdx = 0;
+        }
         section(g, "Guerra");
         toggleRow(g, "Controle ao vivo (dynmap)", SiteTerritories.liveWar(), mouseX, mouseY, () -> SiteTerritories.setLiveWar(!SiteTerritories.liveWar()));
         toggleRow(g, "Espadas e bandeiras", SiteTerritories.warMarkers(), mouseX, mouseY, () -> SiteTerritories.setWarMarkers(!SiteTerritories.warMarkers()));
@@ -2619,6 +2861,11 @@ public class MapScreen extends Screen {
         section(g, "Outro servidor");
         paragraph(g, "Em config/hoi4map/site.json: \"url\" (territories.json), \"mapsUrl\" (maps.json), \"dynmapUrl\", \"dynmapWorld\". Sem \"url\", o mapa funciona só com os chunks que você explora.", COL_DIM);
 
+        if (twoCols) {
+            cy = Math.max(cy, col1End);
+            bx = fullX;
+            bw = fullW;
+        }
         SCROLL[TAB_SET] = endScroll(g, SCROLL[TAB_SET]);
     }
 
@@ -2649,15 +2896,23 @@ public class MapScreen extends Screen {
     }
 
     private int tabStrip(GuiGraphics g, int top, String[] labels, int sel, int mouseX, int mouseY, Consumer<Integer> pick) {
-        int n = labels.length, gap = 3;
-        int w = (bw - 16 - gap * (n - 1)) / n;
-        int x = bx + 8;
+        int n = labels.length, gap = 2, avail = bw - 16 - gap * (n - 1), sum = 0;
+        for (String l : labels) sum += font.width(l);
+        int extra = Math.max(2, (avail - sum) / n);
+        g.fill(bx + 4, top, bx + bw - 4, top + 18, 0xFF18191B);
+        g.fill(bx + 4, top + 17, bx + bw - 4, top + 18, 0xFF7E8387);
+        int x = bx + 8, y = top + 2;
         for (int i = 0; i < n; i++) {
-            boolean hover = mouseX >= x && mouseX < x + w && mouseY >= top && mouseY < top + 16;
-            bevel(g, x, top, w, 16, hover, i == sel);
-            g.drawString(font, labels[i], x + (w - font.width(labels[i])) / 2, top + 4, i == sel ? 0xFFFFF2B0 : COL_TEXT, false);
+            int w = i == n - 1 ? bx + bw - 8 - x : font.width(labels[i]) + extra;
+            boolean on = i == sel;
+            boolean hover = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + 15;
+            int line = on ? 0xFFE0BE62 : hover ? 0xFF7E8387 : 0xFF3E4245;
+            g.fill(x, y, x + w, y + (on ? 16 : 15), line);
+            g.fill(x + 1, y + 1, x + w - 1, y + (on ? 16 : 15), on ? 0xFF4A3F22 : hover ? 0xFF2A2D30 : 0xFF1E2123);
+            String t = fit(labels[i], w - 2);
+            g.drawString(font, t, x + (w - font.width(t)) / 2, y + 4, on ? 0xFFF6E7AE : hover ? COL_TEXT : COL_DIM, false);
             final int idx = i;
-            hits.add(new Hit(x, top, w, 16, () -> pick.accept(idx), null));
+            hits.add(new Hit(x, y, w, 15, () -> pick.accept(idx), null));
             x += w + gap;
         }
         return top + 21;
@@ -2668,8 +2923,8 @@ public class MapScreen extends Screen {
         int w = font.width(text);
         boolean vis = visible(y - 1, 11);
         boolean hover = clickable && vis && mouseX >= x && mouseX < x + w && mouseY >= y - 1 && mouseY < y + 10;
-        g.drawString(font, text, x, y, !clickable ? COL_TEXT : hover ? 0xFFFFE27A : COL_LINK, false);
-        if (hover) g.fill(x, y + 9, x + w, y + 10, 0xFFFFE27A);
+        g.drawString(font, text, x, y, !clickable ? COL_TEXT : hover ? 0xFFDDE7EE : COL_LINK, false);
+        if (hover) g.fill(x, y + 9, x + w, y + 10, 0xFFDDE7EE);
         if (clickable && vis) hits.add(new Hit(x, y - 1, w, 11, action, null));
         return w;
     }
@@ -2683,20 +2938,16 @@ public class MapScreen extends Screen {
     }
 
     private void zebra(GuiGraphics g, int rowTop, int h, boolean hover, boolean selected) {
-        if (selected) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + h, 0x50D9B45A);
-        else if (hover) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + h, 0x30D9B45A);
+        if (selected) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + h, 0x508F959A);
+        else if (hover) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + h, 0x308F959A);
         else if ((rowIdx & 1) == 0) g.fill(bx + 6, rowTop, bx + bw - 6, rowTop + h, 0x14FFFFFF);
     }
 
     private void drawDiploMenu(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
         int top = header(g, NEUTRAL, "Panorama diplomático", "Alianças, NAP, purge, diplolock, tréguas e ultimatos", null, mouseX, mouseY, () -> tab = TAB_NONE);
-        top = tabStrip(g, top, new String[]{"Alianças", "NAP", "Purge"}, dmTab < 3 ? dmTab : -1, mouseX, mouseY, i -> {
+        top = tabStrip(g, top, new String[]{"Alianças", "NAP", "Purge", "Diplolock", "Tréguas", "Ultimatos"}, dmTab, mouseX, mouseY, i -> {
             dmTab = i;
-            SCROLL[TAB_DIPLOMENU] = 0;
-        });
-        top = tabStrip(g, top, new String[]{"Diplolock", "Tréguas", "Ultimatos"}, dmTab >= 3 ? dmTab - 3 : -1, mouseX, mouseY, i -> {
-            dmTab = 3 + i;
             SCROLL[TAB_DIPLOMENU] = 0;
         });
         beginScroll(g, top, SCROLL[TAB_DIPLOMENU], 0);
@@ -2804,9 +3055,7 @@ public class MapScreen extends Screen {
     }
 
     /** Tréguas: as do site, as 3 dias depois de uma guerra e as 3 dias depois de um ultimato aceito. */
-    private void dmTruces(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
-        long now = System.currentTimeMillis();
-        Map<String, Integer> idx = Relations.nameIndex(d);
+    private List<Timed> truceList(SiteTerritories.Data d, long now) {
         List<Timed> list = new ArrayList<>();
         if (d.war != null && d.war.truces != null) {
             for (SiteTerritories.Truce t : d.war.truces) {
@@ -2829,6 +3078,13 @@ public class MapScreen extends Screen {
             }
         }
         list.sort((x, y) -> Long.compare(x.until(), y.until()));
+        return list;
+    }
+
+    private void dmTruces(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
+        long now = System.currentTimeMillis();
+        Map<String, Integer> idx = Relations.nameIndex(d);
+        List<Timed> list = truceList(d, now);
         section(g, "Tréguas (" + list.size() + ")");
         if (list.isEmpty()) {
             paragraph(g, "Nenhuma trégua em vigor.", COL_DIM);
@@ -2839,9 +3095,7 @@ public class MapScreen extends Screen {
     }
 
     /** Ultimatos pendentes: quem enviou, para quem, e quando o aceite automático acontece (72 h depois). */
-    private void dmUltimatums(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
-        long now = System.currentTimeMillis();
-        Map<String, Integer> idx = Relations.nameIndex(d);
+    private List<Timed> ultimatumList(SiteTerritories.Data d, long now) {
         List<Timed> list = new ArrayList<>();
         if (d.war != null && d.war.ultimatums != null) {
             for (SiteTerritories.Ultimatum u : d.war.ultimatums) {
@@ -2851,6 +3105,13 @@ public class MapScreen extends Screen {
             }
         }
         list.sort((x, y) -> Long.compare(x.until(), y.until()));
+        return list;
+    }
+
+    private void dmUltimatums(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
+        long now = System.currentTimeMillis();
+        Map<String, Integer> idx = Relations.nameIndex(d);
+        List<Timed> list = ultimatumList(d, now);
         section(g, "Ultimatos pendentes (" + list.size() + ")");
         if (list.isEmpty()) {
             paragraph(g, "Nenhum ultimato pendente.", COL_DIM);
@@ -2957,7 +3218,7 @@ public class MapScreen extends Screen {
                 zebra(g, rowTop, 24, hover, false);
                 String when = left < 0 ? "vencido " + countdown(left) : countdown(left);
                 int color = left < 0 ? 0xFFE06A6A : left < 2 * DAY ? 0xFFE8B04A : COL_TEXT;
-                g.drawString(font, fit(pu.site(), bw - 36 - font.width(when)), bx + 11, rowTop + 3, hover ? 0xFFFFE27A : COL_LINK, false);
+                g.drawString(font, fit(pu.site(), bw - 36 - font.width(when)), bx + 11, rowTop + 3, hover ? 0xFFDDE7EE : COL_LINK, false);
                 g.drawString(font, when, bx + bw - 11 - font.width(when), rowTop + 3, color, false);
                 String sub = (pu.p().country == null ? "" : pu.p().country)
                         + (pu.p().purge.realm == null ? "" : "  -  reino " + pu.p().purge.realm)
@@ -3092,7 +3353,7 @@ public class MapScreen extends Screen {
             kv(g, "Tempo restante", ChunkGen.eta());
             kv(g, "Estado", ChunkGen.state == ChunkGen.State.PAUSED ? "pausado" : "rodando");
         }
-        if (ChunkGen.message != null && !ChunkGen.message.isBlank()) paragraph(g, ChunkGen.message, 0xFFFFE27A);
+        if (ChunkGen.message != null && !ChunkGen.message.isBlank()) paragraph(g, ChunkGen.message, 0xFFDDE7EE);
 
         cy += 4;
         int bxx = bx + 9;
@@ -3168,10 +3429,11 @@ public class MapScreen extends Screen {
             return;
         }
         SiteTerritories.Player p = findPlayer(d, selPlayer);
-        cardH = height - MARGIN * 2 - barH - 8;
-        cardX = panelVisible ? panelX - 6 - CARD_W : width - CARD_W - MARGIN;
-        if (cardX < MARGIN) cardX = MARGIN;
-        cardY = MARGIN;
+        cardX = panelVisible ? panelX + panelW + 6 : MARGIN;
+        if (cardX + CARD_W > width - MARGIN) cardX = Math.max(MARGIN, width - CARD_W - MARGIN);
+        cardY = TOP + 8;
+        cardH = height - cardY - MARGIN;
+        if (cardX + CARD_W > width - barW - MARGIN) cardH -= barH + 8;
         cardVisible = true;
         bx = cardX;
         by = cardY;
@@ -3258,7 +3520,7 @@ public class MapScreen extends Screen {
                     boolean hover = vis && mouseX >= bx + 6 && mouseX < bx + bw - 6 && mouseY >= rowTop && mouseY < rowTop + 12;
                     zebra(g, rowTop, 12, hover, false);
                     rowIdx++;
-                    g.drawString(font, fit(label, bw - 24), bx + 10, rowTop + 2, hover ? 0xFFFFE27A : COL_LINK, false);
+                    g.drawString(font, fit(label, bw - 24), bx + 10, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
                     if (vis) hits.add(new Hit(bx + 6, rowTop, bw - 12, 12, () -> focusPoint(l), null));
                     cy += 12;
                 }
@@ -3276,7 +3538,7 @@ public class MapScreen extends Screen {
             int by0 = by + bh - 22;
             boolean copied = copiedFrames > 0;
             boolean hover = mouseX >= bx + 9 && mouseX < bx + bw - 9 && mouseY >= by0 && mouseY < by0 + 18;
-            g.fill(bx + 9, by0, bx + bw - 9, by0 + 18, hover ? 0xFF3C3727 : 0xFF1D1F1E);
+            g.fill(bx + 9, by0, bx + bw - 9, by0 + 18, hover ? 0xFF3A3E42 : 0xFF1D1F1E);
             g.fill(bx + 9, by0, bx + bw - 9, by0 + 1, COL_GOLD_DIM);
             g.fill(bx + 9, by0 + 17, bx + bw - 9, by0 + 18, COL_GOLD_DIM);
             String label = copied ? "Link copiado!" : "Copiar link do NameMC";
