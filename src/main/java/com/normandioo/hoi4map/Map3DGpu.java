@@ -287,10 +287,11 @@ final class Map3DGpu {
         if (f != null && !f.tinted && isTop) c = 0xFF000000 | ((int) (255 * shade) << 16) | ((int) (255 * shade) << 8) | (int) (255 * shade);
         if (f != null && !f.tinted && !isTop) c = 0xFF000000 | ((int) (255 * shade) << 16) | ((int) (255 * shade) << 8) | (int) (255 * shade);
         if (f == null) c = 0xFF000000 | ((int) (120 * shade) << 16) | ((int) (120 * shade) << 8) | (int) (120 * shade);
-        v(vc, pose, ax, ay, az, c, u0, v0, nx, ny, nz);
-        v(vc, pose, bx, by, bz, c, u0, v1, nx, ny, nz);
-        v(vc, pose, cx, cy, cz, c, u1, v1, nx, ny, nz);
+        // ordem invertida: a GUI tem o Y para baixo, o que inverte o sentido das faces (o culling escondia o topo)
         v(vc, pose, dx, dy, dz, c, u1, v0, nx, ny, nz);
+        v(vc, pose, cx, cy, cz, c, u1, v1, nx, ny, nz);
+        v(vc, pose, bx, by, bz, c, u0, v1, nx, ny, nz);
+        v(vc, pose, ax, ay, az, c, u0, v0, nx, ny, nz);
     }
 
     private static void v(VertexConsumer vc, PoseStack.Pose pose, double x, double y, double z, int c, float u, float vv, float nx, float ny, float nz) {
