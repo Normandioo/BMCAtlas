@@ -7,7 +7,6 @@ import net.minecraft.client.renderer.RenderPipelines;
 
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.gui.components.PlayerFaceRenderer;
 
 import java.util.List;
 import java.util.Locale;
@@ -28,8 +27,8 @@ final class Minimap {
     static void render(GuiGraphics g, float partial) {
         Prefs.Data p = Prefs.get();
         Minecraft mc = Minecraft.getInstance();
-        if (!p.minimap || mc.player == null || mc.level == null || mc.options.hideGui) return;
-        if (mc.screen instanceof MapScreen) return;       // o mapa grande já está na tela
+        if (!p.minimap || mc.player == null || mc.level == null || Compat.hideGui(mc)) return;
+        if (Compat.screen(mc) instanceof MapScreen) return;       // o mapa grande já está na tela
         if (debugShown(mc)) return;                      // F3 aberto: não cobrir as informações
         MapScreen.idleTint();                             // limites das cidades gravados no terreno
         Font font = mc.font;
@@ -52,7 +51,7 @@ final class Minimap {
         if (scale * gs >= 1.0) scale = Math.max(1.0, Math.round(scale * gs)) / gs;
         double cx = net.minecraft.util.Mth.lerp(partial, mc.player.xo, mc.player.getX());
         double cz = net.minecraft.util.Mth.lerp(partial, mc.player.zo, mc.player.getZ());
-        if (!(mc.screen instanceof MapScreen)) MapScreen.liveTick();
+        if (!(Compat.screen(mc) instanceof MapScreen)) MapScreen.liveTick();
         int mode = MapScreen.minimapMode();
 
         // moldura
@@ -234,7 +233,7 @@ final class Minimap {
             g.pose().pushMatrix();
             g.pose().translate((float) sx, (float) sy);
             g.fill(-6, -6, 6, 6, 0xFF05080C);
-            PlayerFaceRenderer.draw(g, pl.getSkin(), -5, -5, 10);
+            Compat.face(g, pl, -5, -5, 10);
             g.pose().popMatrix();
         }
         if (!SiteTerritories.showPlayers()) return;
@@ -271,7 +270,7 @@ final class Minimap {
         g.pose().translate(ox, oy);
         g.fill(-7, -7, 7, 7, 0xFF05080C);
         g.fill(-6, -6, 6, 6, 0xFFFFF2B0);
-        PlayerFaceRenderer.draw(g, mc.player.getSkin(), -5, -5, 10);
+        Compat.face(g, mc.player, -5, -5, 10);
         g.pose().popMatrix();
     }
 }
