@@ -1,6 +1,6 @@
 # BMC Atlas
 
-**Fabric** client mod for **Minecraft 1.21.11**: a full-screen political map and a minimap with countries, provinces, cities, live war tracking and online players. It reads the server's public territory data (GET only) and never changes anything on the server or the site.
+**Fabric** client mod for **Minecraft 26.1.x**: a full-screen political map and a minimap with countries, provinces, cities, live war tracking and online players. It reads the server's public territory data (GET only) and never changes anything on the server or the site.
 
 ## Features
 

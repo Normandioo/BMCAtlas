@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, mc-26.1]
     tags: ['v*']
   workflow_dispatch:
 
@@ -27,16 +27,6 @@ jobs:
       - name: Build
         run: gradle build --no-daemon --stacktrace
 
-      - name: Inspect Minecraft API (debug)
-        if: always()
-        run: |
-          J=$(find ~/.gradle -name '*.jar' | grep -E '26\.1' | grep -iE 'minecraft' | grep -v -E 'sources|fabric-api|fabric-loader' | head -3)
-          echo "JARS: $J"
-          for j in $J; do
-            unzip -l $j | grep -E 'BlockColors|BlockTintSource|MouseHandler\.class|/Window\.class|InputConstants\.class|PlayerFaceExtractor' | head
-            for c in $(unzip -l $j | grep -oE 'net/minecraft/client/[A-Za-z/]*(BlockColors|BlockTintSource)\.class' | sed 's/\.class//;s#/#.#g'); do javap -public -cp $j $c | head -40; done
-          done
-
       - uses: actions/upload-artifact@v4
         with:
           name: bmcatlas-jar
@@ -50,7 +40,7 @@ jobs:
             echo "pre=false" >> "$GITHUB_OUTPUT"
           else
             ver=$(grep '^mod_version=' gradle.properties | cut -d= -f2)
-            echo "name=v${ver}-build.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+            echo "name=v${ver//+/-}-build.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
             echo "pre=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -63,3 +53,4 @@ jobs:
           name: ${{ steps.tag.outputs.name }}
           files: build/libs/*.jar
           generate_release_notes: true
+          make_latest: ${{ github.ref_name == 'main' }}
