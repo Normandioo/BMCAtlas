@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -16,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Lista de países, lida de config/hoi4map/countries.json. */
+/** Lista de países, lida de config/bmcatlas/countries.json. */
 final class Countries {
     static final class Country {
         String id;
@@ -33,7 +33,7 @@ final class Countries {
     private Countries() {}
 
     static Path file() {
-        return FabricLoader.getInstance().getConfigDir().resolve("hoi4map").resolve("countries.json");
+        return FabricLoader.getInstance().getConfigDir().resolve("bmcatlas").resolve("countries.json");
     }
 
     static void load() {
@@ -60,7 +60,7 @@ final class Countries {
                 }
             }
         } catch (IOException | RuntimeException e) {
-            Hoi4MapClient.LOG.error("Falha ao ler {}", f, e);
+            BmcAtlasClient.LOG.error("Falha ao ler {}", f, e);
         }
         MapData.ownersChanged();
     }

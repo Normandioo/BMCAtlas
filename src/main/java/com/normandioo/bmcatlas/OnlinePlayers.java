@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -199,14 +199,14 @@ final class OnlinePlayers {
     private static void poll(String base, String world) {
         String url = base + "up/world/" + world + "/" + System.currentTimeMillis();
         HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(8))
-                        .header("User-Agent", "hoi4map-fabric-mod").GET().build(),
+                        .header("User-Agent", "bmcatlas-fabric-mod").GET().build(),
                 HttpResponse.BodyHandlers.ofString()).whenComplete((response, err) -> {
             try {
                 if (err != null) throw new RuntimeException(err);
                 if (response.statusCode() != 200) throw new RuntimeException("HTTP " + response.statusCode());
                 INBOX.set(new Result(parse(response.body(), world), null));
             } catch (Exception e) {
-                Hoi4MapClient.LOG.debug("Dynmap sem resposta: {}", e.toString());
+                BmcAtlasClient.LOG.debug("Dynmap sem resposta: {}", e.toString());
                 INBOX.set(new Result(List.of(), e.getClass().getSimpleName()));
             }
         });

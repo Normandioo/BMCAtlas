@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -58,14 +58,14 @@ final class DynmapMarkers {
         lastPoll = now;
         String url = base + "tiles/_markers_/marker_" + SiteTerritories.dynmapWorld() + ".json";
         HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(8))
-                        .header("User-Agent", "hoi4map-fabric-mod").header("Cache-Control", "no-cache").GET().build(),
+                        .header("User-Agent", "bmcatlas-fabric-mod").header("Cache-Control", "no-cache").GET().build(),
                 HttpResponse.BodyHandlers.ofString()).whenComplete((response, err) -> {
             try {
                 if (err != null || response.statusCode() != 200) throw new RuntimeException(err != null ? err.toString() : "HTTP " + response.statusCode());
                 markers = parse(response.body());
                 markersAt = System.currentTimeMillis();
             } catch (RuntimeException e) {
-                Hoi4MapClient.LOG.debug("Marcadores do dynmap sem resposta: {}", e.toString());
+                BmcAtlasClient.LOG.debug("Marcadores do dynmap sem resposta: {}", e.toString());
             } finally {
                 BUSY.set(false);
             }

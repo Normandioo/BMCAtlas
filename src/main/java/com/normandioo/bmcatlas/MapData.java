@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -81,8 +81,8 @@ final class MapData {
         boolean ensureUploaded(int mode) {
             if (texture == null) {
                 image = new NativeImage(NativeImage.Format.RGBA, REGION_PX, REGION_PX, true);
-                texture = new DynamicTexture(() -> "hoi4map region", image);
-                id = Identifier.fromNamespaceAndPath(Hoi4MapClient.MOD_ID, "region/r" + (textureCounter++));
+                texture = new DynamicTexture(() -> "bmcatlas region", image);
+                id = Identifier.fromNamespaceAndPath(BmcAtlasClient.MOD_ID, "region/r" + (textureCounter++));
                 Minecraft.getInstance().getTextureManager().register(id, texture);
                 dirty = true;
             }
@@ -262,7 +262,7 @@ final class MapData {
     }
 
     private static Path dir() {
-        return FabricLoader.getInstance().getGameDir().resolve("hoi4map");
+        return FabricLoader.getInstance().getGameDir().resolve("bmcatlas");
     }
 
     static void ensureWorld(Minecraft mc) {
@@ -317,7 +317,7 @@ final class MapData {
                     REGIONS.put(key(rx, rz), r);
                 }
             } catch (IOException | DataFormatException e) {
-                Hoi4MapClient.LOG.warn("Cache de terreno ilegível: {}", regions, e);
+                BmcAtlasClient.LOG.warn("Cache de terreno ilegível: {}", regions, e);
             }
         }
         Path owners = dir().resolve(worldKey + ".owners.json");
@@ -331,7 +331,7 @@ final class MapData {
                     }
                 }
             } catch (IOException | RuntimeException e) {
-                Hoi4MapClient.LOG.warn("Donos de províncias ilegíveis: {}", owners, e);
+                BmcAtlasClient.LOG.warn("Donos de províncias ilegíveis: {}", owners, e);
             }
         }
         ownersVersion++;
@@ -366,7 +366,7 @@ final class MapData {
             }
             dirty = false;
         } catch (IOException e) {
-            Hoi4MapClient.LOG.warn("Falha ao salvar o mapa", e);
+            BmcAtlasClient.LOG.warn("Falha ao salvar o mapa", e);
         }
     }
 

@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -23,7 +23,7 @@ final class Minimap {
 
     /** Z alterna o minimapa ampliado (centro da tela). */
     static boolean expanded;
-    private static final String[] HEADING = {"S", "SO", "O", "NO", "N", "NE", "L", "SE"};
+    private static final String[] HEADING = {"S", "SW", "W", "NW", "N", "NE", "E", "SE"};
 
     static void render(GuiGraphics g, float partial) {
         Prefs.Data p = Prefs.get();
@@ -102,8 +102,8 @@ final class Minimap {
         g.drawString(font, "N", x + size / 2 - 2, y + 2, 0xFFECEBE4, true);
         g.fill(x - 3, y + size + 3, x + size + 3, y + size + (d != null ? 26 : 16), 0xE01E2123);
         g.drawString(font, "S", x + size / 2 - 2, y + size - 10, 0xFFB9B8B0, true);
-        g.drawString(font, "L", x + size - 9, y + size / 2 - 4, 0xFFB9B8B0, true);
-        g.drawString(font, "O", x + 4, y + size / 2 - 4, 0xFFB9B8B0, true);
+        g.drawString(font, "E", x + size - 9, y + size / 2 - 4, 0xFFB9B8B0, true);
+        g.drawString(font, "W", x + 4, y + size / 2 - 4, 0xFFB9B8B0, true);
         // direção para onde você olha (yaw 0 = sul, 90 = oeste, 180 = norte, 270 = leste)
         int dir = Math.floorMod(Math.round(net.minecraft.util.Mth.wrapDegrees(mc.player.getYRot()) / 45f), 8);
         String coords = (int) Math.floor(cx) + ", " + (int) Math.floor(cz) + "  " + HEADING[dir];

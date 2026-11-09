@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
@@ -47,7 +47,7 @@ final class MapCatalog {
     private static final Gson GSON = new Gson();
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private static volatile List<Entry> downloaded = List.of();
-    private static volatile String source = "nenhuma";
+    private static volatile String source = "none";
     private static volatile String error = "";
     private static Path cache;
 
@@ -64,10 +64,10 @@ final class MapCatalog {
         try {
             if (Files.exists(cache)) {
                 downloaded = parse(Files.readString(cache, StandardCharsets.UTF_8));
-                source = "cópia local";
+                source = "local copy";
             }
         } catch (IOException | RuntimeException e) {
-            Hoi4MapClient.LOG.warn("Cópia da lista de mapas ilegível: {}", e.toString());
+            BmcAtlasClient.LOG.warn("Cópia da lista de mapas ilegível: {}", e.toString());
         }
     }
 
@@ -150,7 +150,7 @@ final class MapCatalog {
     static void refresh() {
         String url = catalogUrl();
         if (url == null || url.isBlank()) return;
-        HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20)).header("User-Agent", "hoi4map-fabric-mod").GET().build(),
+        HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20)).header("User-Agent", "bmcatlas-fabric-mod").GET().build(),
                         HttpResponse.BodyHandlers.ofString())
                 .whenComplete((response, failure) -> {
                     try {
@@ -160,13 +160,13 @@ final class MapCatalog {
                         if (cache != null) Files.writeString(cache, response.body(), StandardCharsets.UTF_8);
                         boolean same = GSON.toJson(list).equals(GSON.toJson(downloaded));
                         downloaded = list;
-                        source = "servidor";
+                        source = "server";
                         error = "";
                         if (!same) SiteTerritories.catalogChanged();
                     } catch (IOException | RuntimeException e) {
                         error = e.getMessage() == null ? e.toString() : e.getMessage();
                         // sem catálogo (404 etc.) é normal: o servidor só tem um mapa
-                        Hoi4MapClient.LOG.debug("Lista de mapas indisponível em {}: {}", url, error);
+                        BmcAtlasClient.LOG.debug("Lista de mapas indisponível em {}: {}", url, error);
                     }
                 });
     }
@@ -177,12 +177,12 @@ final class MapCatalog {
         try {
             file = GSON.fromJson(json, FileModel.class);
         } catch (JsonSyntaxException e) {
-            throw new IllegalArgumentException("maps.json não é JSON válido: " + e.getMessage());
+            throw new IllegalArgumentException("maps.json is not valid JSON: " + e.getMessage());
         }
-        if (file == null || file.maps == null || file.maps.isEmpty()) throw new IllegalArgumentException("maps.json não lista mapas");
+        if (file == null || file.maps == null || file.maps.isEmpty()) throw new IllegalArgumentException("maps.json lists no maps");
         List<Entry> out = new ArrayList<>();
         for (Entry e : file.maps) {
-            if (!valid(e)) throw new IllegalArgumentException("um mapa do maps.json está sem key ou sem endereço de territórios");
+            if (!valid(e)) throw new IllegalArgumentException("a map in maps.json has no key or no territories address");
             out.add(e);
         }
         return List.copyOf(out);

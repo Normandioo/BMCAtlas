@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.server.IntegratedServer;
@@ -74,17 +74,17 @@ final class ChunkGen {
         if (mc.level != null) {
             WorldBorder wb = mc.level.getWorldBorder();
             if (wb.getSize() < 1.0E6) {
-                limitSource = "borda do mundo";
+                limitSource = "world border";
                 return new int[]{(int) Math.floor(wb.getMinX()), (int) Math.floor(wb.getMinZ()),
                         (int) Math.ceil(wb.getMaxX()) - 1, (int) Math.ceil(wb.getMaxZ()) - 1};
             }
         }
         int[] s = SiteTerritories.worldLimit();
         if (s != null) {
-            limitSource = "mapa do site";
+            limitSource = "site map";
             return s;
         }
-        limitSource = "desconhecido";
+        limitSource = "unknown";
         return null;
     }
 
@@ -113,7 +113,7 @@ final class ChunkGen {
         if (state != State.IDLE || mc.level == null || mc.player == null) return;
         int[] lim = computeLimit(mc);
         if (lim == null) {
-            message = "Não sei o tamanho do mapa: defina worldHalfSize em config/hoi4map/site.json.";
+            message = "Unknown map size: set worldHalfSize in config/bmcatlas/site.json.";
             return;
         }
         limit = lim;
@@ -147,7 +147,7 @@ final class ChunkGen {
             todo.sort((a, b) -> Long.compare(a[0], b[0]));
             order = new long[todo.size()];
             for (int i = 0; i < order.length; i++) order[i] = todo.get(i)[1];
-            message = order.length == 0 ? "Todos os chunks do limite já estão no mapa." : "Gerando pelo servidor interno...";
+            message = order.length == 0 ? "All chunks inside the limit are already on the map." : "Generating through the integrated server...";
             if (order.length == 0) return;
         } else {
             phase = Phase.PREP;
@@ -162,7 +162,7 @@ final class ChunkGen {
             stopCursor = 0;
             fixup = false;
             half = 0;
-            message = "Explorando pelo servidor (teleportes /tp)...";
+            message = "Exploring through the server (/tp teleports)...";
         }
         state = State.RUNNING;
     }
@@ -228,13 +228,13 @@ final class ChunkGen {
             return;
         }
         if (!mc.level.dimension().equals(dimension)) {
-            stop(mc, "Parado: você mudou de dimensão.");
+            stop(mc, "Stopped: you changed dimension.");
             return;
         }
         ticks++;
         if (ticks % 40 == 0) known = countKnown();
         if (ticks % 20 == 0 && !(mc.screen instanceof MapScreen)) {
-            mc.gui.setOverlayMessage(Component.literal("Gerando mapa: " + (int) (progress() * 100) + "%  (" + known + "/" + total + ")"), false);
+            mc.gui.setOverlayMessage(Component.literal("Generating map: " + (int) (progress() * 100) + "%  (" + known + "/" + total + ")"), false);
         }
         if (state == State.PAUSED) return;
         if (remote) tickRemote(mc);
@@ -247,11 +247,11 @@ final class ChunkGen {
         IntegratedServer srv = mc.getSingleplayerServer();
         ServerLevel sl = srv == null ? null : srv.getLevel(mc.level.dimension());
         if (sl == null) {
-            stop(mc, "Parado: o servidor interno não está disponível.");
+            stop(mc, "Stopped: the integrated server is not available.");
             return;
         }
         if (failures.get() > 200) {
-            stop(mc, "Parado: muitos chunks falharam (veja o log do jogo).");
+            stop(mc, "Stopped: too many chunks failed (see the game log).");
             return;
         }
         int submitted = 0;
@@ -263,7 +263,7 @@ final class ChunkGen {
                 try {
                     job(sl, cx, cz);
                 } catch (Throwable t) {
-                    if (failures.incrementAndGet() <= 5) Hoi4MapClient.LOG.warn("Falha ao gerar o chunk {},{}", cx, cz, t);
+                    if (failures.incrementAndGet() <= 5) BmcAtlasClient.LOG.warn("Falha ao gerar o chunk {},{}", cx, cz, t);
                 } finally {
                     inflight.decrementAndGet();
                 }
@@ -272,7 +272,7 @@ final class ChunkGen {
         }
         if (cursor >= order.length && inflight.get() == 0 && PATCHES.isEmpty()) {
             known = countKnown();
-            finish("Concluído: " + known + " de " + total + " chunks no mapa.");
+            finish("Done: " + known + " of " + total + " chunks on the map.");
         }
     }
 
@@ -323,7 +323,7 @@ final class ChunkGen {
         for (int x : xs) for (int z : zs) stops.add(new int[]{x, z});
         stops.sort((a, b) -> Long.compare(dist2(a, pcx, pcz), dist2(b, pcx, pcz)));
         stopCursor = 0;
-        message = "Explorando: pontos a cada " + (spacing * 16) + " blocos (alcance " + eff + " chunks).";
+        message = "Exploring: points every " + (spacing * 16) + " blocks (range " + eff + " chunks).";
     }
 
     private static long dist2(int[] s, int cx, int cz) {
@@ -404,7 +404,7 @@ final class ChunkGen {
                     lastLoaded = -1;
                 } else if (waited > 100) {
                     if (stopCursor <= 1 && !fixup) {
-                        stop(mc, "Parado: o /tp não funcionou (sem permissão de operador?).");
+                        stop(mc, "Stopped: /tp did not work (no operator permission?).");
                         return;
                     }
                     FAILED.add(MapData.key(target[0], target[1]));
@@ -448,7 +448,7 @@ final class ChunkGen {
             case RESTORE -> {
                 restore(mc);
                 known = countKnown();
-                finish("Concluído: " + known + " de " + total + " chunks no mapa.");
+                finish("Done: " + known + " of " + total + " chunks on the map.");
             }
             default -> { }
         }
