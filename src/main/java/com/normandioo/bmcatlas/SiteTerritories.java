@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -174,7 +174,7 @@ final class SiteTerritories {
         List<int[]> rings;
     }
 
-    /** config/hoi4map/site.json */
+    /** config/bmcatlas/site.json */
     static final class Settings {
         String url = "https://bmcmc.online/gaia/territories.json";
         int refreshMinutes = 30;
@@ -189,8 +189,6 @@ final class SiteTerritories {
         boolean showPlayers = true;
         /** Guerras marcadas "ao vivo" no site: quem segura cada cidade vem dos marcadores do dynmap. */
         boolean liveWar = true;
-        /** Espadas e bandeiras sobre as cidades em guerra. */
-        boolean warMarkers = true;
         /** Lista de mapas do servidor (maps.json); vazio = maps.json na raiz do site. */
         String mapsUrl = "";
         /** Chave do mapa em uso; vazio = automático (pelo endereço do servidor, senão o primeiro da lista). */
@@ -246,7 +244,7 @@ final class SiteTerritories {
 
     private static volatile Data data;
     private static volatile int version;
-    private static volatile String status = "sem dados";
+    private static volatile String status = "no data";
     private static Settings settings = new Settings();
     private static Path settingsFile, cacheFile;
     private static ScheduledExecutorService scheduler;
@@ -334,11 +332,6 @@ final class SiteTerritories {
         saveSettings();
     }
 
-    static void setWarMarkers(boolean v) {
-        settings.warMarkers = v;
-        saveSettings();
-    }
-
     static void setShowPlayers(boolean v) {
         settings.showPlayers = v;
         saveSettings();
@@ -349,7 +342,7 @@ final class SiteTerritories {
         try {
             Files.writeString(settingsFile, GSON.toJson(settings), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
-            Hoi4MapClient.LOG.warn("Não foi possível gravar {}", settingsFile, e);
+            BmcAtlasClient.LOG.warn("Não foi possível gravar {}", settingsFile, e);
         }
     }
 
@@ -360,10 +353,6 @@ final class SiteTerritories {
 
     static boolean liveWar() {
         return settings.liveWar;
-    }
-
-    static boolean warMarkers() {
-        return settings.warMarkers;
     }
 
     static String dynmapUrl() {
@@ -403,7 +392,7 @@ final class SiteTerritories {
     private static Path dir;
 
     static void init() {
-        dir = FabricLoader.getInstance().getConfigDir().resolve("hoi4map");
+        dir = FabricLoader.getInstance().getConfigDir().resolve("bmcatlas");
         settingsFile = dir.resolve("site.json");
         try {
             Files.createDirectories(dir);
@@ -414,10 +403,10 @@ final class SiteTerritories {
             if (settings.maps == null) settings.maps = new ArrayList<>();
             Files.writeString(settingsFile, GSON.toJson(settings), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
-            Hoi4MapClient.LOG.warn("Não foi possível ler {}", settingsFile, e);
+            BmcAtlasClient.LOG.warn("Não foi possível ler {}", settingsFile, e);
         }
         if (!settings.enabled) {
-            status = "desligado em site.json";
+            status = "disabled in site.json";
             return;
         }
         MapCatalog.init(dir);
@@ -427,7 +416,7 @@ final class SiteTerritories {
 
         // site: agora e depois a cada refreshMinutes (a lista de mapas primeiro, que pode mudar o mapa em uso)
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "hoi4map-site");
+            Thread t = new Thread(r, "bmcatlas-site");
             t.setDaemon(true);
             return t;
         });
@@ -458,7 +447,7 @@ final class SiteTerritories {
                     return;
                 }
             } catch (IOException | RuntimeException e) {
-                Hoi4MapClient.LOG.warn("Cópia ilegível: {}", p, e);
+                BmcAtlasClient.LOG.warn("Cópia ilegível: {}", p, e);
             }
         }
     }
@@ -490,10 +479,9 @@ final class SiteTerritories {
         cacheFile = cacheFileFor(e);
         data = null;
         version++;
-        status = "carregando " + (e == null ? "" : e.name) + "...";
+        status = "loading " + (e == null ? "" : e.name) + "...";
         OnlinePlayers.reset();
         DynmapMarkers.reset();
-        WarMarkers.clear();
         loadCache();
         if (scheduler != null) scheduler.execute(SiteTerritories::reload);
     }
@@ -527,7 +515,7 @@ final class SiteTerritories {
         Path cf = cacheFile;
         HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url))
                                 .timeout(Duration.ofSeconds(30))
-                                .header("User-Agent", "hoi4map-fabric-mod")
+                                .header("User-Agent", "bmcatlas-fabric-mod")
                                 .GET().build(),
                         HttpResponse.BodyHandlers.ofString())
                 .whenComplete((response, failure) -> {
@@ -539,8 +527,8 @@ final class SiteTerritories {
                         if (cf != null) Files.writeString(cf, response.body(), StandardCharsets.UTF_8);
                         apply(d, "site");
                     } catch (IOException | RuntimeException e) {
-                        if (data == null) status = "falhou: " + e;
-                        Hoi4MapClient.LOG.warn("Não foi possível baixar {}: {}", url, e.toString());
+                        if (data == null) status = "failed: " + e;
+                        BmcAtlasClient.LOG.warn("Não foi possível baixar {}: {}", url, e.toString());
                     } finally {
                         if (url.equals(loadingUrl)) loadingUrl = null;
                     }
@@ -550,8 +538,8 @@ final class SiteTerritories {
     private static void apply(Data d, String source) {
         data = d;
         version++;
-        status = source + ": " + d.ids.length + " países, " + d.n + " províncias";
-        Hoi4MapClient.LOG.info("Territórios ({}): {} países, {} províncias {}", source, d.ids.length, d.n, d.generated);
+        status = source + ": " + d.ids.length + " countries, " + d.n + " provinces";
+        BmcAtlasClient.LOG.info("Territórios ({}): {} países, {} províncias {}", source, d.ids.length, d.n, d.generated);
     }
 
     // ------------------------------------------------------------------ leitura
@@ -559,8 +547,8 @@ final class SiteTerritories {
     @SuppressWarnings("unchecked")
     private static Data parse(String json) {
         FileModel f = GSON.fromJson(json, FileModel.class);
-        if (f == null || f.countries == null || f.provinces == null) throw new IllegalArgumentException("não é um territories.json");
-        if (f.format != 1) throw new IllegalArgumentException("formato " + f.format + " não suportado");
+        if (f == null || f.countries == null || f.provinces == null) throw new IllegalArgumentException("not a territories.json");
+        if (f.format != 1) throw new IllegalArgumentException("format " + f.format + " not supported");
 
         Data d = new Data();
         d.generated = f.generated == null ? "" : f.generated;
@@ -642,7 +630,7 @@ final class SiteTerritories {
             double mx = sx[c] / w[c], mz = sz[c] / w[c];
             d.shape[c] = new double[]{mx, mz, sxx[c] / w[c] - mx * mx, szz[c] / w[c] - mz * mz, sxz[c] / w[c] - mx * mz, w[c]};
         }
-        if (n == 0) throw new IllegalArgumentException("sem províncias");
+        if (n == 0) throw new IllegalArgumentException("no provinces");
         d.index = byId;
         d.fit = new double[nc][];
         d.fitAsked = new boolean[nc];

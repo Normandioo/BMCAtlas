@@ -1,10 +1,10 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import java.util.Objects;
 
 /**
  * Converte os pixels brutos de uma região (cores reais do terreno) na imagem final,
- * no estilo do mapa de Hearts of Iron IV: mar azul-marinho escuro, terra dessaturada
+ * in a dark grand-strategy style: mar azul-marinho escuro, terra dessaturada
  * com relevo forte, países tingidos e brilho ao longo das fronteiras.
  */
 final class MapStyle {

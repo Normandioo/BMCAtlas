@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;

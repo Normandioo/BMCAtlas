@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -25,7 +25,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
-/** Tela cheia do mapa, no estilo do menu de mapa do Hearts of Iron IV. */
+/** Tela cheia do mapa, with a bronze-framed grand-strategy look. */
 public class MapScreen extends Screen {
     private static final int BTN = 26;       // lado dos botões de ícone
     private static final int PW = 272;       // largura do painel
@@ -160,7 +160,7 @@ public class MapScreen extends Screen {
     private static final Map<String, Integer> TEXT_WIDTH = new HashMap<>();
 
     public MapScreen() {
-        super(Component.literal("Mapa"));
+        super(Component.literal("Map"));
     }
 
     /** O modo com que o minimapa pinta o terreno: o do mapa grande, mas os de relações viram o político. */
@@ -198,7 +198,7 @@ public class MapScreen extends Screen {
     @Override
     protected void init() {
         String oldQuery = searchBox == null ? "" : searchBox.getValue();
-        searchBox = new EditBox(font, 0, 0, 200, 12, Component.literal("Buscar"));
+        searchBox = new EditBox(font, 0, 0, 200, 12, Component.literal("Search"));
         searchBox.setMaxLength(40);
         searchBox.setBordered(false);
         searchBox.setValue(oldQuery);
@@ -303,31 +303,31 @@ public class MapScreen extends Screen {
         panelVisible = false;
         cardVisible = false;
         if (relationalMode() && !siteMode()) mode = MODE_POLITICAL;
-        Perf.begin("cores");
+        Perf.begin("colors");
         refreshOverrides();
-        Perf.end("cores");
+        Perf.end("colors");
 
         g.fill(0, 0, width, height, 0xFF0B1628);
-        Perf.begin("mapa total");
+        Perf.begin("map total");
         drawMap(g, mouseX, mouseY);
-        Perf.end("mapa total");
+        Perf.end("map total");
         if (photoMode) {
             drawPhotoHint(g);
             return;
         }
 
-        Perf.begin("barra");
+        Perf.begin("bar");
         drawBar(g, mouseX, mouseY);
-        Perf.end("barra");
-        Perf.begin("barra de cima");
+        Perf.end("bar");
+        Perf.begin("top bar");
         drawTopBar(g, mouseX, mouseY);
-        Perf.end("barra de cima");
-        Perf.begin("painel");
+        Perf.end("top bar");
+        Perf.begin("panel");
         drawPanel(g, mouseX, mouseY);
-        Perf.end("painel");
-        Perf.begin("cartão");
+        Perf.end("panel");
+        Perf.begin("card");
         drawCard(g, mouseX, mouseY);
-        Perf.end("cartão");
+        Perf.end("card");
         Perf.begin("outliner");
         drawOutliner(g, mouseX, mouseY);
         Perf.end("outliner");
@@ -344,7 +344,7 @@ public class MapScreen extends Screen {
         if (!Perf.on) return;
         int y = height - 14 - Perf.values().size() * 10 - 12, w = 190;
         g.fill(6, y - 4, 6 + w, height - 6, 0xD0101214);
-        g.drawString(font, "Desempenho (F7 fecha), ms por quadro", 10, y, COL_TEXT, false);
+        g.drawString(font, "Performance (F7 closes), ms per frame", 10, y, COL_TEXT, false);
         y += 11;
         for (Map.Entry<String, double[]> e : Perf.values().entrySet()) {
             double ms = e.getValue()[0];
@@ -371,8 +371,8 @@ public class MapScreen extends Screen {
     /** A guerra que o minimapa acompanha (a escolhida no mapa, senão a primeira em andamento). */
     static SiteTerritories.WarInfo minimapWar(SiteTerritories.Data d) {
         List<SiteTerritories.WarInfo> wars = Relations.wars(d);
-        SiteTerritories.WarInfo w = warSel >= 0 && warSel < wars.size() ? wars.get(warSel) : WarMarkers.followed(d, null);
-        return w != null && w.sides != null && w.sides.size() >= 2 && WarMarkers.running(w) ? w : null;
+        SiteTerritories.WarInfo w = warSel >= 0 && warSel < wars.size() ? wars.get(warSel) : WarStatus.followed(d, null);
+        return w != null && w.sides != null && w.sides.size() >= 2 && WarStatus.running(w) ? w : null;
     }
 
     static RemoteImages.Img noticeFlag(SiteTerritories.Data d, int country) {
@@ -484,7 +484,7 @@ public class MapScreen extends Screen {
         int rz0 = (int) Math.floor(topB / MapData.REGION_PX);
         int rz1 = (int) Math.floor(botB / MapData.REGION_PX);
         int uploads = 0;
-        Perf.begin("terreno");
+        Perf.begin("terrain");
         for (int rx = rx0; rx <= rx1; rx++) {
             for (int rz = rz0; rz <= rz1; rz++) {
                 MapData.Region r = MapData.region(rx, rz, false);
@@ -506,7 +506,7 @@ public class MapScreen extends Screen {
             }
         }
 
-        Perf.end("terreno");
+        Perf.end("terrain");
 
         SiteTerritories.Data d = SiteTerritories.data();
         if (!site) {
@@ -514,25 +514,24 @@ public class MapScreen extends Screen {
             if (mode == MODE_POLITICAL) drawManualNames(g);
             drawManualSelection(g);
         } else if (d != null) {
-            Perf.begin("ondas");
+            Perf.begin("waves");
             if (mode == MODE_WAR) drawWaves(g);
-            Perf.end("ondas");
+            Perf.end("waves");
             if (mode == MODE_POLITICAL || rel) drawSiteNames(g, d);
-            Perf.begin("frente");
+            Perf.begin("front");
             drawWarFront(g, d);
-            Perf.end("frente");
-            Perf.begin("cidades");
+            Perf.end("front");
+            Perf.begin("cities");
             drawCities(g, d, mouseX, mouseY);
-            Perf.end("cidades");
-            Perf.begin("espadas");
-            drawWarMarkers(g, d);
-            Perf.end("espadas");
+            Perf.end("cities");
+            Perf.begin("markers");
+            Perf.end("markers");
         }
         if (site && d != null && simActive()) drawSimRings(g, d);
         drawMarksAndMeasure(g, mouseX, mouseY);
-        Perf.begin("jogadores");
+        Perf.begin("players");
         drawOnlinePlayers(g, site ? d : null, mouseX, mouseY);
-        Perf.end("jogadores");
+        Perf.end("players");
         drawPlayer(g);
     }
 
@@ -1084,7 +1083,7 @@ public class MapScreen extends Screen {
         if (panelVisible && tab == TAB_SET) return;
         boolean side = panelVisible && panelX <= MARGIN;
         int hx = side ? panelX + panelW + 8 : MARGIN;
-        String hint = "Arraste: mover  |  Roda: zoom  |  Clique: selecionar  |  1-5: modos";
+        String hint = "Drag: move  |  Wheel: zoom  |  Click: select  |  1-5: modes";
         if (!side) g.drawString(font, hint, MARGIN, height - 12, COL_DIM, true);
         if (blockedAt(hits, mouseX, mouseY)) return;
         int bxx = (int) Math.floor(blockX(mouseX, mouseY));
@@ -1171,7 +1170,7 @@ public class MapScreen extends Screen {
             if (flag != null) drawImage(g, flag, x + 2, 5, 34, 20);
             else g.fill(x + 2, 5, x + 36, 25, 0xFF000000 | d.rgb[me]);
             g.drawString(font, fit(d.labels[me].toUpperCase(Locale.ROOT), 62), x + 42, 6, 0xFFECEBE4, false);
-            g.drawString(font, "Seu país", x + 42, 17, COL_DIM, false);
+            g.drawString(font, "Your country", x + 42, 17, COL_DIM, false);
             hits.add(new Hit(x, 3, 106, 24, () -> selectCountry(me), d.names[me]));
             x += 108;
             g.fill(x, 5, x + 1, 25, 0xFF3E4245);
@@ -1203,7 +1202,7 @@ public class MapScreen extends Screen {
         }
         MapCatalog.Entry cur = SiteTerritories.activeMap();
         String mapName = fit(cur == null ? "MAPA" : cur.name.toUpperCase(Locale.ROOT), 80);
-        String src = site ? "Fonte: site" : "Fonte: manual";
+        String src = site ? "Source: site" : "Source: manual";
         int nameW = Math.max(font.width(mapName), font.width(src));
         rx -= 3;
         g.drawString(font, mapName, rx - font.width(mapName), 6, 0xFFECEBE4, false);
@@ -1211,12 +1210,12 @@ public class MapScreen extends Screen {
         int limit = rx - nameW - 8;
 
         if (site) {
-            x = stat(g, x, limit, "war", activeWarCount(), 0xFFF0A090, "Guerras em andamento", this::enterWar, mouseX, mouseY);
+            x = stat(g, x, limit, "war", activeWarCount(), 0xFFF0A090, "Wars in progress", this::enterWar, mouseX, mouseY);
             int allies = d.war == null || d.war.alliances == null ? 0 : d.war.alliances.size();
-            x = stat(g, x, limit, "diplomacy", allies, COL_TEXT, "Alianças", () -> openPanorama(0), mouseX, mouseY);
-            x = stat(g, x, limit, "treaty", outTruces.size(), COL_TEXT, "Tréguas", () -> openPanorama(4), mouseX, mouseY);
-            x = stat(g, x, limit, "political", outUlts.size(), COL_LINK, "Ultimatos pendentes", () -> openPanorama(5), mouseX, mouseY);
-            if (SiteTerritories.showPlayers() && showPlayers) stat(g, x, limit, "players", OnlinePlayers.list().size(), 0xFF8FD08F, "Jogadores online", null, mouseX, mouseY);
+            x = stat(g, x, limit, "diplomacy", allies, COL_TEXT, "Alliances", () -> openPanorama(0), mouseX, mouseY);
+            x = stat(g, x, limit, "treaty", outTruces.size(), COL_TEXT, "Truces", () -> openPanorama(4), mouseX, mouseY);
+            x = stat(g, x, limit, "political", outUlts.size(), COL_LINK, "Pending ultimatums", () -> openPanorama(5), mouseX, mouseY);
+            if (SiteTerritories.showPlayers() && showPlayers) stat(g, x, limit, "players", OnlinePlayers.list().size(), 0xFF8FD08F, "Online players", null, mouseX, mouseY);
         }
     }
 
@@ -1245,8 +1244,8 @@ public class MapScreen extends Screen {
             if (hover) g.fill(x + 2, ry, x + w - 2, ry + 14, 0x308F959A);
             Integer ia = idx.get(Relations.norm(t.a())), ib = t.b() == null ? null : idx.get(Relations.norm(t.b()));
             if (ia != null) miniFlag(g, d, ia, x + 5, ry + 1);
-            String left = countdown(t.until() - now).replace("em ", "");
-            String name = (ia != null ? d.labels[ia] : t.a()) + (t.b() == null ? "" : " e " + (ib != null ? d.labels[ib] : t.b()));
+            String left = countdown(t.until() - now).replace("in ", "");
+            String name = (ia != null ? d.labels[ia] : t.a()) + (t.b() == null ? "" : " and " + (ib != null ? d.labels[ib] : t.b()));
             int lw = font.width(left);
             g.drawString(font, fit(name, w - 40 - lw), x + 30, ry + 3, COL_TEXT, false);
             g.drawString(font, left, x + w - 6 - lw, ry + 3, COL_LINK, false);
@@ -1269,13 +1268,13 @@ public class MapScreen extends Screen {
             int n = Math.min(3, outWars.size()), h = 18 + n * 28;
             if (y + h <= maxY) {
                 List<SiteTerritories.WarInfo> all = Relations.wars(d);
-                int ry = outlineFrame(g, x, y, w, h, "GUERRAS", String.valueOf(outWars.size()));
+                int ry = outlineFrame(g, x, y, w, h, "WARS", String.valueOf(outWars.size()));
                 for (int i = 0; i < n; i++) {
                     SiteTerritories.WarInfo war = outWars.get(i);
                     boolean hover = mouseX >= x + 2 && mouseX < x + w - 2 && mouseY >= ry && mouseY < ry + 28;
                     if (hover) g.fill(x + 2, ry, x + w - 2, ry + 28, 0x308F959A);
                     long end = parseMs(war.ended);
-                    String left = end != NONE && end > now ? countdown(end - now).replace("em ", "") : "";
+                    String left = end != NONE && end > now ? countdown(end - now).replace("in ", "") : "";
                     int lw = font.width(left);
                     g.drawString(font, fit(warName(war), w - 14 - lw), x + 6, ry + 2, COL_TEXT, false);
                     g.drawString(font, left, x + w - 6 - lw, ry + 2, COL_LINK, false);
@@ -1290,13 +1289,13 @@ public class MapScreen extends Screen {
                 y += h + 3;
             }
         }
-        y = outlineTimed(g, d, "ULTIMATOS", outUlts, 5, x, y, w, maxY, now, mouseX, mouseY);
-        y = outlineTimed(g, d, "TRÉGUAS", outTruces, 4, x, y, w, maxY, now, mouseX, mouseY);
+        y = outlineTimed(g, d, "ULTIMATUMS", outUlts, 5, x, y, w, maxY, now, mouseX, mouseY);
+        y = outlineTimed(g, d, "TRUCES", outTruces, 4, x, y, w, maxY, now, mouseX, mouseY);
 
         if (relationalMode() && !legend.isEmpty()) {
             int rows = Math.min(Math.min(legend.size(), 9), (maxY - y - 18) / 12);
             if (rows > 0) {
-                int ry = outlineFrame(g, x, y, w, 18 + rows * 12, "LEGENDA", "");
+                int ry = outlineFrame(g, x, y, w, 18 + rows * 12, "LEGEND", "");
                 for (int i = 0; i < rows; i++) {
                     Relations.Rel rel = legend.get(i);
                     g.fill(x + 6, ry + 1, x + 20, ry + 10, 0xFF05080C);
@@ -1394,42 +1393,42 @@ public class MapScreen extends Screen {
     private List<Btn> barButtons() {
         boolean site = siteMode();
         boolean haveSite = SiteTerritories.data() != null;
-        String needSite = "\nRequer dados do site.";
+        String needSite = "\nRequires site data.";
         List<Btn> b = new ArrayList<>();
-        b.add(new Btn("physical", mode == MODE_PHYSICAL, true, "Mapa físico\nRelevo e terreno reais. (1)", () -> mode = MODE_PHYSICAL, false));
-        b.add(new Btn("political", mode == MODE_POLITICAL, true, "Mapa político\nPaíses tingidos e nomes. (2)", () -> mode = MODE_POLITICAL, false));
-        b.add(new Btn("provinces", mode == MODE_PROVINCES, true, "Províncias\nDivisões de cada país. (3)", () -> mode = MODE_PROVINCES, false));
-        b.add(new Btn("diplomacy", mode == MODE_DIPLOMACY, site, "Diplomacia\nRelações de um país ou de uma aliança. (4)" + (site ? "" : needSite), this::enterDiplomacy, false));
-        b.add(new Btn("war", mode == MODE_WAR, site, "Guerra\nLados, cidades tomadas e disputadas. (5)" + (site ? "" : needSite), this::enterWar, false));
+        b.add(new Btn("physical", mode == MODE_PHYSICAL, true, "Physical map\nReal relief and terrain. (1)", () -> mode = MODE_PHYSICAL, false));
+        b.add(new Btn("political", mode == MODE_POLITICAL, true, "Political map\nTinted countries and names. (2)", () -> mode = MODE_POLITICAL, false));
+        b.add(new Btn("provinces", mode == MODE_PROVINCES, true, "Provinces\nDivisions of each country. (3)", () -> mode = MODE_PROVINCES, false));
+        b.add(new Btn("diplomacy", mode == MODE_DIPLOMACY, site, "Diplomacy\nRelations of a country or an alliance. (4)" + (site ? "" : needSite), this::enterDiplomacy, false));
+        b.add(new Btn("war", mode == MODE_WAR, site, "War\nSides, taken and contested cities. (5)" + (site ? "" : needSite), this::enterWar, false));
 
-        b.add(new Btn("list", tab == TAB_LIST, true, "Lista de países", () -> tab = tab == TAB_LIST ? TAB_NONE : TAB_LIST, true));
-        b.add(new Btn("treaty", tab == TAB_DIPLOMENU, site, "Panorama diplomático\nAlianças, NAP ativos, purge e diplolock." + (site ? "" : needSite),
+        b.add(new Btn("list", tab == TAB_LIST, true, "Country list", () -> tab = tab == TAB_LIST ? TAB_NONE : TAB_LIST, true));
+        b.add(new Btn("treaty", tab == TAB_DIPLOMENU, site, "Diplomatic overview\nAlliances, active NAPs, purge and diplolock." + (site ? "" : needSite),
                 () -> {
                     tab = tab == TAB_DIPLOMENU ? TAB_NONE : TAB_DIPLOMENU;
                     SCROLL[TAB_DIPLOMENU] = 0;
                 }, false));
-        b.add(new Btn("cities", showCities, site, "Cidades\n" + (showCities ? "Ligado" : "Desligado") + (site ? "" : needSite), () -> showCities = !showCities, true));
-        b.add(new Btn("limits", showLimits, site, "Limites das cidades\n" + (showLimits ? "Ligado" : "Desligado") + (site ? "" : needSite), () -> {
+        b.add(new Btn("cities", showCities, site, "Cities\n" + (showCities ? "On" : "Off") + (site ? "" : needSite), () -> showCities = !showCities, true));
+        b.add(new Btn("limits", showLimits, site, "City limits\n" + (showLimits ? "On" : "Off") + (site ? "" : needSite), () -> {
             showLimits = !showLimits;
             Prefs.get().limits = showLimits;
             Prefs.save();
         }, false));
         boolean dyn = SiteTerritories.showPlayers();
-        String playersTip = "Jogadores online\n" + (!dyn ? "Desativado em site.json" : !showPlayers ? "Desligado"
-                : OnlinePlayers.live() ? "Ligado (" + OnlinePlayers.list().size() + " no mapa, via dynmap)"
-                : OnlinePlayers.error() != null ? "Ligado (dynmap sem resposta: só quem está por perto)" : "Ligado (carregando...)");
+        String playersTip = "Online players\n" + (!dyn ? "Disabled in site.json" : !showPlayers ? "Off"
+                : OnlinePlayers.live() ? "On (" + OnlinePlayers.list().size() + " on the map, via dynmap)"
+                : OnlinePlayers.error() != null ? "On (dynmap not responding: only nearby players)" : "On (loading...)");
         b.add(new Btn("players", showPlayers && dyn, dyn, playersTip, () -> showPlayers = !showPlayers, false));
 
-        b.add(new Btn("center", false, true, "Centralizar em você", this::centerOnPlayer, true));
-        String sourceTip = !haveSite ? "Fonte: manual\nSem dados do site."
-                : SiteTerritories.useSite ? "Fonte: site\nClique para usar o modo manual." : "Fonte: manual\nClique para usar o site.";
+        b.add(new Btn("center", false, true, "Center on you", this::centerOnPlayer, true));
+        String sourceTip = !haveSite ? "Source: manual\nNo site data."
+                : SiteTerritories.useSite ? "Source: site\nClick to use manual mode." : "Source: manual\nClick to use the site.";
         b.add(new Btn("source", haveSite && SiteTerritories.useSite, haveSite, sourceTip, () -> {
             SiteTerritories.useSite = !SiteTerritories.useSite;
             tab = TAB_NONE;
             selCity = -1;
             MapData.ownersChanged();
         }, false));
-        b.add(new Btn("reload", false, true, "Recarregar países e site", () -> {
+        b.add(new Btn("reload", false, true, "Reload countries and site", () -> {
             Countries.load();
             SiteTerritories.reload();
         }, false));
@@ -1440,20 +1439,20 @@ public class MapScreen extends Screen {
             int at = -1;
             for (int i = 0; i < maps.size(); i++) if (cur != null && maps.get(i).key.equalsIgnoreCase(cur.key)) at = i;
             final MapCatalog.Entry next = maps.get((at + 1) % maps.size());
-            b.add(new Btn("maps", false, true, "Mapa: " + (cur == null ? "padrão" : cur.name) + "\nClique para trocar para " + next.name + ".", () -> {
+            b.add(new Btn("maps", false, true, "Map: " + (cur == null ? "default" : cur.name) + "\nClick to switch to " + next.name + ".", () -> {
                 selCity = -1;
                 setSite(-1);
                 SiteTerritories.selectMap(next.key);
             }, false));
         }
-        b.add(new Btn("settings", tab == TAB_SET, true, "Configurações\nAparência, jogadores, guerra, minimapa e mapas.", () -> {
+        b.add(new Btn("settings", tab == TAB_SET, true, "Settings\nAppearance, players, war, minimap and maps.", () -> {
             tab = tab == TAB_SET ? TAB_NONE : TAB_SET;
             SCROLL[TAB_SET] = 0;
         }, false));
 
         boolean genRunning = ChunkGen.state != ChunkGen.State.IDLE;
         b.add(new Btn("gen", tab == TAB_GEN || genRunning, true,
-                genRunning ? "Gerador de chunks\nEm andamento." : "Gerar todos os chunks do mapa", () -> {
+                genRunning ? "Chunk generator\nIn progress." : "Generate all map chunks", () -> {
                     genConfirm = false;
                     tab = tab == TAB_GEN ? TAB_NONE : TAB_GEN;
                 }, false));
@@ -1476,15 +1475,15 @@ public class MapScreen extends Screen {
             }
         }
         boolean site = siteMode();
-        top.add(new Btn("war", tab == TAB_WAR, site, "Guerras\nLista, placar, cidades e Lei 7." + (site ? "" : "\nRequer dados do site."), () -> {
+        top.add(new Btn("war", tab == TAB_WAR, site, "Wars\nList, scoreboard, cities and Law 7." + (site ? "" : "\nRequires site data."), () -> {
             if (tab == TAB_WAR) tab = TAB_NONE;
             else enterWar();
         }, false));
-        top.add(new Btn("history", tab == TAB_HIST, site, "Histórico\nEventos, história do mundo e ranking." + (site ? "" : "\nRequer dados do site."), () -> {
+        top.add(new Btn("history", tab == TAB_HIST, site, "History\nEvents, world history and ranking." + (site ? "" : "\nRequires site data."), () -> {
             tab = tab == TAB_HIST ? TAB_NONE : TAB_HIST;
             SCROLL[TAB_HIST] = 0;
         }, false));
-        right.add(0, new Btn("search", searchOpen, true, "Buscar\nPaíses, cidades e jogadores. Também mede distâncias e marca pontos.", () -> {
+        right.add(0, new Btn("search", searchOpen, true, "Search\nCountries, cities and players. Also measures distances and marks points.", () -> {
             if (searchOpen) closeSearch();
             else openSearch();
         }, false));
@@ -1520,12 +1519,12 @@ public class MapScreen extends Screen {
         hits.add(new Hit(x0, y0, barW, barH, null, null));
         g.fill(x0 + 4, y0 + 4, x0 + barW - 4, y0 + 16, 0xFF33373A);
         g.fill(x0 + 4, y0 + 16, x0 + barW - 4, y0 + 17, 0xFF0A0B08);
-        String name = !siteMode() ? "MODO MANUAL" : switch (mode) {
-            case MODE_PHYSICAL -> "MAPA FÍSICO";
-            case MODE_PROVINCES -> "PROVÍNCIAS";
-            case MODE_DIPLOMACY -> "DIPLOMACIA";
-            case MODE_WAR -> "GUERRA";
-            default -> "MAPA POLÍTICO";
+        String name = !siteMode() ? "MANUAL MODE" : switch (mode) {
+            case MODE_PHYSICAL -> "PHYSICAL MAP";
+            case MODE_PROVINCES -> "PROVINCES";
+            case MODE_DIPLOMACY -> "DIPLOMACY";
+            case MODE_WAR -> "WAR";
+            default -> "POLITICAL MAP";
         };
         spaced(g, name, x0 + (barW - spacedWidth(name)) / 2, y0 + 6, 0xFFCFD3D1, false);
         for (int i = 0; i < bar.size(); i++) {
@@ -1710,7 +1709,7 @@ public class MapScreen extends Screen {
         g.fill(cx + 1, cyy + 1, cx + 13, cyy + 2, 0xFFA24A3F);
         g.fill(cx + 1, cyy + 1, cx + 2, cyy + 13, 0xFFA24A3F);
         g.drawString(font, "X", cx + 5, cyy + 3, 0xFFF4C4B4, false);
-        hits.add(new Hit(cx, cyy, 14, 14, close, "Fechar"));
+        hits.add(new Hit(cx, cyy, 14, 14, close, "Close"));
         headRed = false;
         return y + hh + 5;
     }
@@ -1898,7 +1897,7 @@ public class MapScreen extends Screen {
         int c = d.provCountry[selSite];
         Map<String, String> info = d.info[c];
         int top = header(g, d.rgb[c], d.names[c], info.get("type"), flagOf(d, c), mouseX, mouseY, this::closePanel);
-        top = tabStrip(g, top, new String[]{"Geral", "Localidades", "Diplomacia", "População"}, infoTab, mouseX, mouseY, i -> {
+        top = tabStrip(g, top, new String[]{"General", "Localities", "Diplomacy", "Population"}, infoTab, mouseX, mouseY, i -> {
             infoTab = i;
             SCROLL[TAB_INFO] = 0;
         });
@@ -1908,41 +1907,41 @@ public class MapScreen extends Screen {
         refreshAreas(d);
         int cityCount = 0;
         for (SiteTerritories.Locality l : d.localities) if (l.countryIdx == c) cityCount++;
-        statRow(g, new String[][]{{String.valueOf(d.provinceCount[c]), "Províncias"}, {String.valueOf(cityCount), "Cidades"}, {String.valueOf(d.population[c]), "Cidadãos"}, {areaPct(c), "Do mapa"}});
+        statRow(g, new String[][]{{String.valueOf(d.provinceCount[c]), "Provinces"}, {String.valueOf(cityCount), "Cities"}, {String.valueOf(d.population[c]), "Citizens"}, {areaPct(c), "Of the map"}});
         int bxx = bx + 9;
-        textButton(g, bxx, cy, 124, 16, "Ver relações", mouseX, mouseY, true, () -> {
+        textButton(g, bxx, cy, 124, 16, "View relations", mouseX, mouseY, true, () -> {
             dipFocus = c;
             dipAlliance = -1;
             mode = MODE_DIPLOMACY;
         });
-        textButton(g, bxx + 130, cy, bw - 18 - 130, 16, "Centralizar", mouseX, mouseY, true, () -> selectCountry(c));
+        textButton(g, bxx + 130, cy, bw - 18 - 130, 16, "Center", mouseX, mouseY, true, () -> selectCountry(c));
         cy += 20;
 
-        section(g, "INFORMAÇÕES");
+        section(g, "INFORMATION");
         String official = info.get("officialName");
-        kv(g, "Nome oficial", official == null ? d.names[c] : official);
-        kv(g, "Tipo", info.get("type"));
-        kv(g, "Formação", info.get("formed"));
-        kv(g, "Governo", info.get("government"));
-        kv(g, "Líder", info.get("leader"));
+        kv(g, "Official name", official == null ? d.names[c] : official);
+        kv(g, "Type", info.get("type"));
+        kv(g, "Founded", info.get("formed"));
+        kv(g, "Government", info.get("government"));
+        kv(g, "Leader", info.get("leader"));
         kv(g, "Capital", info.get("capital"));
-        kv(g, "Etnia", info.get("ethnicity"));
-        kv(g, "Gentílico", info.get("demonym"));
+        kv(g, "Ethnicity", info.get("ethnicity"));
+        kv(g, "Demonym", info.get("demonym"));
 
-        section(g, "TERRITÓRIO");
-        kv(g, "Províncias", String.valueOf(d.provinceCount[c]));
-        kv(g, "Selecionada", d.provLabel[selSite]);
+        section(g, "TERRITORY");
+        kv(g, "Provinces", String.valueOf(d.provinceCount[c]));
+        kv(g, "Selected", d.provLabel[selSite]);
         int cities = 0;
         for (SiteTerritories.Locality l : d.localities) if (l.countryIdx == c) cities++;
-        kv(g, "Localidades", String.valueOf(cities));
-        kv(g, "População", String.valueOf(d.population[c]));
-        kv(g, "Prazo de purge", countryPurge(d, c));
+        kv(g, "Localities", String.valueOf(cities));
+        kv(g, "Population", String.valueOf(d.population[c]));
+        kv(g, "Purge deadline", countryPurge(d, c));
         }
 
         List<SiteTerritories.Locality> places = placesOf(d, c);
-        if (infoTab == 1 && places.isEmpty()) paragraph(g, "Nenhuma localidade registrada.", COL_DIM);
+        if (infoTab == 1 && places.isEmpty()) paragraph(g, "No localities recorded.", COL_DIM);
         if (infoTab == 1 && !places.isEmpty()) {
-            section(g, "LOCALIDADES (" + places.size() + ")  -  clique para ir");
+            section(g, "LOCALITIES (" + places.size() + ")  -  click to go");
             for (SiteTerritories.Locality l : places) {
                 int rowTop = cy;
                 if (visible(rowTop, 16)) {
@@ -1961,7 +1960,7 @@ public class MapScreen extends Screen {
                     int kw = kind == null ? 0 : Math.min(font.width(kind), 90);
                     g.drawString(font, fit(pretty(l.name), bw - 66 - kw), bx + 30, rowTop + 4, isSel ? 0xFFFFF2B0 : COL_TEXT, false);
                     if (kind != null) g.drawString(font, fit(kind, 90), bx + bw - 12 - kw, rowTop + 4, COL_DIM, false);
-                    hits.add(new Hit(bx + 6, rowTop, bw - 12, 16, () -> focusCity(l), "Ir para " + pretty(l.name)));
+                    hits.add(new Hit(bx + 6, rowTop, bw - 12, 16, () -> focusCity(l), "Go to " + pretty(l.name)));
                 }
                 rowIdx++;
                 cy += 16;
@@ -1969,28 +1968,28 @@ public class MapScreen extends Screen {
         }
 
         SiteTerritories.Diplomacy dip = d.diplomacy[c];
-        if (infoTab == 2 && dip == null) paragraph(g, "Nenhuma relação registrada.", COL_DIM);
+        if (infoTab == 2 && dip == null) paragraph(g, "No relations recorded.", COL_DIM);
         if (infoTab == 2 && dip != null) {
-            section(g, "DIPLOMACIA");
-            kv(g, "Suserano", join(dip.overlord));
-            kv(g, "Súditos", join(dip.subject));
-            kv(g, "Aliados", join(dip.allies));
-            kv(g, "Pacto (NAP)", join(dip.nap));
-            kv(g, "Alianças", join(dip.alliances));
+            section(g, "DIPLOMACY");
+            kv(g, "Overlord", join(dip.overlord));
+            kv(g, "Subjects", join(dip.subject));
+            kv(g, "Allies", join(dip.allies));
+            kv(g, "Pact (NAP)", join(dip.nap));
+            kv(g, "Alliances", join(dip.alliances));
             if (dip.wars != null && !dip.wars.isEmpty()) {
                 List<String> wars = new ArrayList<>();
                 for (SiteTerritories.WarRef w : dip.wars) {
-                    String side = "attacker".equals(w.side) ? "atacante" : "defender".equals(w.side) ? "defensor" : w.side;
+                    String side = "attacker".equals(w.side) ? "attacker" : "defender".equals(w.side) ? "defender" : w.side;
                     wars.add(w.name + (side == null ? "" : " (" + side + ")"));
                 }
-                kv(g, "Guerras", join(wars));
+                kv(g, "Wars", join(wars));
             }
         }
 
         List<String> people = d.people[c];
-        if (infoTab == 3 && (people == null || people.isEmpty())) paragraph(g, "Nenhum jogador registrado.", COL_DIM);
+        if (infoTab == 3 && (people == null || people.isEmpty())) paragraph(g, "No players recorded.", COL_DIM);
         if (infoTab == 3 && people != null && !people.isEmpty()) {
-            section(g, "POPULAÇÃO (" + people.size() + ")  -  clique num nome");
+            section(g, "POPULATION (" + people.size() + ")  -  click a name");
             chips(g, people.size() > 80 ? people.subList(0, 80) : people, mouseX, mouseY, this::openPlayer, true);
         }
         SCROLL[TAB_INFO] = endScroll(g, SCROLL[TAB_INFO]);
@@ -2087,17 +2086,17 @@ public class MapScreen extends Screen {
         for (int i = 0; i < d.ids.length; i++) {
             if (d.provinceCount[i] <= 0) continue;
             final int c = i;
-            add.accept(d.labels[i], new SearchHit(d.labels[i], "País", () -> selectCountry(c)));
+            add.accept(d.labels[i], new SearchHit(d.labels[i], "Country", () -> selectCountry(c)));
         }
         for (SiteTerritories.Locality l : d.localities) {
             String name = SiteTerritories.splitCamel(l.name);
-            add.accept(name, new SearchHit(name, "Cidade", () -> {
+            add.accept(name, new SearchHit(name, "City", () -> {
                 focusCity(l);
                 tab = TAB_CITY;
                 SCROLL[TAB_CITY] = 0;
             }));
         }
-        for (String name : d.players.keySet()) add.accept(name, new SearchHit(name, "Jogador", () -> openPlayer(name)));
+        for (String name : d.players.keySet()) add.accept(name, new SearchHit(name, "Player", () -> openPlayer(name)));
         first.addAll(rest);
         searchHits = first.size() > 7 ? List.copyOf(first.subList(0, 7)) : List.copyOf(first);
     }
@@ -2114,7 +2113,7 @@ public class MapScreen extends Screen {
         searchBox.setX(searchX + 11);
         searchBox.setY(searchY + 10);
         searchBox.setWidth(searchW - 22);
-        if (searchBox.getValue().isEmpty()) g.drawString(font, "País, cidade ou jogador", searchX + 11, searchY + 10, COL_DIM, false);
+        if (searchBox.getValue().isEmpty()) g.drawString(font, "Country, city or player", searchX + 11, searchY + 10, COL_DIM, false);
         searchBox.render(g, mouseX, mouseY, delta);
         int ry = searchY + 24;
         for (int i = 0; i < searchHits.size(); i++) {
@@ -2128,9 +2127,9 @@ public class MapScreen extends Screen {
             ry += 14;
         }
         int btnW = (searchW - 18) / 3;
-        toolButton(g, searchX + 7, ry + 3, btnW, "Medir", 1, mouseX, mouseY);
-        toolButton(g, searchX + 9 + btnW, ry + 3, btnW, "Marcar ponto", 2, mouseX, mouseY);
-        textButtonFixed(g, searchX + 11 + 2 * btnW, ry + 3, btnW, 16, "Foto", mouseX, mouseY, () -> {
+        toolButton(g, searchX + 7, ry + 3, btnW, "Measure", 1, mouseX, mouseY);
+        toolButton(g, searchX + 9 + btnW, ry + 3, btnW, "Mark point", 2, mouseX, mouseY);
+        textButtonFixed(g, searchX + 11 + 2 * btnW, ry + 3, btnW, 16, "Photo", mouseX, mouseY, () -> {
             closeSearch();
             photoMode = true;
             photoAt = System.currentTimeMillis();
@@ -2148,7 +2147,7 @@ public class MapScreen extends Screen {
     private void drawPhotoHint(GuiGraphics g) {
         long age = System.currentTimeMillis() - photoAt;
         if (age > 2500) return;
-        String t = "Aperte F2 para salvar a imagem. Clique para voltar.";
+        String t = "Press F2 to save the image. Click to go back.";
         int w = font.width(t) + 12, x = (width - w) / 2;
         g.fill(x, 8, x + w, 24, 0xE01E2123);
         g.drawString(font, t, x + 6, 12, COL_TEXT, false);
@@ -2156,7 +2155,7 @@ public class MapScreen extends Screen {
 
     private void drawToolBanner(GuiGraphics g) {
         if (toolMode == 0 || searchOpen) return;
-        String t = toolMode == 1 ? "Medir: clique em dois pontos. Botão direito sai." : "Marcar: clique no mapa. Clique num ponto para apagar. Botão direito sai.";
+        String t = toolMode == 1 ? "Measure: click two points. Right click exits." : "Mark: click the map. Click a point to delete it. Right click exits.";
         int w = font.width(t) + 12, x = (width - w) / 2, y = TOP + 8;
         g.fill(x, y, x + w, y + 15, 0xF21E2123);
         g.fill(x, y + 14, x + w, y + 15, 0xFF7E8387);
@@ -2197,7 +2196,7 @@ public class MapScreen extends Screen {
         m.map = map;
         m.x = bx0;
         m.z = bz0;
-        m.name = "Ponto " + n;
+        m.name = "Point " + n;
         p.marks.add(m);
         Prefs.save();
     }
@@ -2222,7 +2221,7 @@ public class MapScreen extends Screen {
         squareRing(g, (int) Math.round(x1), (int) Math.round(y1), 3, 0xFFECEBE4);
         double dist = Math.hypot(bx1 - mx0, bz1 - mz0);
         long mins = Math.round(dist / 4.317 / 60);
-        String t = String.format(Locale.ROOT, "%,d blocos, %s a pé", Math.round(dist), mins < 1 ? "menos de 1 min" : mins + " min").replace(',', '.');
+        String t = String.format(Locale.ROOT, "%,d blocks, %s on foot", Math.round(dist), mins < 1 ? "under 1 min" : mins + " min");
         int w = font.width(t) + 10, lx = (int) ((x0 + x1) / 2) + 6, ly = (int) ((y0 + y1) / 2) - 7;
         g.fill(lx, ly, lx + w, ly + 15, 0xF21E2123);
         g.fill(lx, ly + 14, lx + w, ly + 15, 0xFF7E8387);
@@ -2300,10 +2299,10 @@ public class MapScreen extends Screen {
     private void compareRow(GuiGraphics g, String label, String before, String after) {
         int rowTop = cy;
         zebra(g, rowTop, 14, false, false);
-        int aw = font.width(after), bwid = font.width(before + "  a  ");
+        int aw = font.width(after), bwid = font.width(before + "  to  ");
         g.drawString(font, fit(label, bw - 34 - aw - bwid), bx + 11, rowTop + 3, COL_TEXT, false);
         g.drawString(font, after, bx + bw - 11 - aw, rowTop + 3, 0xFFECEBE4, false);
-        g.drawString(font, before + "  a  ", bx + bw - 11 - aw - bwid, rowTop + 3, COL_DIM, false);
+        g.drawString(font, before + "  to  ", bx + bw - 11 - aw - bwid, rowTop + 3, COL_DIM, false);
         rowIdx++;
         cy += 14;
     }
@@ -2316,9 +2315,9 @@ public class MapScreen extends Screen {
 
     private void warSim(GuiGraphics g, SiteTerritories.Data d, SiteTerritories.WarInfo w, int mouseX, int mouseY) {
         simUpdate(d, w);
-        section(g, "Cidades simuladas");
+        section(g, "Simulated cities");
         if (simCities.isEmpty()) {
-            paragraph(g, "Clique nas cidades do mapa para simular a queda delas. Nada muda no jogo.", COL_DIM);
+            paragraph(g, "Click cities on the map to simulate them falling. Nothing changes in the game.", COL_DIM);
             return;
         }
         Map<String, String> byName = new HashMap<>();
@@ -2335,18 +2334,18 @@ public class MapScreen extends Screen {
         WarFront real = viewedFront(d);
         if (simScore == null || simFront == null || real == null) return;
         WarScore.Result base = WarScore.of(d, w);
-        section(g, "Antes e depois");
-        for (int i = 0; i < w.sides.size(); i++) compareRow(g, "Pontos: " + sideName(w, i), pts(base.points()[i]), pts(simScore.points()[i]));
+        section(g, "Before and after");
+        for (int i = 0; i < w.sides.size(); i++) compareRow(g, "Points: " + sideName(w, i), pts(base.points()[i]), pts(simScore.points()[i]));
         Map<String, Double> before = new HashMap<>();
         for (WarFront.Score s : real.scores()) before.put(s.nation(), s.score());
         for (WarFront.Score s : simFront.scores()) {
             double b = before.getOrDefault(s.nation(), 0.0);
-            if (b != s.score()) compareRow(g, "Capitulação: " + s.nation(), pts(b), pts(s.score()) + (s.capitulated() ? " CAPITULA" : " / 100"));
+            if (b != s.score()) compareRow(g, "Capitulation: " + s.nation(), pts(b), pts(s.score()) + (s.capitulated() ? " CAPITULATES" : " / 100"));
         }
-        compareRow(g, "Cidades cercadas", String.valueOf(count(real, true)), String.valueOf(count(simFront, true)));
-        compareRow(g, "Cidades In Play", String.valueOf(count(real, false)), String.valueOf(count(simFront, false)));
+        compareRow(g, "Encircled cities", String.valueOf(count(real, true)), String.valueOf(count(simFront, true)));
+        compareRow(g, "In Play cities", String.valueOf(count(real, false)), String.valueOf(count(simFront, false)));
         cy += 4;
-        textButton(g, bx + 9, cy, bw - 18, 16, "Limpar simulação", mouseX, mouseY, true, () -> {
+        textButton(g, bx + 9, cy, bw - 18, 16, "Clear simulation", mouseX, mouseY, true, () -> {
             simCities.clear();
             simDirty = true;
         });
@@ -2426,7 +2425,7 @@ public class MapScreen extends Screen {
 
     private String areaPct(int c) {
         if (totalArea <= 0) return "-";
-        return String.format(Locale.ROOT, "%.1f%%", 100 * countryArea[c] / totalArea).replace('.', ',');
+        return String.format(Locale.ROOT, "%.1f%%", 100 * countryArea[c] / totalArea);
     }
 
     /** O prazo de purge do país, como o site informa nos cidadãos dele. */
@@ -2434,7 +2433,7 @@ public class MapScreen extends Screen {
         if (d.people[c] == null) return null;
         for (String name : d.people[c]) {
             SiteTerritories.Player p = findPlayer(d, name);
-            if (p != null && p.purge != null && p.purge.days > 0) return p.purge.days + " dias";
+            if (p != null && p.purge != null && p.purge.days > 0) return p.purge.days + " days";
         }
         return null;
     }
@@ -2453,8 +2452,8 @@ public class MapScreen extends Screen {
 
     private void drawHistoryPanel(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
-        int top = header(g, NEUTRAL, "Histórico", "O que aconteceu neste mapa", null, mouseX, mouseY, () -> tab = TAB_NONE);
-        top = tabStrip(g, top, new String[]{"Servidor", "Mundo", "Ranking"}, histTab, mouseX, mouseY, i -> {
+        int top = header(g, NEUTRAL, "History", "What happened on this map", null, mouseX, mouseY, () -> tab = TAB_NONE);
+        top = tabStrip(g, top, new String[]{"Server", "World", "Ranking"}, histTab, mouseX, mouseY, i -> {
             histTab = i;
             SCROLL[TAB_HIST] = 0;
         });
@@ -2463,33 +2462,33 @@ public class MapScreen extends Screen {
             List<Event> list = new ArrayList<>();
             for (SiteTerritories.WarInfo w : Relations.wars(d)) {
                 long st = parseMs(w.started), en = parseMs(w.ended);
-                if (st != NONE) list.add(new Event(st, "Início da guerra: " + warName(w)));
-                if (en != NONE) list.add(new Event(en, "Fim da guerra: " + warName(w)));
+                if (st != NONE) list.add(new Event(st, "War started: " + warName(w)));
+                if (en != NONE) list.add(new Event(en, "War ended: " + warName(w)));
             }
             for (Map.Entry<String, SiteTerritories.Player> e : d.players.entrySet()) {
                 long at = parseMs(e.getValue().lastJoined);
-                if (at != NONE) list.add(new Event(at, e.getKey() + " entrou"));
+                if (at != NONE) list.add(new Event(at, e.getKey() + " joined"));
             }
             list.sort((a, b) -> Long.compare(b.at(), a.at()));
-            section(g, "Últimos eventos");
+            section(g, "Latest events");
             for (Event ev : list.subList(0, Math.min(16, list.size()))) eventRow(g, ev.text(), dateText(ev.at()));
-            if (list.isEmpty()) paragraph(g, "Nenhum evento registrado no site.", COL_DIM);
+            if (list.isEmpty()) paragraph(g, "No events recorded on the site.", COL_DIM);
         } else if (histTab == 1) {
-            section(g, "História do mundo");
+            section(g, "World history");
             List<String[]> list = new ArrayList<>();
             if (d.war != null && d.war.alliances != null) {
-                for (SiteTerritories.AllianceInfo a : d.war.alliances) if (a.formed != null) list.add(new String[]{"Aliança: " + a.name, a.formed});
+                for (SiteTerritories.AllianceInfo a : d.war.alliances) if (a.formed != null) list.add(new String[]{"Alliance: " + a.name, a.formed});
             }
             for (int c = 0; c < d.ids.length; c++) {
                 String formed = d.info[c] == null ? null : d.info[c].get("formed");
-                if (formed != null && d.provinceCount[c] > 0) list.add(new String[]{"Fundação: " + d.labels[c], formed});
+                if (formed != null && d.provinceCount[c] > 0) list.add(new String[]{"Founded: " + d.labels[c], formed});
             }
             list.sort((a, b) -> Long.compare(yearOf(b[1]), yearOf(a[1])));
             for (String[] row : list.subList(0, Math.min(40, list.size()))) eventRow(g, row[0], row[1]);
-            if (list.isEmpty()) paragraph(g, "O site não registra datas históricas.", COL_DIM);
+            if (list.isEmpty()) paragraph(g, "The site records no historical dates.", COL_DIM);
         } else {
             refreshAreas(d);
-            section(g, "Por área do mapa");
+            section(g, "By map area");
             List<Integer> order = new ArrayList<>();
             for (int c = 0; c < d.ids.length; c++) if (d.provinceCount[c] > 0) order.add(c);
             order.sort((a, b) -> Double.compare(countryArea[b], countryArea[a]));
@@ -2541,26 +2540,26 @@ public class MapScreen extends Screen {
         int top = header(g, rgb, pretty(l.name), subtitle, flagOf(d, l.countryIdx), mouseX, mouseY, this::closePanel);
 
         beginScroll(g, top, SCROLL[TAB_CITY], 0);
-        textButton(g, bx + 9, cy, bw - 18, 16, "Centralizar no mapa", mouseX, mouseY, true, () -> {
+        textButton(g, bx + 9, cy, bw - 18, 16, "Center on the map", mouseX, mouseY, true, () -> {
             viewX = l.x;
             viewZ = l.z;
             if (scale < 0.6) scale = 0.6;
         });
         cy += 20;
-        section(g, "INFORMAÇÕES");
-        kv(g, "Nome", pretty(l.name));
-        kv(g, "Tipo", pretty(l.kind));
-        kv(g, "Desenvolvimento", l.development);
+        section(g, "INFORMATION");
+        kv(g, "Name", pretty(l.name));
+        kv(g, "Type", pretty(l.kind));
+        kv(g, "Development", l.development);
         if (l.countryIdx >= 0) {
-            kvLink(g, "País", d.labels[l.countryIdx], mouseX, mouseY, () -> selectCountry(l.countryIdx));
+            kvLink(g, "Country", d.labels[l.countryIdx], mouseX, mouseY, () -> selectCountry(l.countryIdx));
         } else {
-            kv(g, "País", l.country);
+            kv(g, "Country", l.country);
         }
-        if (l.lord != null && !l.lord.isBlank()) kvLink(g, "Senhor", l.lord, mouseX, mouseY, () -> openPlayer(l.lord));
-        kv(g, "Etnia", l.ethnicity);
-        kv(g, "Designações", join(l.designations));
-        kv(g, "Coordenadas", l.x + ", " + l.z);
-        kv(g, "Limite de captura", zoneOf(d, l) != null ? "sim (contorno dourado no mapa)" : "não definido");
+        if (l.lord != null && !l.lord.isBlank()) kvLink(g, "Lord", l.lord, mouseX, mouseY, () -> openPlayer(l.lord));
+        kv(g, "Ethnicity", l.ethnicity);
+        kv(g, "Designations", join(l.designations));
+        kv(g, "Coordinates", l.x + ", " + l.z);
+        kv(g, "Capture limit", zoneOf(d, l) != null ? "yes (golden outline on the map)" : "not set");
         SCROLL[TAB_CITY] = endScroll(g, SCROLL[TAB_CITY]);
     }
 
@@ -2568,7 +2567,7 @@ public class MapScreen extends Screen {
 
     private void drawSiteList(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
-        int top = header(g, NEUTRAL, "Países", d.ids.length + " países  -  " + d.n + " províncias", null, mouseX, mouseY, this::closePanel);
+        int top = header(g, NEUTRAL, "Countries", d.ids.length + " countries  -  " + d.n + " provinces", null, mouseX, mouseY, this::closePanel);
         if (legendVersion != SiteTerritories.version()) {
             legendVersion = SiteTerritories.version();
             legendOrder = new ArrayList<>();
@@ -2603,21 +2602,21 @@ public class MapScreen extends Screen {
 
     private void drawDiploPanel(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
-        String subtitle = dipFocus >= 0 ? "Relações de " + d.labels[dipFocus]
-                : dipAlliance >= 0 ? "Aliança escolhida" : "Blocos e alianças";
+        String subtitle = dipFocus >= 0 ? "Relations of " + d.labels[dipFocus]
+                : dipAlliance >= 0 ? "Chosen alliance" : "Blocs and alliances";
         int rgb = dipFocus >= 0 ? d.rgb[dipFocus] : NEUTRAL;
-        int top = header(g, rgb, "Diplomacia", subtitle, dipFocus >= 0 ? flagOf(d, dipFocus) : null, mouseX, mouseY, () -> {
+        int top = header(g, rgb, "Diplomacy", subtitle, dipFocus >= 0 ? flagOf(d, dipFocus) : null, mouseX, mouseY, () -> {
             tab = TAB_NONE;
             dipFocus = -1;
             dipAlliance = -1;
         });
         beginScroll(g, top, SCROLL[TAB_DIPLO], 0);
 
-        if (dipFocus < 0) paragraph(g, "Clique num país do mapa para ver as relações dele, ou escolha uma aliança abaixo.", COL_DIM);
+        if (dipFocus < 0) paragraph(g, "Click a country on the map to see its relations, or pick an alliance below.", COL_DIM);
 
         if (dipFocus >= 0) {
             for (Relations.Rel rel : legend) {
-                if ("Selecionado".equals(rel.label())) continue;
+                if ("Selected".equals(rel.label())) continue;
                 List<String> names = new ArrayList<>();
                 for (int c : rel.countries()) names.add(d.labels[c]);
                 if (names.isEmpty()) continue;
@@ -2630,12 +2629,12 @@ public class MapScreen extends Screen {
                     }
                 });
             }
-            if (legend.size() <= 1) paragraph(g, "Nenhuma relação registrada no site para este país.", COL_DIM);
+            if (legend.size() <= 1) paragraph(g, "No relations recorded on the site for this country.", COL_DIM);
         }
 
         List<SiteTerritories.AllianceInfo> alliances = d.war == null || d.war.alliances == null ? List.of() : d.war.alliances;
-        section(g, "ALIANÇAS (" + alliances.size() + ")");
-        if (alliances.isEmpty()) paragraph(g, "O site não lista alianças.", COL_DIM);
+        section(g, "ALLIANCES (" + alliances.size() + ")");
+        if (alliances.isEmpty()) paragraph(g, "The site lists no alliances.", COL_DIM);
         for (int pass = 0; pass < 2; pass++) {
             for (int i = 0; i < alliances.size(); i++) {
                 SiteTerritories.AllianceInfo a = alliances.get(i);
@@ -2668,30 +2667,30 @@ public class MapScreen extends Screen {
 
         if (dipAlliance >= 0 && dipAlliance < alliances.size()) {
             SiteTerritories.AllianceInfo a = alliances.get(dipAlliance);
-            section(g, "ALIANÇA");
-            kv(g, "Nome", a.name);
-            kv(g, "Nome oficial", a.officialName);
-            kv(g, "Formada", a.formed);
+            section(g, "ALLIANCE");
+            kv(g, "Name", a.name);
+            kv(g, "Official name", a.officialName);
+            kv(g, "Formed", a.formed);
             if (a.members != null) {
                 for (SiteTerritories.Member m : a.members) {
-                    kv(g, m.name == null ? "Membro" : m.name, m.note == null ? "membro" : m.note);
+                    kv(g, m.name == null ? "Member" : m.name, m.note == null ? "member" : m.note);
                 }
             }
-            kv(g, "Notas", a.notes);
+            kv(g, "Notes", a.notes);
         }
 
         SiteTerritories.WarData w = d.war;
         if (w != null) {
             if (w.truces != null && !w.truces.isEmpty()) {
-                section(g, "TRÉGUAS");
-                for (SiteTerritories.Truce t : w.truces) kv(g, t.a + " / " + t.b, t.until == null ? "" : "até " + t.until);
+                section(g, "TRUCES");
+                for (SiteTerritories.Truce t : w.truces) kv(g, t.a + " / " + t.b, t.until == null ? "" : "until " + t.until);
             }
             if (w.naps != null && !w.naps.isEmpty()) {
-                section(g, "PACTOS DE NÃO AGRESSÃO");
-                for (SiteTerritories.Nap n : w.naps) kv(g, n.a + " / " + n.b, n.until == null ? "" : "até " + n.until);
+                section(g, "NON-AGGRESSION PACTS");
+                for (SiteTerritories.Nap n : w.naps) kv(g, n.a + " / " + n.b, n.until == null ? "" : "until " + n.until);
             }
             if (w.ultimatums != null && !w.ultimatums.isEmpty()) {
-                section(g, "ULTIMATOS");
+                section(g, "ULTIMATUMS");
                 for (SiteTerritories.Ultimatum u : w.ultimatums) kv(g, u.from + " > " + u.to, u.sent);
             }
         }
@@ -2706,7 +2705,7 @@ public class MapScreen extends Screen {
     private SiteTerritories.WarInfo frontCacheWar;
 
     private static boolean warRunning(SiteTerritories.WarInfo w) {
-        return w != null && WarMarkers.running(w);
+        return w != null && WarStatus.running(w);
     }
 
     private int activeWarCount() {
@@ -2738,11 +2737,6 @@ public class MapScreen extends Screen {
         SiteTerritories.WarInfo watched = viewed != null ? viewed : minimapWar(d);   // sem guerra escolhida, segue a primeira em andamento
         if (watched != null && watched.live && watched.ended == null && SiteTerritories.liveWar()) DynmapMarkers.want();
         DynmapMarkers.tick();
-        if (SiteTerritories.warMarkers()) {
-            SiteTerritories.WarInfo f = WarMarkers.followed(d, viewed == null ? null : viewed.id);
-            if (f != null) WarMarkers.update(d, f, OnlinePlayers.list(), System.currentTimeMillis());
-            else WarMarkers.clear();
-        }
     }
 
     /** Linhas extras da dica de uma cidade na guerra em exibição: quem a segura e o estado na frente. */
@@ -2754,10 +2748,10 @@ public class MapScreen extends Screen {
         for (WarScore.Holding h : r.holdings()) {
             if (h.locality() != city && !(h.locality().name != null && h.locality().name.equals(city.name)
                     && h.locality().country != null && h.locality().country.equals(city.country))) continue;
-            extra += "\nValor: " + pts(h.value()) + " pts";
-            if ("contested".equals(h.state())) extra += "\nEm disputa";
-            else if ("uncontrolled".equals(h.state())) extra += "\nSem controle";
-            else if (h.holder() >= 0) extra += "\nSegura: " + sideName(w, h.holder());
+            extra += "\nValue: " + pts(h.value()) + " pts";
+            if ("contested".equals(h.state())) extra += "\nContested";
+            else if ("uncontrolled".equals(h.state())) extra += "\nUncontrolled";
+            else if (h.holder() >= 0) extra += "\nHeld by: " + sideName(w, h.holder());
             break;
         }
         WarFront f = viewedFront(d);
@@ -2965,35 +2959,10 @@ public class MapScreen extends Screen {
         }
     }
 
-    private void drawArt(GuiGraphics g, WarArt.Art art, int x, int y, int cell) {
-        WarArt.rects(art, x, y, cell, (x0, y0, x1, y1, argb) -> g.fill(x0, y0, x1, y1, argb));
-    }
-
-    /** Espadas (jogadores de dois lados na cidade) e bandeiras (cidade recém-tomada) por cima dos ícones. */
-    private void drawWarMarkers(GuiGraphics g, SiteTerritories.Data d) {
-        if (!SiteTerritories.warMarkers() || scale < 0.12) return;
-        List<WarMarkers.Marker> list = WarMarkers.current();
-        if (list.isEmpty()) return;
-        int phase = (int) ((System.currentTimeMillis() / 350) % 2);
-        for (WarMarkers.Marker m : list) {
-            int sx = (int) Math.round(sx(m.x() + 0.5, m.z() + 0.5)), sy = (int) Math.round(sy(m.x() + 0.5, m.z() + 0.5));
-            if (sx < -30 || sx > width + 30 || sy < -30 || sy > height + 30) continue;
-            if (m.kind() == WarMarkers.Kind.SWORD) {
-                WarArt.Art a = WarArt.SWORD;
-                WarArt.Tex t = WarArt.texture(a, "sword");
-                g.blit(RenderPipelines.GUI_TEXTURED, t.id(), sx - a.w() + 2, sy - 8 - a.h() * 2, 0f, 0f, a.w() * 2, a.h() * 2, a.w(), a.h(), a.w(), a.h());
-            } else {
-                WarArt.Art a = WarArt.cachedFlag(m.rgb(), phase);
-                WarArt.Tex t = WarArt.texture(a, "flag" + m.rgb() + "_" + phase);
-                g.blit(RenderPipelines.GUI_TEXTURED, t.id(), sx + 3, sy - 4 - a.h() * 2, 0f, 0f, a.w() * 2, a.h() * 2, a.w(), a.h(), a.w(), a.h());
-            }
-        }
-    }
-
     // -- painel
 
     private static String dateText(long ms) {
-        return java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
                 .format(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()));
     }
 
@@ -3007,9 +2976,9 @@ public class MapScreen extends Screen {
 
     private static String sideName(SiteTerritories.WarInfo w, int i) {
         String n = i >= 0 && w.sides != null && i < w.sides.size() ? w.sides.get(i).name : null;
-        if ("Attackers".equalsIgnoreCase(n)) return "Atacantes";
-        if ("Defenders".equalsIgnoreCase(n)) return "Defensores";
-        return n == null || n.isBlank() ? "Lado " + (i + 1) : n;
+        if ("Attackers".equalsIgnoreCase(n)) return "Attackers";
+        if ("Defenders".equalsIgnoreCase(n)) return "Defenders";
+        return n == null || n.isBlank() ? "Side " + (i + 1) : n;
     }
 
     /** Barra de pesos por lado, com a porcentagem dentro de cada trecho largo o bastante. */
@@ -3049,20 +3018,20 @@ public class MapScreen extends Screen {
         List<SiteTerritories.WarInfo> wars = Relations.wars(d);
         SiteTerritories.WarInfo sel = viewedWar(d);
         int running = activeWarCount();
-        String subtitle = sel == null ? running + " em andamento, " + (wars.size() - running) + " encerrada(s)"
-                : sel.sides != null && sel.sides.size() >= 2 ? sideName(sel, 0) + " contra " + sideName(sel, 1) : "";
+        String subtitle = sel == null ? running + " in progress, " + (wars.size() - running) + " ended"
+                : sel.sides != null && sel.sides.size() >= 2 ? sideName(sel, 0) + " vs " + sideName(sel, 1) : "";
         headRed = true;
-        int top = header(g, NEUTRAL, sel == null ? "Guerras" : warName(sel), subtitle.isEmpty() ? null : subtitle, null, mouseX, mouseY, () -> tab = TAB_NONE);   // fechar o menu mantém a guerra escolhida no mapa
+        int top = header(g, NEUTRAL, sel == null ? "Wars" : warName(sel), subtitle.isEmpty() ? null : subtitle, null, mouseX, mouseY, () -> tab = TAB_NONE);   // fechar o menu mantém a guerra escolhida no mapa
         if (sel == null) {
             beginScroll(g, top, SCROLL[TAB_WAR], 0);
             warList(g, d, wars, mouseX, mouseY);
         } else {
-            textButtonFixed(g, bx + 8, top, bw - 16, 15, "< Todas as guerras", mouseX, mouseY, () -> {
+            textButtonFixed(g, bx + 8, top, bw - 16, 15, "< All wars", mouseX, mouseY, () -> {
                 warSel = -1;
                 SCROLL[TAB_WAR] = 0;
             });
             top += 19;
-            top = tabStrip(g, top, new String[]{"Lados", "Cidades", "Lei 7", "E se?"}, warTab, mouseX, mouseY, i -> {
+            top = tabStrip(g, top, new String[]{"Sides", "Cities", "Law 7", "What if?"}, warTab, mouseX, mouseY, i -> {
                 warTab = i;
                 SCROLL[TAB_WAR] = 0;
             });
@@ -3088,14 +3057,14 @@ public class MapScreen extends Screen {
 
     private void warList(GuiGraphics g, SiteTerritories.Data d, List<SiteTerritories.WarInfo> wars, int mouseX, int mouseY) {
         if (wars.isEmpty()) {
-            paragraph(g, "O site não registra nenhuma guerra neste momento. Quando houver uma, ela aparece aqui: placar, lados, cidades tomadas, frentes e capitulação.", COL_DIM);
+            paragraph(g, "The site records no war right now. When there is one it shows up here: scoreboard, sides, taken cities, fronts and capitulation.", COL_DIM);
             return;
         }
         for (int pass = 0; pass < 2; pass++) {
             List<Integer> idxs = new ArrayList<>();
             for (int i = 0; i < wars.size(); i++) if (warRunning(wars.get(i)) == (pass == 0)) idxs.add(i);
             if (idxs.isEmpty()) continue;
-            section(g, (pass == 0 ? "Em andamento" : "Encerradas") + " (" + idxs.size() + ")");
+            section(g, (pass == 0 ? "In progress" : "Ended") + " (" + idxs.size() + ")");
             for (int i : idxs) warCard(g, d, wars.get(i), i, mouseX, mouseY);
         }
     }
@@ -3110,7 +3079,7 @@ public class MapScreen extends Screen {
         g.fill(x, y, x + wd, y + 1, 0xFF050605);
         g.fill(x, y + h - 1, x + wd, y + h, 0xFF3E4245);
         boolean run = warRunning(w);
-        String tag = !run ? "ENCERRADA" : w.live ? "AO VIVO" : "ATIVA";
+        String tag = !run ? "ENCERRADA" : w.live ? "LIVE" : "ATIVA";
         int tagCol = !run ? COL_DIM : COL_WAR;
         g.drawString(font, fit(warName(w), wd - 14 - font.width(tag) - 6), x + 6, y + 4, hover ? 0xFFFFFFFF : COL_TEXT, false);
         g.drawString(font, tag, x + wd - 6 - font.width(tag), y + 4, tagCol, false);
@@ -3120,8 +3089,8 @@ public class MapScreen extends Screen {
         }
         long st = parseMs(w.started), en = parseMs(w.ended);
         long now = System.currentTimeMillis();
-        String line = st != NONE ? "iniciada " + countdown(st - now) : "";
-        if (en != NONE) line += (line.isEmpty() ? "" : "   ") + (en <= now ? "terminou " : "termina ") + countdown(en - now);
+        String line = st != NONE ? "started " + countdown(st - now) : "";
+        if (en != NONE) line += (line.isEmpty() ? "" : "   ") + (en <= now ? "ended " : "ends ") + countdown(en - now);
         if (!line.isEmpty()) g.drawString(font, fit(line, wd - 12), x + 6, y + 31, COL_DIM, false);
         if (vis) hits.add(new Hit(x, y, wd, h, () -> {
             warSel = idx;
@@ -3137,17 +3106,17 @@ public class MapScreen extends Screen {
         long now = System.currentTimeMillis();
         long st = parseMs(w.started), en = parseMs(w.ended);
         int n = w.sides == null ? 0 : w.sides.size();
-        section(g, "Placar");
+        section(g, "Scoreboard");
         if (n >= 2) {
             WarScore.Result r = WarScore.of(d, w);
             boolean any = r.total() > 0;
             if (n == 2) warTugHeader(g, d, w, r);
-            g.drawString(font, "Pontos mantidos (Lei 7.9)", bx + 9, cy, COL_DIM, false);
+            g.drawString(font, "Points held (Law 7.9)", bx + 9, cy, COL_DIM, false);
             cy += 11;
             sideBar(g, w, r.points().clone(), bx + 9, cy, bw - 18);
             if (n == 2) g.fill(bx + bw / 2, cy - 3, bx + bw / 2 + 1, cy + 15, 0xFFECEBE4);
             cy += 17;
-            String verdict = !any ? "Sem valores de cidade registrados" : r.even() ? "Equilíbrio: nenhum lado à frente" : sideName(w, r.leader()) + " na frente";
+            String verdict = !any ? "No city values recorded" : r.even() ? "Balanced: no side ahead" : sideName(w, r.leader()) + " ahead";
             g.drawString(font, fit(verdict, bw - 18), bx + 9, cy, !any || r.even() ? COL_DIM : ctlColor(w, r.leader()), false);
             cy += 12;
             double[] caps = new double[n];
@@ -3158,19 +3127,19 @@ public class MapScreen extends Screen {
                     taken++;
                 }
             }
-            g.drawString(font, "Cidades tomadas do inimigo", bx + 9, cy, COL_DIM, false);
+            g.drawString(font, "Cities taken from the enemy", bx + 9, cy, COL_DIM, false);
             cy += 11;
             sideBar(g, w, caps, bx + 9, cy, bw - 18);
             cy += 17;
             if (taken == 0) {
-                g.drawString(font, "Nenhuma cidade tomada ainda", bx + 9, cy, COL_DIM, false);
+                g.drawString(font, "No city taken yet", bx + 9, cy, COL_DIM, false);
                 cy += 12;
             }
             for (int i = 0; i < n; i++) {
                 int color = ctlColor(w, i);
                 g.fill(bx + 9, cy + 1, bx + 17, cy + 9, 0xFF0E0C08);
                 g.fill(bx + 10, cy + 2, bx + 16, cy + 8, color);
-                String tail = (any ? Math.round(r.share(i) * 100) + "%  " + pts(r.points()[i]) + " pts" : "") + "   " + (int) caps[i] + " tomada(s)";
+                String tail = (any ? Math.round(r.share(i) * 100) + "%  " + pts(r.points()[i]) + " pts" : "") + "   " + (int) caps[i] + " taken";
                 int tw = font.width(tail);
                 g.drawString(font, fit(sideName(w, i), bw - 40 - tw), bx + 21, cy, COL_TEXT, false);
                 g.drawString(font, tail, bx + bw - 10 - tw, cy, COL_DIM, false);
@@ -3178,22 +3147,22 @@ public class MapScreen extends Screen {
             }
             cy += 3;
         }
-        section(g, "Estado");
-        kv(g, "Situação", !run ? "Encerrada" : w.live ? "Em andamento (ao vivo)" : "Em andamento");
-        kv(g, "Tipo", "Total War".equalsIgnoreCase(w.type) ? "Guerra total" : w.type);
-        kv(g, "Início", st == NONE ? null : dateText(st) + "  (" + countdown(st - now) + ")");
+        section(g, "State");
+        kv(g, "Status", !run ? "Ended" : w.live ? "In progress (live)" : "In progress");
+        kv(g, "Type", "Total War".equalsIgnoreCase(w.type) ? "Total war" : w.type);
+        kv(g, "Start", st == NONE ? null : dateText(st) + "  (" + countdown(st - now) + ")");
         if (en != NONE) {
-            kv(g, run ? "Termina" : "Fim", dateText(en) + "  (" + countdown(en - now) + ")");
+            kv(g, run ? "Ends" : "End", dateText(en) + "  (" + countdown(en - now) + ")");
             long truce = en + 3 * DAY;
-            if (!run && truce > now) kv(g, "Trégua até", dateText(truce) + "  (" + countdown(truce - now) + ")");
+            if (!run && truce > now) kv(g, "Truce until", dateText(truce) + "  (" + countdown(truce - now) + ")");
         }
-        kv(g, "Teatro", w.theater == null || w.theater.isBlank() ? "Irrestrita (todas as cidades dos beligerantes)" : "Restrita: " + w.theater);
-        kv(g, "Fonte", LiveControl.isLive(w) ? "Dynmap ao vivo (marcadores das cidades)" : w.live ? "Guerra ao vivo; aguardando o dynmap" : "Lista de cidades do site");
-        kv(g, "Notas", w.notes);
+        kv(g, "Theater", w.theater == null || w.theater.isBlank() ? "Unrestricted (all belligerent cities)" : "Restricted: " + w.theater);
+        kv(g, "Source", LiveControl.isLive(w) ? "Live dynmap (city markers)" : w.live ? "Live war; waiting for dynmap" : "Site city list");
+        kv(g, "Notes", w.notes);
     }
 
     private void warSides(GuiGraphics g, SiteTerritories.Data d, SiteTerritories.WarInfo w, int mouseX, int mouseY) {
-        textButton(g, bx + 9, cy, bw - 18, 16, "Simular a queda de uma cidade", mouseX, mouseY, true, () -> {
+        textButton(g, bx + 9, cy, bw - 18, 16, "Simulate a city falling", mouseX, mouseY, true, () -> {
             warTab = 3;
             SCROLL[TAB_WAR] = 0;
         });
@@ -3232,7 +3201,7 @@ public class MapScreen extends Screen {
                     zebra(g, rowTop, 14, hover, false);
                     rowIdx++;
                     if (ci >= 0) miniFlag(g, d, ci, bx + 10, rowTop + 1);
-                    String tail = own == 0 ? "" : held + "/" + own + " cidades";
+                    String tail = own == 0 ? "" : held + "/" + own + " cities";
                     WarFront.Score sc = scoreBy.get(c.toLowerCase(Locale.ROOT));
                     if (sc != null && sc.capitulated()) tail = "CAPITULOU";
                     int tw = font.width(tail);
@@ -3257,7 +3226,7 @@ public class MapScreen extends Screen {
         WarScore.Result r = WarScore.of(d, w);
         WarFront f = viewedFront(d);
         int boxW = (bw - 16 - 6) / 3;
-        String[] labels = {"Todas", "Tomadas", "Em disputa"};
+        String[] labels = {"All", "Taken", "Contested"};
         for (int i = 0; i < 3; i++) {
             final int fi = i;
             int x = bx + 8 + i * (boxW + 3);
@@ -3274,15 +3243,15 @@ public class MapScreen extends Screen {
             List<WarScore.Holding> taken = new ArrayList<>();
             for (WarScore.Holding h : r.holdings()) if (h.taken()) taken.add(h);
             if (warCityFilter != 2) {
-                section(g, "Tomadas do inimigo (" + taken.size() + ")");
-                if (taken.isEmpty()) paragraph(g, "Nenhuma cidade mudou de lado.", COL_DIM);
+                section(g, "Taken from the enemy (" + taken.size() + ")");
+                if (taken.isEmpty()) paragraph(g, "No city changed sides.", COL_DIM);
                 for (int s = 0; s < w.sides.size(); s++) {
                     List<WarScore.Holding> mine = new ArrayList<>();
                     for (WarScore.Holding h : taken) if (h.holder() == s) mine.add(h);
                     if (mine.isEmpty()) continue;
                     mine.sort(BY_VALUE);
                     g.fill(bx + 9, cy + 1, bx + 17, cy + 9, ctlColor(w, s));
-                    g.drawString(font, fit(sideName(w, s) + " tomou " + mine.size(), bw - 34), bx + 21, cy, COL_TEXT, false);
+                    g.drawString(font, fit(sideName(w, s) + " took " + mine.size(), bw - 34), bx + 21, cy, COL_TEXT, false);
                     cy += 12;
                     for (WarScore.Holding h : mine) warCityRow(g, d, f, h, true, mouseX, mouseY);
                 }
@@ -3291,8 +3260,8 @@ public class MapScreen extends Screen {
             List<WarScore.Holding> disputed = new ArrayList<>();
             for (WarScore.Holding h : r.holdings()) if (h.disputed()) disputed.add(h);
             if (warCityFilter != 1) {
-                section(g, "Em disputa ou sem controle (" + disputed.size() + ")");
-                if (disputed.isEmpty()) paragraph(g, "Nenhuma no momento.", COL_DIM);
+                section(g, "Contested or uncontrolled (" + disputed.size() + ")");
+                if (disputed.isEmpty()) paragraph(g, "None at the moment.", COL_DIM);
                 disputed.sort(BY_VALUE);
                 for (WarScore.Holding h : disputed) warCityRow(g, d, f, h, true, mouseX, mouseY);
             }
@@ -3315,7 +3284,7 @@ public class MapScreen extends Screen {
                     cy += 12;
                 }
             }
-            section(g, "Por país");
+            section(g, "By country");
             for (Map.Entry<String, List<WarScore.Holding>> e : byCountry.entrySet()) {
                 String key = w.id + "/" + e.getKey();
                 boolean closed = WAR_CLOSED.contains(key);
@@ -3331,7 +3300,7 @@ public class MapScreen extends Screen {
                 rowIdx++;
                 g.drawString(font, closed ? "+" : "-", bx + 10, rowTop + 4, COL_GOLD, false);
                 if (ci >= 0) miniFlag(g, d, ci, bx + 20, rowTop + 1);
-                String tail = list.size() + (list.size() == 1 ? " cidade" : " cidades") + (lost > 0 ? ", " + lost + " perdida(s)" : "");
+                String tail = list.size() + (list.size() == 1 ? " city" : " cities") + (lost > 0 ? ", " + lost + " lost" : "");
                 int tw = font.width(tail);
                 g.drawString(font, fit(ci >= 0 ? d.labels[ci] : e.getKey(), bw - 64 - tw), bx + 46, rowTop + 4, hover ? 0xFFDDE7EE : COL_TEXT, false);
                 g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 4, lost > 0 ? COL_WAR : COL_DIM, false);
@@ -3389,11 +3358,11 @@ public class MapScreen extends Screen {
     private void warLaw7(GuiGraphics g, SiteTerritories.Data d, SiteTerritories.WarInfo w, int mouseX, int mouseY) {
         WarFront f = viewedFront(d);
         if (f == null) {
-            section(g, "Lei 7");
-            paragraph(g, "O site não enviou as conexões entre cidades; sem elas não dá para calcular frentes, In Play, cerco ou capitulação.", COL_DIM);
+            section(g, "Law 7");
+            paragraph(g, "The site sent no connections between cities; without them fronts, In Play, encirclement and capitulation cannot be computed.", COL_DIM);
             return;
         }
-        section(g, "Frente por lado");
+        section(g, "Front by side");
         for (int i = 0; i < w.sides.size(); i++) {
             int play = 0, enc = 0;
             for (WarFront.Unit u : f.units()) {
@@ -3402,17 +3371,17 @@ public class MapScreen extends Screen {
                 if (u.encircled) enc += u.members.size();
             }
             g.fill(bx + 9, cy + 1, bx + 17, cy + 9, ctlColor(w, i));
-            String tail = play + " In Play  /  " + enc + " cercadas";
+            String tail = play + " In Play  /  " + enc + " encircled";
             int tw = font.width(tail);
             g.drawString(font, fit(sideName(w, i), bw - 40 - tw), bx + 21, cy, COL_TEXT, false);
             g.drawString(font, tail, bx + bw - 10 - tw, cy, COL_DIM, false);
             cy += 12;
         }
         for (int side : f.noCapital()) {
-            if (side >= 0 && side < w.sides.size()) paragraph(g, sideName(w, side) + " não segura nenhuma capital: nada deles conta como cercado.", COL_DIM);
+            if (side >= 0 && side < w.sides.size()) paragraph(g, sideName(w, side) + " holds no capital: none of their cities counts as encircled.", COL_DIM);
         }
         if (!f.ties().isEmpty()) {
-            paragraph(g, f.ties().size() + (f.ties().size() == 1 ? " empate" : " empates") + " sobre terra neutra esperam a escolha da staff (Short Circuit):", COL_WAR);
+            paragraph(g, f.ties().size() + (f.ties().size() == 1 ? " tie" : " ties") + " on neutral land await the staff decision (Short Circuit):", COL_WAR);
             for (WarFront.Tie t : f.ties()) {
                 for (String[] pair : t.pairs()) paragraph(g, "  " + pair[0] + " - " + pair[1] + " (" + t.distance() + ")", COL_DIM);
             }
@@ -3421,8 +3390,8 @@ public class MapScreen extends Screen {
         // cidades In Play
         List<SiteTerritories.Locality> play = new ArrayList<>();
         for (WarFront.Unit u : f.units()) if (u.inPlay && !u.neutral()) play.addAll(u.members);
-        section(g, "Cidades In Play (" + play.size() + ")");
-        if (play.isEmpty()) paragraph(g, "Nenhuma agora.", COL_DIM);
+        section(g, "In Play cities (" + play.size() + ")");
+        if (play.isEmpty()) paragraph(g, "None right now.", COL_DIM);
         play.sort(java.util.Comparator.comparing((SiteTerritories.Locality l) -> String.valueOf(l.country), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(l -> String.valueOf(l.name), String.CASE_INSENSITIVE_ORDER));
         for (SiteTerritories.Locality l : play) {
@@ -3448,15 +3417,15 @@ public class MapScreen extends Screen {
         // capitulação
         List<WarFront.Score> risk = new ArrayList<>();
         for (WarFront.Score s : f.scores()) if (s.score() > 0 || s.capitulated()) risk.add(s);
-        section(g, "Capitulação (Lei 7.9)");
-        paragraph(g, "Uma nação capitula com mais de 100 pontos perdidos e a capital tomada.", COL_DIM);
-        if (risk.isEmpty()) paragraph(g, "Nenhuma nação em risco.", COL_DIM);
+        section(g, "Capitulation (Law 7.9)");
+        paragraph(g, "A nation capitulates with more than 100 points lost and its capital taken.", COL_DIM);
+        if (risk.isEmpty()) paragraph(g, "No nation at risk.", COL_DIM);
         for (WarFront.Score s : risk) {
             int rowTop = cy;
             g.fill(bx + 9, rowTop + 1, bx + 17, rowTop + 9, ctlColor(w, s.side()));
-            String tail = s.capitulated() ? "CAPITULOU" : pts(s.score()) + " / 100" + (s.capitalTaken() ? "  capital tomada" : "");
+            String tail = s.capitulated() ? "CAPITULOU" : pts(s.score()) + " / 100" + (s.capitalTaken() ? "  capital taken" : "");
             int tw = font.width(tail);
-            g.drawString(font, fit(s.nation() + (s.hasCapital() ? "" : " (sem capital)"), bw - 40 - tw), bx + 21, rowTop, s.capitulated() ? COL_WAR : COL_TEXT, false);
+            g.drawString(font, fit(s.nation() + (s.hasCapital() ? "" : " (no capital)"), bw - 40 - tw), bx + 21, rowTop, s.capitulated() ? COL_WAR : COL_TEXT, false);
             g.drawString(font, tail, bx + bw - 10 - tw, rowTop, s.capitulated() ? COL_WAR : COL_DIM, false);
             cy += 11;
             int barW = bw - 18;
@@ -3466,8 +3435,8 @@ public class MapScreen extends Screen {
             cy += 8;
         }
 
-        section(g, "Legenda do mapa");
-        paragraph(g, "Linha grossa: frente, com setas na direção do avanço (numa cidade cercada, só quem pode avançar tem setas). Linha pontilhada cinza: ligação interna de um lado. Anel pulsante: cidade In Play. Anel vermelho: cidade cercada. Espada: jogadores dos dois lados no mesmo território. Bandeira: cidade tomada há menos de 10 minutos.", COL_DIM);
+        section(g, "Map legend");
+        paragraph(g, "Thick line: front, with arrows in the direction of the advance (at an encircled city only the side that can advance has arrows). Dotted gray line: internal link of one side. Pulsing ring: In Play city. Red ring: encircled city.", COL_DIM);
     }
 
     // -------------------------------------------------------------- configurações
@@ -3479,7 +3448,7 @@ public class MapScreen extends Screen {
         boolean hover = vis && mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + 16;
         bevel(g, x, y, w, 16, hover, false);
         g.drawString(font, fit(label, w - 60), x + 6, y + 4, COL_TEXT, false);
-        String state = value ? "Ligado" : "Desligado";
+        String state = value ? "On" : "Off";
         g.fill(x + w - 12, y + 5, x + w - 5, y + 12, 0xFF0E0C08);
         g.fill(x + w - 11, y + 6, x + w - 6, y + 11, value ? 0xFF4CD964 : 0xFF5A584E);
         g.drawString(font, state, x + w - 16 - font.width(state), y + 4, value ? 0xFF9BE59B : COL_DIM, false);
@@ -3536,64 +3505,64 @@ public class MapScreen extends Screen {
 
     private void drawSettingsPanel(GuiGraphics g, int mouseX, int mouseY) {
         Prefs.Data p = Prefs.get();
-        int top = header(g, NEUTRAL, "Configurações", "Salvas em config/hoi4map", null, mouseX, mouseY, () -> tab = TAB_NONE);
+        int top = header(g, NEUTRAL, "Settings", "Saved in config/bmcatlas", null, mouseX, mouseY, () -> tab = TAB_NONE);
         beginScroll(g, top, SCROLL[TAB_SET], 0);
         final int fullX = bx, fullW = bw, colTop = cy;
         boolean twoCols = bw >= 440;
         if (twoCols) bw = fullW / 2;
 
-        section(g, "Aparência do mapa");
-        stepsRow(g, "Intensidade da cor dos países", p.fillPct + "%", 11, indexOfStep(p.fillPct, 0, 10, 11), mouseX, mouseY, i -> {
+        section(g, "Map appearance");
+        stepsRow(g, "Country color intensity", p.fillPct + "%", 11, indexOfStep(p.fillPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.fillPct = i * 10;
             Prefs.changed();
         });
-        stepsRow(g, "Opacidade das bordas", p.borderPct + "%", 11, indexOfStep(p.borderPct, 0, 10, 11), mouseX, mouseY, i -> {
+        stepsRow(g, "Border opacity", p.borderPct + "%", 11, indexOfStep(p.borderPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.borderPct = i * 10;
             Prefs.changed();
         });
-        choiceRow(g, "Estilo do terreno", new String[]{"HOI4", "Limpo (Xaero's)"}, p.mapStyle, mouseX, mouseY, i -> {
+        choiceRow(g, "Terrain style", new String[]{"Atlas", "Clean (Xaero's)"}, p.mapStyle, mouseX, mouseY, i -> {
             p.mapStyle = i;
             Prefs.changed();
         });
-        stepsRow(g, "Realce do relevo", p.reliefPct + "%", 9, indexOfStep(p.reliefPct, 100, 25, 9), mouseX, mouseY, i -> {
+        stepsRow(g, "Relief emphasis", p.reliefPct + "%", 9, indexOfStep(p.reliefPct, 100, 25, 9), mouseX, mouseY, i -> {
             p.reliefPct = 100 + i * 25;
             Prefs.changed();
         });
-        stepsRow(g, "Suavização do ruído do terreno", p.smoothPct + "%", 11, indexOfStep(p.smoothPct, 0, 10, 11), mouseX, mouseY, i -> {
+        stepsRow(g, "Terrain noise smoothing", p.smoothPct + "%", 11, indexOfStep(p.smoothPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.smoothPct = i * 10;
             Prefs.changed();
         });
-        stepsRow(g, "Saturação da água", p.waterSatPct + "%", 11, indexOfStep(p.waterSatPct, 0, 10, 11), mouseX, mouseY, i -> {
+        stepsRow(g, "Water saturation", p.waterSatPct + "%", 11, indexOfStep(p.waterSatPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.waterSatPct = i * 10;
             Prefs.changed();
         });
-        toggleRow(g, "Nomes dos países", p.countryNames, mouseX, mouseY, () -> {
+        toggleRow(g, "Country names", p.countryNames, mouseX, mouseY, () -> {
             p.countryNames = !p.countryNames;
             Prefs.save();
         });
-        toggleRow(g, "Nomes das cidades", p.cityNames, mouseX, mouseY, () -> {
+        toggleRow(g, "City names", p.cityNames, mouseX, mouseY, () -> {
             p.cityNames = !p.cityNames;
             Prefs.save();
         });
-        choiceRow(g, "Marcadores das cidades", new String[]{"Ícones do site", "Simples"}, p.simpleMarkers ? 1 : 0, mouseX, mouseY, i -> {
+        choiceRow(g, "City markers", new String[]{"Site icons", "Simple"}, p.simpleMarkers ? 1 : 0, mouseX, mouseY, i -> {
             p.simpleMarkers = i == 1;
             Prefs.save();
         });
-        stepsRow(g, "Cidades aparecem ao aproximar", p.zoomBiasPct + "% (mais = mais cedo)", 7, indexOfStep(p.zoomBiasPct, 50, 25, 7), mouseX, mouseY, i -> {
+        stepsRow(g, "Cities show when zooming in", p.zoomBiasPct + "% (more = earlier)", 7, indexOfStep(p.zoomBiasPct, 50, 25, 7), mouseX, mouseY, i -> {
             p.zoomBiasPct = 50 + i * 25;
             Prefs.save();
         });
-        toggleRow(g, "Província sob o cursor", p.provinceInTooltip, mouseX, mouseY, () -> {
+        toggleRow(g, "Province under the cursor", p.provinceInTooltip, mouseX, mouseY, () -> {
             p.provinceInTooltip = !p.provinceInTooltip;
             Prefs.save();
         });
 
-        section(g, "Jogadores online");
-        toggleRow(g, "Mostrar no mapa", showPlayers && SiteTerritories.showPlayers(), mouseX, mouseY, () -> {
+        section(g, "Online players");
+        toggleRow(g, "Show on the map", showPlayers && SiteTerritories.showPlayers(), mouseX, mouseY, () -> {
             showPlayers = !showPlayers;
             if (showPlayers && !SiteTerritories.showPlayers()) SiteTerritories.setShowPlayers(true);
         });
-        stepsRow(g, "Tamanho dos ícones", p.playerIconPct + "%", 13, indexOfStep(p.playerIconPct, 100, 25, 13), mouseX, mouseY, i -> {
+        stepsRow(g, "Icon size", p.playerIconPct + "%", 13, indexOfStep(p.playerIconPct, 100, 25, 13), mouseX, mouseY, i -> {
             p.playerIconPct = 100 + i * 25;
             Prefs.save();
         });
@@ -3604,16 +3573,15 @@ public class MapScreen extends Screen {
             cy = colTop;
             rowIdx = 0;
         }
-        section(g, "Guerra");
-        toggleRow(g, "Controle ao vivo (dynmap)", SiteTerritories.liveWar(), mouseX, mouseY, () -> SiteTerritories.setLiveWar(!SiteTerritories.liveWar()));
-        toggleRow(g, "Espadas e bandeiras", SiteTerritories.warMarkers(), mouseX, mouseY, () -> SiteTerritories.setWarMarkers(!SiteTerritories.warMarkers()));
+        section(g, "War");
+        toggleRow(g, "Live control (dynmap)", SiteTerritories.liveWar(), mouseX, mouseY, () -> SiteTerritories.setLiveWar(!SiteTerritories.liveWar()));
 
-        section(g, "Minimapa");
-        toggleRow(g, "Minimapa na tela do jogo", p.minimap, mouseX, mouseY, () -> {
+        section(g, "Minimap");
+        toggleRow(g, "Minimap on the game screen", p.minimap, mouseX, mouseY, () -> {
             p.minimap = !p.minimap;
             Prefs.save();
         });
-        stepsRow(g, "Tamanho", p.minimapSize + " px", 13, indexOfStep(p.minimapSize, 64, 16, 13), mouseX, mouseY, i -> {
+        stepsRow(g, "Size", p.minimapSize + " px", 13, indexOfStep(p.minimapSize, 64, 16, 13), mouseX, mouseY, i -> {
             p.minimapSize = 64 + i * 16;
             Prefs.save();
         });
@@ -3621,23 +3589,23 @@ public class MapScreen extends Screen {
             p.minimapZoomPct = 50 + i * 25;
             Prefs.save();
         });
-        choiceRow(g, "Canto", new String[]{"Sup. esq.", "Sup. dir.", "Inf. esq.", "Inf. dir."}, p.minimapCorner, mouseX, mouseY, i -> {
+        choiceRow(g, "Corner", new String[]{"Top left", "Top right", "Bottom left", "Bottom right"}, p.minimapCorner, mouseX, mouseY, i -> {
             p.minimapCorner = i;
             Prefs.save();
         });
-        toggleRow(g, "Cidades no minimapa", p.minimapCities, mouseX, mouseY, () -> {
+        toggleRow(g, "Cities on the minimap", p.minimapCities, mouseX, mouseY, () -> {
             p.minimapCities = !p.minimapCities;
             Prefs.save();
         });
-        toggleRow(g, "Jogadores no minimapa", p.minimapPlayers, mouseX, mouseY, () -> {
+        toggleRow(g, "Players on the minimap", p.minimapPlayers, mouseX, mouseY, () -> {
             p.minimapPlayers = !p.minimapPlayers;
             Prefs.save();
         });
 
         List<MapCatalog.Entry> maps = MapCatalog.list();
-        section(g, "Mapas do servidor");
+        section(g, "Server maps");
         if (maps.isEmpty()) {
-            paragraph(g, "Este servidor só tem um mapa (o endereço \"url\" de config/hoi4map/site.json). Para ter vários, publique um maps.json ou liste-os em \"maps\" no site.json.", COL_DIM);
+            paragraph(g, "This server has only one map (the \"url\" address in config/bmcatlas/site.json). To have several, publish a maps.json or list them under \"maps\" in site.json.", COL_DIM);
         } else {
             String cur = SiteTerritories.activeMap() == null ? "" : SiteTerritories.activeMap().key;
             for (MapCatalog.Entry e : maps) {
@@ -3649,13 +3617,13 @@ public class MapScreen extends Screen {
                 if (vis) hits.add(new Hit(bx + 9, rowTop, bw - 18, 16, () -> SiteTerritories.selectMap(e.key), null));
                 cy += 19;
             }
-            textButton(g, bx + 9, cy, bw - 18, 15, "Automático (pelo servidor)", mouseX, mouseY, true, () -> SiteTerritories.selectMap(""));
+            textButton(g, bx + 9, cy, bw - 18, 15, "Automatic (by server)", mouseX, mouseY, true, () -> SiteTerritories.selectMap(""));
             cy += 19;
-            paragraph(g, "Lista: " + MapCatalog.source() + (MapCatalog.error().isEmpty() ? "" : " (erro: " + MapCatalog.error() + ")"), COL_DIM);
+            paragraph(g, "List: " + MapCatalog.source() + (MapCatalog.error().isEmpty() ? "" : " (error: " + MapCatalog.error() + ")"), COL_DIM);
         }
 
-        section(g, "Outro servidor");
-        paragraph(g, "Em config/hoi4map/site.json: \"url\" (territories.json), \"mapsUrl\" (maps.json), \"dynmapUrl\", \"dynmapWorld\". Sem \"url\", o mapa funciona só com os chunks que você explora.", COL_DIM);
+        section(g, "Another server");
+        paragraph(g, "In config/bmcatlas/site.json: \"url\" (territories.json), \"mapsUrl\" (maps.json), \"dynmapUrl\", \"dynmapWorld\". Without \"url\", the map works only with the chunks you explore.", COL_DIM);
 
         if (twoCols) {
             cy = Math.max(cy, col1End);
@@ -3684,7 +3652,7 @@ public class MapScreen extends Screen {
         long a = Math.abs(ms) / 60000;
         long days = a / 1440, hours = (a % 1440) / 60, mins = a % 60;
         String t = days > 0 ? days + "d " + hours + "h" : hours > 0 ? hours + "h " + mins + "m" : mins + "m";
-        return ms < 0 ? "há " + t : "em " + t;
+        return ms < 0 ? t + " ago" : "in " + t;
     }
 
     private static String stripAt(String n) {
@@ -3741,8 +3709,8 @@ public class MapScreen extends Screen {
 
     private void drawDiploMenu(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
-        int top = header(g, NEUTRAL, "Panorama diplomático", "Alianças, NAP, purge, diplolock, tréguas e ultimatos", null, mouseX, mouseY, () -> tab = TAB_NONE);
-        top = tabStrip(g, top, new String[]{"Alianças", "NAP", "Purge", "Diplolock", "Tréguas", "Ultimatos"}, dmTab, mouseX, mouseY, i -> {
+        int top = header(g, NEUTRAL, "Diplomatic overview", "Alliances, NAPs, purge, diplolock, truces and ultimatums", null, mouseX, mouseY, () -> tab = TAB_NONE);
+        top = tabStrip(g, top, new String[]{"Alliances", "NAP", "Purge", "Diplolock", "Truces", "Ultimatums"}, dmTab, mouseX, mouseY, i -> {
             dmTab = i;
             SCROLL[TAB_DIPLOMENU] = 0;
         });
@@ -3761,14 +3729,14 @@ public class MapScreen extends Screen {
     private void dmAlliances(GuiGraphics g, SiteTerritories.Data d, int mouseX, int mouseY) {
         List<SiteTerritories.AllianceInfo> all = d.war == null || d.war.alliances == null ? List.of() : d.war.alliances;
         if (all.isEmpty()) {
-            paragraph(g, "O site não lista alianças.", COL_DIM);
+            paragraph(g, "The site lists no alliances.", COL_DIM);
             return;
         }
         for (int pass = 0; pass < 2; pass++) {
             int count = 0;
             for (SiteTerritories.AllianceInfo a : all) if (Relations.isBilateral(a) == (pass == 1)) count++;
             if (count == 0) continue;
-            section(g, (pass == 0 ? "Alianças" : "Alianças bilaterais") + " (" + count + ")");
+            section(g, (pass == 0 ? "Alliances" : "Bilateral alliances") + " (" + count + ")");
             for (int i = 0; i < all.size(); i++) {
                 SiteTerritories.AllianceInfo a = all.get(i);
                 if (Relations.isBilateral(a) != (pass == 1)) continue;
@@ -3792,22 +3760,22 @@ public class MapScreen extends Screen {
         }
         if (dipAlliance >= 0 && dipAlliance < all.size()) {
             SiteTerritories.AllianceInfo a = all.get(dipAlliance);
-            section(g, a.name == null ? "Aliança" : a.name);
-            textButton(g, bx + 9, cy, bw - 18, 16, "Ver no mapa (modo Diplomacia)", mouseX, mouseY, true, () -> {
+            section(g, a.name == null ? "Alliance" : a.name);
+            textButton(g, bx + 9, cy, bw - 18, 16, "View on the map (Diplomacy mode)", mouseX, mouseY, true, () -> {
                 mode = MODE_DIPLOMACY;
                 dipFocus = -1;
             });
             cy += 21;
-            kv(g, "Nome oficial", a.officialName);
-            kv(g, "Formada", a.formed);
+            kv(g, "Official name", a.officialName);
+            kv(g, "Formed", a.formed);
             if (a.members != null) {
-                for (SiteTerritories.Member m : a.members) kv(g, m.name == null ? "Membro" : m.name, m.note == null ? "membro" : m.note);
+                for (SiteTerritories.Member m : a.members) kv(g, m.name == null ? "Member" : m.name, m.note == null ? "member" : m.note);
             }
-            kv(g, "Notas", a.notes);
+            kv(g, "Notes", a.notes);
             List<String> names = new ArrayList<>();
             for (int c : Relations.countriesOf(d, a)) names.add(d.labels[c]);
             if (!names.isEmpty()) {
-                section(g, "Países (" + names.size() + ")  -  clique para ir");
+                section(g, "Countries (" + names.size() + ")  -  click to go");
                 chips(g, names, mouseX, mouseY, n -> {
                     Integer ci = Relations.nameIndex(d).get(Relations.norm(n));
                     if (ci != null) centerCountry(ci);
@@ -3842,7 +3810,7 @@ public class MapScreen extends Screen {
                 x += font.width(" & ");
                 link(g, tb, x, rowTop + 3, ib != null, mouseX, mouseY, () -> centerCountry(ib));
             }
-            String when = (t.note().startsWith("->") ? "aceito automaticamente " : t.note().isEmpty() ? "até " : t.note() + " até ")
+            String when = (t.note().startsWith("->") ? "automatically accepted " : t.note().isEmpty() ? "until " : t.note() + " until ")
                     + dateText(t.until()) + "  (" + countdown(t.until() - now) + ")";
             g.drawString(font, fit(when, bw - 26), bx + 11, rowTop + 13, color, false);
         }
@@ -3863,14 +3831,14 @@ public class MapScreen extends Screen {
         for (SiteTerritories.WarInfo w : Relations.wars(d)) {       // guerra encerrada deixa 3 dias de trégua entre os lados
             long ended = parseMs(w.ended);
             if (ended == NONE || ended > now || ended + TRUCE_MS <= now) continue;
-            list.add(new Timed("Após a guerra " + warName(w), null, "", ended + TRUCE_MS));
+            list.add(new Timed("After the war " + warName(w), null, "", ended + TRUCE_MS));
         }
         if (d.war != null && d.war.ultimatums != null) {
             for (SiteTerritories.Ultimatum u : d.war.ultimatums) {
                 long sent = parseMs(u.sent);
                 if (sent == NONE) continue;
                 long accepted = sent + ULTIMATUM_MS;
-                if (accepted <= now && accepted + TRUCE_MS > now) list.add(new Timed(u.from, u.to, "ultimato aceito,", accepted + TRUCE_MS));
+                if (accepted <= now && accepted + TRUCE_MS > now) list.add(new Timed(u.from, u.to, "ultimatum accepted,", accepted + TRUCE_MS));
             }
         }
         list.sort((x, y) -> Long.compare(x.until(), y.until()));
@@ -3881,12 +3849,12 @@ public class MapScreen extends Screen {
         long now = System.currentTimeMillis();
         Map<String, Integer> idx = Relations.nameIndex(d);
         List<Timed> list = truceList(d, now);
-        section(g, "Tréguas (" + list.size() + ")");
+        section(g, "Truces (" + list.size() + ")");
         if (list.isEmpty()) {
-            paragraph(g, "Nenhuma trégua em vigor.", COL_DIM);
+            paragraph(g, "No truce in force.", COL_DIM);
             return;
         }
-        paragraph(g, "Do que acaba antes para o que acaba depois. Clique num nome para ir até o país.", COL_DIM);
+        paragraph(g, "From the soonest to end to the latest. Click a name to go to the country.", COL_DIM);
         for (Timed t : list) timedRow(g, d, idx, t, now, mouseX, mouseY, COL_TEXT);
     }
 
@@ -3908,12 +3876,12 @@ public class MapScreen extends Screen {
         long now = System.currentTimeMillis();
         Map<String, Integer> idx = Relations.nameIndex(d);
         List<Timed> list = ultimatumList(d, now);
-        section(g, "Ultimatos pendentes (" + list.size() + ")");
+        section(g, "Pending ultimatums (" + list.size() + ")");
         if (list.isEmpty()) {
-            paragraph(g, "Nenhum ultimato pendente.", COL_DIM);
+            paragraph(g, "No pending ultimatum.", COL_DIM);
             return;
         }
-        paragraph(g, "Sem resposta em 72 horas, o ultimato é aceito automaticamente e começa uma trégua de 3 dias.", COL_DIM);
+        paragraph(g, "With no answer in 72 hours, the ultimatum is accepted automatically and a 3-day truce begins.", COL_DIM);
         for (Timed t : list) timedRow(g, d, idx, t, now, mouseX, mouseY, COL_WAR);
     }
 
@@ -3949,12 +3917,12 @@ public class MapScreen extends Screen {
             if (y.until() == NONE) return -1;
             return Long.compare(x.until(), y.until());
         });
-        section(g, "NAP ativos (" + list.size() + ")");
+        section(g, "Active NAPs (" + list.size() + ")");
         if (list.isEmpty()) {
-            paragraph(g, "Nenhum pacto de não agressão ativo no site.", COL_DIM);
+            paragraph(g, "No active non-aggression pact on the site.", COL_DIM);
             return;
         }
-        paragraph(g, "Clique num nome para ir até o país. Os com prazo vêm primeiro, do que acaba antes para o que acaba depois.", COL_DIM);
+        paragraph(g, "Click a name to go to the country. Those with a deadline come first, soonest to latest.", COL_DIM);
         int half = (bw - 24 - 40) / 2;
         for (NapPair n : list) {
             int rowTop = cy;
@@ -3967,7 +3935,7 @@ public class MapScreen extends Screen {
                 g.drawString(font, " - ", x, rowTop + 3, COL_DIM, false);
                 x += font.width(" - ");
                 link(g, tb, x, rowTop + 3, ib != null, mouseX, mouseY, () -> centerCountry(ib));
-                String when = n.until() == NONE ? "sem prazo no site" : countdown(n.until() - now);
+                String when = n.until() == NONE ? "no deadline on the site" : countdown(n.until() - now);
                 g.drawString(font, when, bx + 11, rowTop + 13, n.until() == NONE ? COL_DIM : COL_TEXT, false);
             }
             rowIdx++;
@@ -3995,13 +3963,13 @@ public class MapScreen extends Screen {
             list.add(new Purgeable(e.getKey(), p, end));
         }
         list.sort((x, y) -> Long.compare(x.end(), y.end()));
-        section(g, "Prestes a tomar purge");
-        paragraph(g, soon + " jogador(es) a 7 dias ou menos do purge; " + overdue + " já passaram do prazo. Jogadores imunes ficam de fora.", COL_TEXT);
-        textButton(g, bx + 9, cy, bw - 18, 16, dmAllPurge ? "Mostrando todos (clique: só os próximos)" : "Mostrando os próximos 7 dias (clique: todos)",
+        section(g, "About to be purged");
+        paragraph(g, soon + " player(s) 7 days or less from purge; " + overdue + " already past the deadline. Immune players are left out.", COL_TEXT);
+        textButton(g, bx + 9, cy, bw - 18, 16, dmAllPurge ? "Showing all (click: only the next ones)" : "Showing the next 7 days (click: all)",
                 mouseX, mouseY, true, () -> dmAllPurge = !dmAllPurge);
         cy += 21;
         if (list.isEmpty()) {
-            paragraph(g, "Ninguém nessa situação agora.", COL_DIM);
+            paragraph(g, "Nobody in this situation right now.", COL_DIM);
             return;
         }
         int shown = 0;
@@ -4012,13 +3980,13 @@ public class MapScreen extends Screen {
             if (visible(rowTop, 24)) {
                 boolean hover = mouseX >= bx + 6 && mouseX < bx + bw - 6 && mouseY >= rowTop && mouseY < rowTop + 24;
                 zebra(g, rowTop, 24, hover, false);
-                String when = left < 0 ? "vencido " + countdown(left) : countdown(left);
+                String when = left < 0 ? "overdue " + countdown(left) : countdown(left);
                 int color = left < 0 ? 0xFFE06A6A : left < 2 * DAY ? 0xFFE8B04A : COL_TEXT;
                 g.drawString(font, fit(pu.site(), bw - 36 - font.width(when)), bx + 11, rowTop + 3, hover ? 0xFFDDE7EE : COL_LINK, false);
                 g.drawString(font, when, bx + bw - 11 - font.width(when), rowTop + 3, color, false);
                 String sub = (pu.p().country == null ? "" : pu.p().country)
-                        + (pu.p().purge.realm == null ? "" : "  -  reino " + pu.p().purge.realm)
-                        + "  -  " + pu.p().purge.days + " dias";
+                        + (pu.p().purge.realm == null ? "" : "  -  realm " + pu.p().purge.realm)
+                        + "  -  " + pu.p().purge.days + " days";
                 g.drawString(font, fit(sub, bw - 24), bx + 11, rowTop + 13, COL_DIM, false);
                 final String site = pu.site();
                 hits.add(new Hit(bx + 6, rowTop, bw - 12, 24, () -> openPlayer(site), null));
@@ -4026,7 +3994,7 @@ public class MapScreen extends Screen {
             rowIdx++;
             cy += 24;
         }
-        if (list.size() > 150) paragraph(g, "... e mais " + (list.size() - 150) + " (use o filtro dos próximos 7 dias).", COL_DIM);
+        if (list.size() > 150) paragraph(g, "... and " + (list.size() - 150) + " more (use the next-7-days filter).", COL_DIM);
     }
 
     private static final class Lk {
@@ -4055,7 +4023,7 @@ public class MapScreen extends Screen {
                 long u = parseMs(lk.until);
                 if (u != NONE && u < now) continue;
                 Lk l = get.apply(lk.nation, idx.get(Relations.norm(lk.nation)));
-                l.reasons.add("Foundation".equals(lk.kind) ? "fundação recente (sem ultimatos, alianças ou garantias)" : "definido pela staff");
+                l.reasons.add("Foundation".equals(lk.kind) ? "recent foundation (no ultimatums, alliances or guarantees)" : "set by staff");
                 if (u != NONE && (l.end == NONE || u > l.end)) l.end = u;
             }
         }
@@ -4065,7 +4033,7 @@ public class MapScreen extends Screen {
             if (war.ended != null && !war.ended.isBlank() && (ended == NONE || ended <= now)) continue;
             if (war.sides == null) continue;
             for (SiteTerritories.Side side : war.sides) {
-                for (int c : Relations.countriesOf(d, side)) get.apply(d.labels[c], c).reasons.add("beligerante: " + (war.name == null ? war.id : war.name));
+                for (int c : Relations.countriesOf(d, side)) get.apply(d.labels[c], c).reasons.add("belligerent: " + (war.name == null ? war.id : war.name));
             }
         }
         // ultimatos pendentes (72 h)
@@ -4076,17 +4044,17 @@ public class MapScreen extends Screen {
                 long end = sent + 3 * DAY;
                 Lk a = get.apply(u.from, idx.get(Relations.norm(u.from)));
                 Lk b = get.apply(u.to, idx.get(Relations.norm(u.to)));
-                a.reasons.add("ultimato com " + u.to);
-                b.reasons.add("ultimato de " + u.from);
+                a.reasons.add("ultimatum with " + u.to);
+                b.reasons.add("ultimatum from " + u.from);
                 if (a.end == NONE || end > a.end) a.end = end;
                 if (b.end == NONE || end > b.end) b.end = end;
             }
         }
         List<Lk> list = new ArrayList<>(map.values());
         list.removeIf(l -> l.reasons.isEmpty());
-        section(g, "Países diplolocked (" + list.size() + ")");
+        section(g, "Diplolocked countries (" + list.size() + ")");
         if (list.isEmpty()) {
-            paragraph(g, "Nenhum país diplolocked agora: sem fundação recente, sem guerra aberta, sem ultimato pendente e sem bloqueio da staff.", COL_DIM);
+            paragraph(g, "No diplolocked country right now: no recent foundation, no open war, no pending ultimatum and no staff block.", COL_DIM);
             return;
         }
         for (Lk l : list) {
@@ -4118,20 +4086,20 @@ public class MapScreen extends Screen {
         Minecraft mc = Minecraft.getInstance();
         boolean remote = ChunkGen.isRemote(mc);
         boolean running = ChunkGen.state != ChunkGen.State.IDLE;
-        int top = header(g, NEUTRAL, "Gerar chunks", remote ? "servidor (teleporte)" : "mundo local (servidor interno)", null, mouseX, mouseY, () -> {
+        int top = header(g, NEUTRAL, "Generate chunks", remote ? "server (teleport)" : "local world (integrated server)", null, mouseX, mouseY, () -> {
             tab = TAB_NONE;
             genConfirm = false;
         });
         beginScroll(g, top, SCROLL[TAB_GEN], 0);
 
         int[] lim = running ? ChunkGen.limit : ChunkGen.computeLimit(mc);
-        section(g, "LIMITE DO MAPA");
+        section(g, "MAP LIMIT");
         if (lim == null) {
-            paragraph(g, "Não foi possível saber o tamanho do mapa (sem borda do mundo e sem dados do site). Defina worldHalfSize em config/hoi4map/site.json.", 0xFFE06A6A);
+            paragraph(g, "Could not determine the map size (no world border and no site data). Set worldHalfSize in config/bmcatlas/site.json.", 0xFFE06A6A);
         } else {
-            kv(g, "Fonte", ChunkGen.limitSource);
-            kv(g, "X", lim[0] + " a " + lim[2]);
-            kv(g, "Z", lim[1] + " a " + lim[3]);
+            kv(g, "Source", ChunkGen.limitSource);
+            kv(g, "X", lim[0] + " to " + lim[2]);
+            kv(g, "Z", lim[1] + " to " + lim[3]);
             long total = (long) (((lim[2] >> 4) - (lim[0] >> 4)) + 1) * (((lim[3] >> 4) - (lim[1] >> 4)) + 1);
             kv(g, "Chunks", String.valueOf(total));
         }
@@ -4145,9 +4113,9 @@ public class MapScreen extends Screen {
             String pct = (int) (p * 100) + "%";
             g.drawString(font, pct, barX + barW / 2 - font.width(pct) / 2, cy + 1, 0xFFFFFFFF, true);
             cy += 16;
-            kv(g, "No mapa", ChunkGen.known + " / " + ChunkGen.total);
-            kv(g, "Tempo restante", ChunkGen.eta());
-            kv(g, "Estado", ChunkGen.state == ChunkGen.State.PAUSED ? "pausado" : "rodando");
+            kv(g, "On the map", ChunkGen.known + " / " + ChunkGen.total);
+            kv(g, "Time left", ChunkGen.eta());
+            kv(g, "State", ChunkGen.state == ChunkGen.State.PAUSED ? "paused" : "running");
         }
         if (ChunkGen.message != null && !ChunkGen.message.isBlank()) paragraph(g, ChunkGen.message, 0xFFDDE7EE);
 
@@ -4155,30 +4123,30 @@ public class MapScreen extends Screen {
         int bxx = bx + 9;
         int full = bw - 18;
         if (running) {
-            textButton(g, bxx, cy, full / 2 - 2, 18, ChunkGen.state == ChunkGen.State.PAUSED ? "Continuar" : "Pausar", mouseX, mouseY, true, ChunkGen::togglePause);
-            textButton(g, bxx + full / 2 + 2, cy, full / 2 - 2, 18, "Parar", mouseX, mouseY, true, () -> ChunkGen.stop(mc, "Parado por você."));
+            textButton(g, bxx, cy, full / 2 - 2, 18, ChunkGen.state == ChunkGen.State.PAUSED ? "Resume" : "Pause", mouseX, mouseY, true, ChunkGen::togglePause);
+            textButton(g, bxx + full / 2 + 2, cy, full / 2 - 2, 18, "Stop", mouseX, mouseY, true, () -> ChunkGen.stop(mc, "Stopped by you."));
             cy += 24;
         } else if (genConfirm && remote) {
-            paragraph(g, "ATENÇÃO: isto usa /tp para levar você por todo o mapa, em modo espectador, e volta no fim. Exige operador e pesa no servidor: faça só com permissão da administração.", 0xFFE06A6A);
-            textButton(g, bxx, cy, full / 2 - 2, 18, "Confirmar", mouseX, mouseY, lim != null, () -> {
+            paragraph(g, "WARNING: this uses /tp to take you across the whole map in spectator mode, and returns you at the end. It needs operator permission and is heavy on the server: only do it with the admins' permission.", 0xFFE06A6A);
+            textButton(g, bxx, cy, full / 2 - 2, 18, "Confirm", mouseX, mouseY, lim != null, () -> {
                 genConfirm = false;
                 ChunkGen.start(mc);
             });
-            textButton(g, bxx + full / 2 + 2, cy, full / 2 - 2, 18, "Cancelar", mouseX, mouseY, true, () -> genConfirm = false);
+            textButton(g, bxx + full / 2 + 2, cy, full / 2 - 2, 18, "Cancel", mouseX, mouseY, true, () -> genConfirm = false);
             cy += 24;
         } else {
-            textButton(g, bxx, cy, full, 18, "Gerar todos os chunks", mouseX, mouseY, lim != null, () -> {
+            textButton(g, bxx, cy, full, 18, "Generate all chunks", mouseX, mouseY, lim != null, () -> {
                 if (remote) genConfirm = true;
                 else ChunkGen.start(mc);
             });
             cy += 24;
         }
 
-        section(g, "COMO FUNCIONA");
+        section(g, "HOW IT WORKS");
         if (remote) {
-            paragraph(g, "Em servidor, o mod teleporta você (modo espectador) por uma grade de pontos dentro do limite, espera os chunks chegarem e os desenha no mapa. No fim, volta ao ponto de partida e ao seu modo de jogo. Pode demorar bastante; dá para pausar ou parar. Cada teleporte aparece no chat.", COL_DIM);
+            paragraph(g, "On a server, the mod teleports you (spectator mode) over a grid of points inside the limit, waits for the chunks to arrive and draws them on the map. At the end you return to your starting point and game mode. It can take a long time; you can pause or stop. Every teleport shows in chat.", COL_DIM);
         } else {
-            paragraph(g, "No mundo local, o mod pede os chunks ao servidor interno, do mais perto para o mais longe, sem mover você, e desenha o mapa conforme chegam. O jogo pode ficar mais pesado enquanto roda. Dá para pausar, parar e fechar o mapa: continua em segundo plano.", COL_DIM);
+            paragraph(g, "In a local world, the mod asks the integrated server for chunks, nearest first, without moving you, and draws the map as they arrive. The game may get heavier while it runs. You can pause, stop and close the map: it keeps going in the background.", COL_DIM);
         }
         SCROLL[TAB_GEN] = endScroll(g, SCROLL[TAB_GEN]);
     }
@@ -4199,7 +4167,7 @@ public class MapScreen extends Screen {
         try {
             OffsetDateTime t = OffsetDateTime.parse(iso);
             long days = Duration.between(t.toInstant(), Instant.now()).toDays();
-            return (days <= 0 ? "hoje" : days == 1 ? "ontem" : "há " + days + " dias") + "  (" + iso.replace('T', ' ') + ")";
+            return (days <= 0 ? "today" : days == 1 ? "yesterday" : days + " days ago") + "  (" + iso.replace('T', ' ') + ")";
         } catch (RuntimeException e) {
             return iso;
         }
@@ -4211,7 +4179,7 @@ public class MapScreen extends Screen {
             OffsetDateTime t = OffsetDateTime.parse(p.lastJoined).plusDays(p.purge.days);
             long left = Duration.between(Instant.now(), t.toInstant()).toDays();
             String date = t.toLocalDate().toString();
-            return left < 0 ? "desde " + date : "em " + (left + 1) + " dia(s), " + date;
+            return left < 0 ? "since " + date : "in " + (left + 1) + " day(s), " + date;
         } catch (RuntimeException e) {
             return null;
         }
@@ -4238,7 +4206,7 @@ public class MapScreen extends Screen {
         box(g, bx, by, bw, bh, COL_PANEL);
         hits.add(new Hit(bx, by, bw, bh, null, null));
 
-        String sub = p == null ? "sem registro no site" : p.ign == null ? null : "no jogo: " + p.ign;
+        String sub = p == null ? "not recorded on the site" : p.ign == null ? null : "in game: " + p.ign;
         Integer pc = d.countryOfPlayer.get(selPlayer.toLowerCase(Locale.ROOT));
         int top = header(g, pc == null ? NEUTRAL : d.rgb[pc], selPlayer, sub, pc == null ? null : flagOf(d, pc), mouseX, mouseY, () -> selPlayer = null);
 
@@ -4250,7 +4218,7 @@ public class MapScreen extends Screen {
         if (skin != null) {
             g.blit(RenderPipelines.GUI_TEXTURED, skin.id(), figX, figY, 0f, 0f, 48, 96, skin.w(), skin.h(), skin.w(), skin.h());
         } else {
-            g.drawString(font, skinUrl == null ? "sem skin" : "...", figX + 4, figY + 44, COL_DIM, false);
+            g.drawString(font, skinUrl == null ? "no skin" : "...", figX + 4, figY + 44, COL_DIM, false);
         }
         int tx = figX + 60, ty = top + 8;
         int tw = bx + bw - 10 - tx;
@@ -4264,7 +4232,7 @@ public class MapScreen extends Screen {
                 ty += 12;
             }
             if (p.immune != null) {
-                for (String line : wrap("Imune: " + p.immune, tw)) {
+                for (String line : wrap("Immune: " + p.immune, tw)) {
                     g.drawString(font, line, tx, ty, 0xFF7BC96F, false);
                     ty += 10;
                 }
@@ -4279,27 +4247,27 @@ public class MapScreen extends Screen {
             OnlinePlayers.Entry on = onlineEntry(d, selPlayer);
             if (on != null) {
                 final OnlinePlayers.Entry fe = on;
-                kvLink(g, "Agora", "Online em X " + (int) Math.floor(on.toX) + ", Z " + (int) Math.floor(on.toZ) + " (clique para ir)", mouseX, mouseY, () -> {
+                kvLink(g, "Now", "Online at X " + (int) Math.floor(on.toX) + ", Z " + (int) Math.floor(on.toZ) + " (click to go)", mouseX, mouseY, () -> {
                     viewX = fe.toX;
                     viewZ = fe.toZ;
                     if (scale < 0.7) scale = 0.7;
                 });
             } else if (OnlinePlayers.live() && SiteTerritories.showPlayers()) {
-                kv(g, "Agora", "Offline");
+                kv(g, "Now", "Offline");
             }
-            kv(g, "Última entrada", p.lastJoined == null ? null : ago(p.lastJoined));
+            kv(g, "Last login", p.lastJoined == null ? null : ago(p.lastJoined));
             if (p.purge != null) {
-                kv(g, "Reino", p.purge.realm);
-                kv(g, "População", p.purge.population > 0 ? String.valueOf(p.purge.population) : null);
-                kv(g, "Prazo (purge)", p.purge.days > 0 ? p.purge.days + " dias" : null);
+                kv(g, "Realm", p.purge.realm);
+                kv(g, "Population", p.purge.population > 0 ? String.valueOf(p.purge.population) : null);
+                kv(g, "Deadline (purge)", p.purge.days > 0 ? p.purge.days + " days" : null);
             }
             kv(g, "Purgeable", purgeText(p));
             if (p.current != null && !p.current.isEmpty()) {
-                section(g, "AFILIAÇÕES ATUAIS");
+                section(g, "CURRENT AFFILIATIONS");
                 for (String s : p.current) paragraph(g, s);
             }
             if (p.affiliations != null && !p.affiliations.isEmpty()) {
-                section(g, "HISTÓRICO");
+                section(g, "HISTORY");
                 for (String s : p.affiliations) paragraph(g, s, COL_DIM);
             }
             List<SiteTerritories.Locality> lordships = new ArrayList<>();
@@ -4307,7 +4275,7 @@ public class MapScreen extends Screen {
                 if (l.lord != null && l.lord.equalsIgnoreCase(selPlayer)) lordships.add(l);
             }
             if (!lordships.isEmpty()) {
-                section(g, "SENHORIOS (" + lordships.size() + ")");
+                section(g, "LORDSHIPS (" + lordships.size() + ")");
                 for (SiteTerritories.Locality l : lordships) {
                     String kind = pretty(l.kind);
                     String label = pretty(l.name) + (kind == null || kind.isBlank() ? "" : " (" + kind + ")");
@@ -4326,7 +4294,7 @@ public class MapScreen extends Screen {
                 paragraph(g, p.notes);
             }
         } else {
-            paragraph(g, "Este nome não tem registro de jogador no site.", COL_DIM);
+            paragraph(g, "This name has no player record on the site.", COL_DIM);
         }
         cardScroll = endScroll(g, cardScroll);
 
@@ -4337,7 +4305,7 @@ public class MapScreen extends Screen {
             g.fill(bx + 9, by0, bx + bw - 9, by0 + 18, hover ? 0xFF3A3E42 : 0xFF1D1F1E);
             g.fill(bx + 9, by0, bx + bw - 9, by0 + 1, COL_GOLD_DIM);
             g.fill(bx + 9, by0 + 17, bx + bw - 9, by0 + 18, COL_GOLD_DIM);
-            String label = copied ? "Link copiado!" : "Copiar link do NameMC";
+            String label = copied ? "Link copied!" : "Copy NameMC link";
             g.drawString(font, label, bx + (bw - font.width(label)) / 2, by0 + 5, COL_TEXT, false);
             final String ign = p.ign;
             hits.add(new Hit(bx + 9, by0, bw - 18, 18, () -> {
@@ -4368,37 +4336,37 @@ public class MapScreen extends Screen {
         String ownerId = MapData.ownerOf(selPx, selPz);
         Countries.Country c = ownerId == null ? null : Countries.BY_ID.get(ownerId);
         int span = MapData.PROV * 16;
-        int top = header(g, c == null ? NEUTRAL : c.rgb, c == null ? "Sem dono" : c.name,
-                "Província " + selPx + ", " + selPz + "  (modo manual)", null, mouseX, mouseY, this::closePanel);
+        int top = header(g, c == null ? NEUTRAL : c.rgb, c == null ? "No owner" : c.name,
+                "Province " + selPx + ", " + selPz + "  (manual mode)", null, mouseX, mouseY, this::closePanel);
 
         beginScroll(g, top, 0, 0);
-        section(g, "PROVÍNCIA");
+        section(g, "PROVINCE");
         kv(g, "ID", selPx + ", " + selPz);
-        kv(g, "X", (selPx * span) + " a " + ((selPx + 1) * span - 1));
-        kv(g, "Z", (selPz * span) + " a " + ((selPz + 1) * span - 1));
+        kv(g, "X", (selPx * span) + " to " + ((selPx + 1) * span - 1));
+        kv(g, "Z", (selPz * span) + " to " + ((selPz + 1) * span - 1));
         int known = 0;
         for (int dx = 0; dx < MapData.PROV; dx++) {
             for (int dz = 0; dz < MapData.PROV; dz++) {
                 if (MapData.chunkKnown(selPx * MapData.PROV + dx, selPz * MapData.PROV + dz)) known++;
             }
         }
-        kv(g, "Explorado", known + "/" + (MapData.PROV * MapData.PROV) + " chunks");
-        kv(g, "Dono", c == null ? "Ninguém" : c.name);
+        kv(g, "Explored", known + "/" + (MapData.PROV * MapData.PROV) + " chunks");
+        kv(g, "Owner", c == null ? "Nobody" : c.name);
 
         cy += 6;
         int bxx = bx + 9;
         boolean enabled = !Countries.LIST.isEmpty();
         textButton(g, bxx, cy, 28, 18, "<", mouseX, mouseY, enabled, () -> cycleOwner(-1));
         textButton(g, bxx + 32, cy, 28, 18, ">", mouseX, mouseY, enabled, () -> cycleOwner(1));
-        textButton(g, bxx + 64, cy, bw - 18 - 64, 18, "Sem dono", mouseX, mouseY, true,
+        textButton(g, bxx + 64, cy, bw - 18 - 64, 18, "No owner", mouseX, mouseY, true,
                 () -> MapData.setOwner(selPx, selPz, null));
         cy += 24;
-        paragraph(g, "Sem dados do site: as províncias (32x32 blocos) são atribuídas na mão. Edite config/hoi4map/countries.json para mudar os países.");
+        paragraph(g, "No site data: provinces (32x32 blocks) are assigned by hand. Edit config/bmcatlas/countries.json to change the countries.");
         endScroll(g, 0);
     }
 
     private void drawManualList(GuiGraphics g, int mouseX, int mouseY) {
-        int top = header(g, NEUTRAL, "Países", "modo manual", null, mouseX, mouseY, this::closePanel);
+        int top = header(g, NEUTRAL, "Countries", "manual mode", null, mouseX, mouseY, this::closePanel);
         refreshStats();
         beginScroll(g, top, SCROLL[TAB_LIST], 0);
         for (Countries.Country c : Countries.LIST) {
@@ -4581,7 +4549,7 @@ public class MapScreen extends Screen {
             measureN = 0;
             return true;
         }
-        if (Hoi4MapClient.OPEN_KEY.matches(event)) {
+        if (BmcAtlasClient.OPEN_KEY.matches(event)) {
             onClose();
             return true;
         }

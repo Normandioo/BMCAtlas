@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -162,7 +162,7 @@ final class Relations {
             mine.add(c);
         }
         List<Rel> legend = new ArrayList<>();
-        if (!mine.isEmpty()) legend.add(new Rel("Membros", color, mine));
+        if (!mine.isEmpty()) legend.add(new Rel("Members", color, mine));
         return new Result(ov, Map.of(), Map.of(), legend);
     }
 
@@ -217,12 +217,12 @@ final class Relations {
         ov[f] = d.rgb[f] & 0xFFFFFF;
 
         List<Rel> legend = new ArrayList<>();
-        legend.add(new Rel("Selecionado", d.rgb[f] & 0xFFFFFF, List.of(f)));
-        if (!ally.isEmpty()) legend.add(new Rel("Aliados", ALLY, new ArrayList<>(ally)));
-        if (!bloc.isEmpty()) legend.add(new Rel("Mesmo bloco", BLOC, new ArrayList<>(bloc)));
-        if (!vassal.isEmpty()) legend.add(new Rel("Suserano / súditos", VASSAL, new ArrayList<>(vassal)));
-        if (!nap.isEmpty()) legend.add(new Rel("Pacto de não agressão", NAP, new ArrayList<>(nap)));
-        if (!enemy.isEmpty()) legend.add(new Rel("Em guerra", ENEMY, new ArrayList<>(enemy)));
+        legend.add(new Rel("Selected", d.rgb[f] & 0xFFFFFF, List.of(f)));
+        if (!ally.isEmpty()) legend.add(new Rel("Allies", ALLY, new ArrayList<>(ally)));
+        if (!bloc.isEmpty()) legend.add(new Rel("Same bloc", BLOC, new ArrayList<>(bloc)));
+        if (!vassal.isEmpty()) legend.add(new Rel("Overlord / subjects", VASSAL, new ArrayList<>(vassal)));
+        if (!nap.isEmpty()) legend.add(new Rel("Non-aggression pact", NAP, new ArrayList<>(nap)));
+        if (!enemy.isEmpty()) legend.add(new Rel("At war", ENEMY, new ArrayList<>(enemy)));
         return new Result(ov, Map.of(), Map.of(), legend);
     }
 
@@ -245,7 +245,7 @@ final class Relations {
                 ov[c] = color;
                 sideOf.put(norm(d.ids[c]), color);
             }
-            String name = sides.get(s).name == null ? "Lado " + (s + 1) : sides.get(s).name;
+            String name = sides.get(s).name == null ? "Side " + (s + 1) : sides.get(s).name;
             legend.add(new Rel(name, color, new ArrayList<>(members)));
         }
         List<SiteTerritories.Captured> captured = LiveControl.captured(d, w);
@@ -264,7 +264,7 @@ final class Relations {
                 if (p >= 0) provinces.put(p, color);
                 zones.put(SiteTerritories.zoneKey(c.name, c.country), color);
             }
-            legend.add(new Rel("Em disputa", CONTESTED, List.of()));
+            legend.add(new Rel("Contested", CONTESTED, List.of()));
         }
         return new Result(ov, provinces, zones, legend);
     }

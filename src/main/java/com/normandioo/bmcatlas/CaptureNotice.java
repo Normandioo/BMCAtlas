@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -65,9 +65,9 @@ final class CaptureNotice {
         java.util.Set<Integer> countries = Relations.countriesOf(d, w.sides.get(side));
         if (countries.size() == 1) return d.labels[countries.iterator().next()];
         String n = w.sides.get(side).name;
-        if ("Attackers".equalsIgnoreCase(n)) return "Atacantes";
-        if ("Defenders".equalsIgnoreCase(n)) return "Defensores";
-        return n == null || n.isBlank() ? "Lado " + (side + 1) : n;
+        if ("Attackers".equalsIgnoreCase(n)) return "Attackers";
+        if ("Defenders".equalsIgnoreCase(n)) return "Defenders";
+        return n == null || n.isBlank() ? "Side " + (side + 1) : n;
     }
 
     static void clear() {
@@ -99,7 +99,7 @@ final class CaptureNotice {
                 int n = count.merge(it.by(), 1, Integer::sum);
                 if (n > count.getOrDefault(top.by(), 0)) top = it;
             }
-            offer(new Item(top.city(), top.key(), fresh.size() + " cidades tomadas", top.by(), top.byRgb(), "", 0, top.country()));
+            offer(new Item(top.city(), top.key(), fresh.size() + " cities taken", top.by(), top.byRgb(), "", 0, top.country()));
             return;
         }
         for (Item it : fresh) offer(it);
@@ -144,7 +144,7 @@ final class CaptureNotice {
             shown = 1 - u * u;
         }
 
-        String middle = it.from().isEmpty() ? " avançou" : " tomou de ";
+        String middle = it.from().isEmpty() ? " advanced" : " took it from ";
         int textW = Math.max(font.width(it.title()), font.width(it.by()) + font.width(middle) + font.width(it.from()));
         int w = Math.max(mapW + 6, textW + 34);
         int left = Math.max(2, Math.min(screenW - w - 2, mapX - 3 - (w - mapW - 6) / 2));

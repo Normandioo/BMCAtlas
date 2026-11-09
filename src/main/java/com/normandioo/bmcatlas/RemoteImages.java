@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.Minecraft;
@@ -55,7 +55,7 @@ final class RemoteImages {
         if (o != null) return null;
         if (CACHE.putIfAbsent(key, PENDING) != null) return null;
         HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url))
-                        .timeout(Duration.ofSeconds(20)).header("User-Agent", "hoi4map-fabric-mod").GET().build(),
+                        .timeout(Duration.ofSeconds(20)).header("User-Agent", "bmcatlas-fabric-mod").GET().build(),
                 HttpResponse.BodyHandlers.ofInputStream()).whenComplete((response, error) -> {
             try {
                 if (error != null) throw new RuntimeException(error);
@@ -64,7 +64,7 @@ final class RemoteImages {
                     READY.add(shrinkSoft(key, src, size));
                 }
             } catch (Exception e) {
-                Hoi4MapClient.LOG.debug("Sem imagem em {}: {}", url, e.toString());
+                BmcAtlasClient.LOG.debug("Sem imagem em {}: {}", url, e.toString());
                 CACHE.put(key, FAILED);
             }
         });
@@ -87,7 +87,7 @@ final class RemoteImages {
         if (o != null) return null;
         if (CACHE.putIfAbsent(url, PENDING) != null) return null;
         HTTP.sendAsync(HttpRequest.newBuilder(URI.create(url))
-                        .timeout(Duration.ofSeconds(20)).header("User-Agent", "hoi4map-fabric-mod").GET().build(),
+                        .timeout(Duration.ofSeconds(20)).header("User-Agent", "bmcatlas-fabric-mod").GET().build(),
                 HttpResponse.BodyHandlers.ofInputStream()).whenComplete((response, error) -> {
             try {
                 if (error != null) throw new RuntimeException(error);
@@ -96,7 +96,7 @@ final class RemoteImages {
                     READY.add(kind == 1 ? front(url, src) : shrink(url, src));
                 }
             } catch (Exception e) {
-                Hoi4MapClient.LOG.debug("Sem imagem em {}: {}", url, e.toString());
+                BmcAtlasClient.LOG.debug("Sem imagem em {}: {}", url, e.toString());
                 CACHE.put(url, FAILED);
             }
         });
@@ -113,8 +113,8 @@ final class RemoteImages {
                 for (int y = 0; y < r.h; y++) {
                     for (int x = 0; x < r.w; x++) img.setPixel(x, y, r.argb[y * r.w + x]);
                 }
-                DynamicTexture tex = new DynamicTexture(() -> "hoi4map remote image", img);
-                Identifier id = Identifier.fromNamespaceAndPath(Hoi4MapClient.MOD_ID, "img/i" + (counter++));
+                DynamicTexture tex = new DynamicTexture(() -> "bmcatlas remote image", img);
+                Identifier id = Identifier.fromNamespaceAndPath(BmcAtlasClient.MOD_ID, "img/i" + (counter++));
                 Minecraft.getInstance().getTextureManager().register(id, tex);
                 tex.upload();
                 CACHE.put(r.url, new Img(id, r.w, r.h));
@@ -185,7 +185,7 @@ final class RemoteImages {
     // ------------------------------------------------------------------- skins
 
     private static Ready front(String url, NativeImage skin) {
-        if (skin.getWidth() != 64 || (skin.getHeight() != 64 && skin.getHeight() != 32)) throw new IllegalArgumentException("não é uma skin");
+        if (skin.getWidth() != 64 || (skin.getHeight() != 64 && skin.getHeight() != 32)) throw new IllegalArgumentException("not a skin");
         boolean modern = skin.getHeight() == 64;
         int[] out = new int[16 * 32];
         part(skin, out, 8, 8, 8, 8, 4, 0, false);                 // cabeça

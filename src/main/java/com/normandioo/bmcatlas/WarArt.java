@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.Minecraft;
@@ -100,8 +100,8 @@ final class WarArt {
         for (int y = 0; y < a.h(); y++) {
             for (int x = 0; x < a.w(); x++) img.setPixel(x, y, a.argb()[y * a.w() + x]);
         }
-        DynamicTexture tex = new DynamicTexture(() -> "hoi4map war art", img);
-        Identifier id = Identifier.fromNamespaceAndPath(Hoi4MapClient.MOD_ID, "art/a" + (counter++));
+        DynamicTexture tex = new DynamicTexture(() -> "bmcatlas war art", img);
+        Identifier id = Identifier.fromNamespaceAndPath(BmcAtlasClient.MOD_ID, "art/a" + (counter++));
         Minecraft.getInstance().getTextureManager().register(id, tex);
         tex.upload();
         t = new Tex(id, a.w(), a.h());

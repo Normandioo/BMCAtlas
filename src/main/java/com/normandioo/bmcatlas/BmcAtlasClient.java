@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
@@ -12,8 +12,8 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class Hoi4MapClient implements ClientModInitializer {
-    public static final String MOD_ID = "hoi4map";
+public class BmcAtlasClient implements ClientModInitializer {
+    public static final String MOD_ID = "bmcatlas";
     public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
 
     public static KeyMapping OPEN_KEY;
@@ -24,10 +24,10 @@ public class Hoi4MapClient implements ClientModInitializer {
     public void onInitializeClient() {
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
         OPEN_KEY = KeyBindingHelper.registerKeyBinding(
-                new KeyMapping("key.hoi4map.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
+                new KeyMapping("key.bmcatlas.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_N, category));
 
         MINIMAP_KEY = KeyBindingHelper.registerKeyBinding(
-                new KeyMapping("key.hoi4map.minimap", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
+                new KeyMapping("key.bmcatlas.minimap", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_Z, category));
 
         Prefs.load();
         Countries.load();

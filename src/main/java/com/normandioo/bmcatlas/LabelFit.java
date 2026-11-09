@@ -1,4 +1,4 @@
-package com.normandioo.hoi4map;
+package com.normandioo.bmcatlas;
 
 import java.util.Arrays;
 import java.util.List;
@@ -6,7 +6,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Acha, para cada país, onde o nome cabe inteiro dentro do território (como o HOI4 faz com os estados):
+ * Acha, para cada país, onde o nome cabe inteiro dentro do território (one label per country):
  * a maior caixa do tamanho do texto, em qualquer inclinação até 30 graus, que fica toda dentro da terra do país.
  * Roda em segundo plano; o resultado vai para Data.fit[país] = {centroX, centroZ, ângulo (rad), blocos por pixel de fonte}.
  */
@@ -17,7 +17,7 @@ final class LabelFit {
     private static final int[] ANGLES = {0, -10, 10, -20, 20, -30, 30};
 
     private static final ExecutorService EXEC = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "hoi4map-labels");
+        Thread t = new Thread(r, "bmcatlas-labels");
         t.setDaemon(true);
         t.setPriority(Thread.MIN_PRIORITY);
         return t;

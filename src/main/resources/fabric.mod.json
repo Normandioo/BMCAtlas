@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "id": "hoi4map",
+  "id": "bmcatlas",
   "version": "${version}",
-  "name": "HOI4 Style Map",
-  "description": "Mapa em tela cheia estilo Hearts of Iron IV: modos de mapa (físico, político, províncias), países coloridos e seleção de províncias com painel.",
+  "name": "BMC Atlas",
+  "description": "Full-screen political map and minimap with countries, provinces, live war tracking and online players.",
   "authors": ["Normandioo"],
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
-    "client": ["com.normandioo.hoi4map.Hoi4MapClient"]
+    "client": ["com.normandioo.bmcatlas.BmcAtlasClient"]
   },
   "depends": {
     "fabricloader": ">=0.18.1",
