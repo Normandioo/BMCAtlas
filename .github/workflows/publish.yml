@@ -1,0 +1,88 @@
+name: publish
+
+# Manual: Actions > publish > Run workflow.
+# Uploads the two jars of a GitHub release to CurseForge and/or Modrinth.
+#
+# Repository settings needed (Settings > Secrets and variables > Actions):
+#   secret   CURSEFORGE_TOKEN   (CurseForge API token)
+#   variable CURSEFORGE_ID      (numeric project ID)
+#   secret   MODRINTH_TOKEN     (optional)
+#   variable MODRINTH_ID        (optional, project ID or slug)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: GitHub release tag that holds the jars
+        default: v1.0
+      version:
+        description: Mod version
+        default: 1.0.0
+      type:
+        description: Release channel for the 26.x file (use beta until tested in-game)
+        type: choice
+        options: [release, beta, alpha]
+        default: beta
+      versions_26:
+        description: Game versions for the 26.x file (one per line names as listed on the site)
+        default: |
+          26.1
+          26.2
+          26.3
+      publish_to:
+        type: choice
+        options: [both, curseforge, modrinth]
+        default: both
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download jars
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir jars
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" -D jars -p '*.jar'
+          ls -l jars
+
+      - name: Publish 1.21.11
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          curseforge-id: ${{ inputs.publish_to != 'modrinth' && vars.CURSEFORGE_ID || '' }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          modrinth-id: ${{ inputs.publish_to != 'curseforge' && vars.MODRINTH_ID || '' }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: jars/bmcatlas-${{ inputs.version }}.jar
+          name: BMC Atlas ${{ inputs.version }} (1.21.11)
+          version: ${{ inputs.version }}+1.21.11
+          version-type: release
+          changelog-file: CHANGELOG.md
+          loaders: fabric
+          game-versions: 1.21.11
+          java: 21
+          dependencies: |
+            fabric-api(required){modrinth:P7dR8mSH}{curseforge:306612}
+          client: required
+          server: unsupported
+
+      - name: Publish 26.x
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          curseforge-id: ${{ inputs.publish_to != 'modrinth' && vars.CURSEFORGE_ID || '' }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          modrinth-id: ${{ inputs.publish_to != 'curseforge' && vars.MODRINTH_ID || '' }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: jars/bmcatlas-${{ inputs.version }}-mc26.x.jar
+          name: BMC Atlas ${{ inputs.version }} (26.x)
+          version: ${{ inputs.version }}+26.x
+          version-type: ${{ inputs.type }}
+          changelog-file: CHANGELOG.md
+          loaders: fabric
+          game-versions: ${{ inputs.versions_26 }}
+          java: 25
+          dependencies: |
+            fabric-api(required){modrinth:P7dR8mSH}{curseforge:306612}
+          client: required
+          server: unsupported
