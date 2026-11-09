@@ -8,9 +8,6 @@ import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.monster.Enemy;
 
 import java.util.List;
 import java.util.Locale;
@@ -26,7 +23,6 @@ final class Minimap {
 
     /** Z alterna o minimapa ampliado (centro da tela). */
     static boolean expanded;
-    private static final java.util.Map<net.minecraft.world.entity.EntityType<?>, net.minecraft.world.item.ItemStack> MOB_ICONS = new java.util.HashMap<>();
     private static final String[] HEADING = {"S", "SO", "O", "NO", "N", "NE", "L", "SE"};
 
     static void render(GuiGraphics g, float partial) {
@@ -96,7 +92,6 @@ final class Minimap {
         g.pose().popMatrix();
 
         if (d != null && p.minimapCities) drawCities(g, d, tx, ty, ox, oy, scale, size, gs);
-        if (mc.options.keyPlayerList.isDown()) drawMobs(g, mc, ox, oy, cx, cz, scale, size, partial, gs);
         if (p.minimapPlayers) drawPlayers(g, d, mc, ox, oy, cx, cz, scale, size, partial, gs);
         drawSelf(g, mc, ox, oy, partial);
         g.disableScissor();
@@ -174,34 +169,6 @@ final class Minimap {
             if (!RemoteImages.failed(u2, size)) return RemoteImages.icon(u2, size);
         }
         return null;
-    }
-
-    /** Mobs por perto (segurando TAB): vermelho = hostil, verde = os outros. */
-    private static void drawMobs(GuiGraphics g, Minecraft mc, int ox, int oy, double cx, double cz, double scale, int size, float partial, double gs) {
-        double half = size / 2.0 + 4;
-        for (Entity e : mc.level.entitiesForRendering()) {
-            if (!(e instanceof Mob) || !e.isAlive()) continue;
-            double ex = net.minecraft.util.Mth.lerp(partial, e.xo, e.getX()), ez = net.minecraft.util.Mth.lerp(partial, e.zo, e.getZ());
-            double sx = Math.round((ox + (ex - cx) * scale) * gs) / gs, sy = Math.round((oy + (ez - cz) * scale) * gs) / gs;
-            if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
-            int rgb = e instanceof Enemy ? 0xFFE0453C : 0xFF5CCB5F;
-            net.minecraft.world.item.ItemStack icon = MOB_ICONS.computeIfAbsent(e.getType(), t -> {
-                net.minecraft.world.item.SpawnEggItem egg = net.minecraft.world.item.SpawnEggItem.byId(t);
-                return egg == null ? net.minecraft.world.item.ItemStack.EMPTY : new net.minecraft.world.item.ItemStack(egg);
-            });
-            g.pose().pushMatrix();
-            g.pose().translate((float) sx, (float) sy);
-            if (icon.isEmpty()) {
-                g.fill(-2, -2, 3, 3, 0xFF05080C);
-                g.fill(-1, -1, 2, 2, rgb);
-            } else {
-                g.fill(-5, -5, 5, 5, 0xFF05080C);
-                g.fill(-4, -4, 4, 4, rgb);       // contorno: vermelho = hostil, verde = os outros
-                g.pose().scale(0.5f, 0.5f);
-                g.renderItem(icon, -8, -8);
-            }
-            g.pose().popMatrix();
-        }
     }
 
     /** Cabeças dos jogadores: quem está carregado por perto usa a skin real; o resto, a cabeça do dynmap. */
