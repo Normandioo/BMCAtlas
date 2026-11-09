@@ -172,7 +172,7 @@ final class Map3D {
                     st = tt == null ? null : MapData.sideTexture(blk - 1);
                 }
                 // paredes dos cubos: tom diferente para cada eixo, como nas faces do Minecraft
-                float wallShade = Math.abs(dirx) > Math.abs(dirz) ? 0.64f : 0.80f;
+                float wallShade = Math.abs(dirx) > Math.abs(dirz) ? (dirx > 0 ? 0.72f : 0.56f) : (dirz > 0 ? 0.86f : 0.68f);
                 if (tt == null) {
                     int topRowsFlat = Math.max(1, (int) (pxb * 0.55));
                     int cTop = fog <= 0.01f ? color : mixFog(color, fog);
@@ -206,7 +206,15 @@ final class Map3D {
                             boolean deep = false;
                             if (di >= 1 && reg.wall != null) {
                                 if (di != lastDi) {
-                                    int wid = reg.wall[idx * (MapData.WALL_K - 1) + Math.min(di, MapData.WALL_K - 1) - 1];
+                                    int wid = 0, acc = 1;
+                                    for (int q = 0; q < MapData.WALL_R; q++) {
+                                        int e = reg.wall[idx * MapData.WALL_R + q] & 0xFFFF;
+                                        if (e == 0) break;
+                                        int ln = e & 31;
+                                        wid = e >> 5;
+                                        if (ln == 0 || di < acc + ln) break;
+                                        acc += ln;
+                                    }
                                     MapData.Tex w2 = wid > 0 ? MapData.sideTexture(wid - 1) : null;
                                     lastTex = w2;
                                     lastDi = di;
@@ -222,7 +230,7 @@ final class Map3D {
                             else if (deep) base = tc | 0xFF000000;
                             else if (sameTex) base = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
                             else base = mixRgb(tc, color, 0.3f);
-                            out = shade(base, wallShade);
+                            out = shade(base, (float) (wallShade * Math.max(0.6, 1.0 - depth * 0.010)));
                         }
                         frame[y * rw + col] = fog <= 0.01f ? out : mixFog(out, fog);
                     }

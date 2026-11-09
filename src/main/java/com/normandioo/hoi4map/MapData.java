@@ -60,7 +60,8 @@ final class MapData {
     private static final Gson GSON = new Gson();
 
     /** Uma região de terreno. */
-    static final int WALL_K = 5;
+    /** Execuções (bloco, comprimento) por coluna abaixo do topo; comprimento 0 = até o fundo. Empacotado: (id+1)<<5 | len. */
+    static final int WALL_R = 8;
 
     static final class Region {
         final int rx, rz;
@@ -375,7 +376,7 @@ final class MapData {
                 Hoi4MapClient.LOG.warn("Blocos ilegíveis: {}", blocks, e);
             }
         }
-        Path walls = dir().resolve(worldKey + ".walls1");
+        Path walls = dir().resolve(worldKey + ".walls2");
         if (Files.exists(walls)) {
             try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(walls)))) {
                 int n = in.readInt();
@@ -383,7 +384,7 @@ final class MapData {
                     int rx = in.readInt();
                     int rz = in.readInt();
                     int len = in.readInt();
-                    short[] data = readShorts(in, len, REGION_PX * REGION_PX * (WALL_K - 1));
+                    short[] data = readShorts(in, len, REGION_PX * REGION_PX * WALL_R);
                     Region r = REGIONS.get(key(rx, rz));
                     if (r != null) r.wall = data;
                 }
@@ -494,7 +495,7 @@ final class MapData {
                 out.writeInt(count);
                 for (Region r : REGIONS.values()) if (r.blk != null) writeShorts(out, r, r.blk);
             }
-            Path walls = dir().resolve(worldKey + ".walls1");
+            Path walls = dir().resolve(worldKey + ".walls2");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(walls)))) {
                 int count = 0;
                 for (Region r : REGIONS.values()) if (r.wall != null) count++;
@@ -609,13 +610,13 @@ final class MapData {
                 }
             }
         }
-        if (px.length >= 768 + 256 * (WALL_K - 1)) {
-            if (reg.wall == null) reg.wall = new short[REGION_PX * REGION_PX * (WALL_K - 1)];
+        if (px.length >= 768 + 256 * WALL_R) {
+            if (reg.wall == null) reg.wall = new short[REGION_PX * REGION_PX * WALL_R];
             for (int lz = 0; lz < 16; lz++) {
                 for (int lx = 0; lx < 16; lx++) {
                     int col = (oz + lz) * REGION_PX + ox + lx;
-                    for (int d = 0; d < WALL_K - 1; d++) {
-                        reg.wall[col * (WALL_K - 1) + d] = (short) px[768 + (lz * 16 + lx) * (WALL_K - 1) + d];
+                    for (int d = 0; d < WALL_R; d++) {
+                        reg.wall[col * WALL_R + d] = (short) px[768 + (lz * 16 + lx) * WALL_R + d];
                     }
                 }
             }
@@ -653,7 +654,7 @@ final class MapData {
      * do cliente (o servidor interno usa para gerar o mapa sem o jogador estar perto).
      */
     static int[] computeChunk(Level level, ChunkAccess chunk, int cx, int cz) {
-        int[] result = new int[768 + 256 * (WALL_K - 1)];       // 0..255 cores; 256..511 alturas (y + 64); 512..767 blocos (id + 1)
+        int[] result = new int[768 + 256 * WALL_R];       // 0..255 cores; 256..511 alturas (y + 64); 512..767 blocos (id + 1)
         ChunkAccess west = neighbor(level, cx - 1, cz);
         ChunkAccess north = neighbor(level, cx, cz - 1);
         ChunkAccess northWest = neighbor(level, cx - 1, cz - 1);
@@ -682,14 +683,30 @@ final class MapData {
                 result[512 + outIndex] = BuiltInRegistries.BLOCK.getId(state.getBlock()) + 1;
                 {
                     int topY = pos.getY();
-                    int last = result[512 + outIndex];
+                    int need = 48;
+                    if (lx > 0 && lx < 15 && lz > 0 && lz < 15) {
+                        int mn = Math.min(Math.min(heights[outIndex - 1], heights[outIndex + 1]), Math.min(heights[outIndex - 16], heights[outIndex + 16]));
+                        need = Math.max(1, Math.min(48, top - mn + 1));
+                    }
                     BlockPos.MutableBlockPos wp = new BlockPos.MutableBlockPos();
-                    for (int d = 1; d < WALL_K; d++) {
+                    int slot = 0, runId = 0, runLen = 0, lastId = result[512 + outIndex];
+                    int base = 768 + outIndex * WALL_R;
+                    boolean full = false;
+                    for (int d = 1; d <= need; d++) {
                         wp.set(wx, topY - d, wz);
                         BlockState ws = chunk.getBlockState(wp);
-                        if (!ws.isAir() && ws.getFluidState().isEmpty()) last = BuiltInRegistries.BLOCK.getId(ws.getBlock()) + 1;
-                        result[768 + outIndex * (WALL_K - 1) + d - 1] = last;
+                        if (!ws.isAir() && ws.getFluidState().isEmpty()) lastId = BuiltInRegistries.BLOCK.getId(ws.getBlock()) + 1;
+                        if (lastId > 2046) lastId = 0;
+                        if (runLen > 0 && (lastId != runId || runLen >= 31)) {
+                            if (slot >= WALL_R - 1) { full = true; break; }
+                            result[base + slot++] = (runId << 5) | runLen;
+                            runLen = 0;
+                        }
+                        runId = lastId;
+                        runLen++;
                     }
+                    // a última execução vale até o fundo
+                    if (runLen > 0 && slot < WALL_R) result[base + slot] = (runId << 5);
                 }
                 FluidState fluid = state.getFluidState();
 
