@@ -1,7 +1,9 @@
 name: compat
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [mc-26.1]
+    paths: ['.github/workflows/compat.yml']
 
 jobs:
   compile:
