@@ -179,6 +179,29 @@ final class MapStyle {
                 int out;
                 if (raw != 0 && isWater(raw)) {
                     out = water(raw, baseX + x, baseZ + y);
+                    // a fronteira dos países/províncias passa por cima da água também
+                    if (p != 0) {
+                        int ci = d.provCountry[p - 1];
+                        int country = d.rgb[ci] | 0xFF000000;
+                        boolean grey = false;
+                        if (relational) {
+                            int ov = cOv != null && ci < cOv.length ? cOv[ci] : Relations.GREY;
+                            Integer po = pOv == null ? null : pOv.get(p - 1);
+                            if (po != null) ov = po;
+                            if (ov == Relations.GREY) grey = true;
+                            else country = ov | 0xFF000000;
+                        }
+                        int dist = DIST[gi] / 3;
+                        if (grey) {
+                            if (dist == 0) out = mix(out, 0xFF070B10, 0.6f * Prefs.border());
+                        } else if (political) {
+                            out = tint(out, country, 0.28f * Prefs.fill());
+                            if (dist == 0) out = mix(out, 0xFF070B10, 0.85f * Prefs.border());
+                            else if (dist <= 8) out = mix(out, lighten(country, 1.45f), 0.5f * Prefs.border() * (1f - (dist - 1) / 7f));
+                        } else if (dist == 0) {
+                            out = mix(out, 0xFF05080C, 0.5f * Prefs.border());
+                        }
+                    }
                     // a província escolhida vai até onde o território dela vai, também sobre a água
                     if (p == selected && p != 0) {
                         out = mix(out, 0xFFFFE27A, 0.30f);
