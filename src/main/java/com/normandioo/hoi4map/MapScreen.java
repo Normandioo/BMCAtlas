@@ -455,7 +455,7 @@ public class MapScreen extends Screen {
         Map3D.setup(viewX, viewZ, scale, width, height);
         int[] rr = Map3D.regions();
         int crx = Math.floorDiv((int) Math.floor(viewX), MapData.REGION_PX), crz = Math.floorDiv((int) Math.floor(viewZ), MapData.REGION_PX);
-        int maxRing = 14;
+        int maxRing = 20;
         int paints = 0;
         for (int ring = 0; ring <= maxRing; ring++) {
             for (int dx = -ring; dx <= ring; dx++) {

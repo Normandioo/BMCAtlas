@@ -118,7 +118,7 @@ final class Relief {
     private static final int MAX_VERTICES = 600_000;
 
     private float[] gx = new float[0], gy = new float[0], gq = new float[0], gl = new float[0];
-    private float[] zbuf = new float[0];
+    private float[] zbuf = new float[0], hyBuf = new float[0];
 
     // ------------------------------------------------------------------ reduções (mipmaps) de uma região
 
@@ -192,7 +192,8 @@ final class Relief {
         if (gx.length < n) { gx = new float[n]; gy = new float[n]; gq = new float[n]; gl = new float[n]; }
 
         // alturas dos vértices (y do mundo) e, com elas, a luz
-        float[] hy = new float[n];
+        if (hyBuf.length < n) hyBuf = new float[n];
+        final float[] hy = hyBuf;
         int lastRx = Integer.MIN_VALUE, lastRz = Integer.MIN_VALUE;
         short[] hs = null;
         int hw = REGION >> lh;
