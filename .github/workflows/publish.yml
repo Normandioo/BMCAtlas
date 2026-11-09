@@ -64,8 +64,7 @@ jobs:
           java: 21
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}{curseforge:306612}
-          client: required
-          server: unsupported
+          environment: client
 
       - name: Publish 26.x
         uses: Kir-Antipov/mc-publish@v3.3
@@ -84,5 +83,4 @@ jobs:
           java: 25
           dependencies: |
             fabric-api(required){modrinth:P7dR8mSH}{curseforge:306612}
-          client: required
-          server: unsupported
+          environment: client
