@@ -117,7 +117,8 @@ final class Relief {
     private static final double LIGHT_X = -0.6, LIGHT_Y = 1.0, LIGHT_Z = -0.6;   // de noroeste, de cima
     private static final int MAX_VERTICES = 600_000;
     /** a partir de quantos pixels por bloco o relevo vira blocos de verdade */
-    static final double BLOCK_MIN_S = 3.0;
+    static final double BLOCK_MIN_S = 1.5;
+    private static final int MAX_BLOCK_COLUMNS = 900_000;
 
     private float[] gx = new float[0], gy = new float[0], gq = new float[0], gl = new float[0];
     private float[] zbuf = new float[0], hyBuf = new float[0];
@@ -173,7 +174,8 @@ final class Relief {
         // tamanho da célula: potência de 2, de modo que cada uma tenha uns 4 a 9 pixels
         int step = 1;
         if (s < BLOCK_MIN_S) while (step < 64 && step * s < 4.5) step <<= 1;
-        while (((long) (b[2] - b[0]) / step + 2) * ((b[3] - b[1]) / step + 2) > MAX_VERTICES && step < 256) step <<= 1;
+        long cap = step == 1 ? MAX_BLOCK_COLUMNS : MAX_VERTICES;
+        while (((long) (b[2] - b[0]) / step + 2) * ((b[3] - b[1]) / step + 2) > cap && step < 256) { step <<= 1; cap = MAX_VERTICES; }
         pl.step = step;
         pl.blocky = step == 1 && s >= BLOCK_MIN_S;
         pl.lh = Math.min(MAX_LEVEL, Integer.numberOfTrailingZeros(step));
@@ -348,8 +350,28 @@ final class Relief {
                 px[k] = (float) p[0]; py[k] = (float) p[1]; pq[k] = (float) p[2];
             }
         });
+        final boolean detail = s >= 5.0;   // 5+ px por bloco: dá para desenhar a textura
         final float kY = (float) (exag * cosP * s), kQ = (float) (exag * sinP), fty = (float) ty;
-        int bands = Math.max(1, Math.min(32, h / 16));
+        // em que faixas de linhas da tela cada coluna aparece (uma vez só, em vez de 32)
+        final byte[] bLo = new byte[nx * nz], bHi = new byte[nx * nz];
+        final int nb = Math.max(1, Math.min(32, h / 16));
+        IntStream.range(0, nz - 1).parallel().forEach(j -> {
+            for (int i = 0; i < nx - 1; i++) {
+                int a = j * nx + i, bI = a + 1, c = a + nx, d = c + 1;
+                float t = hy[a] + 1, low = t;
+                if (i > 0) low = Math.min(low, hy[a - 1] + 1);
+                if (i < nx - 2) low = Math.min(low, hy[a + 1] + 1);
+                if (j > 0) low = Math.min(low, hy[a - nx] + 1);
+                if (j < nz - 2) low = Math.min(low, hy[a + nx] + 1);
+                float mnx = Math.min(Math.min(px[a], px[bI]), Math.min(px[c], px[d])), mxx = Math.max(Math.max(px[a], px[bI]), Math.max(px[c], px[d]));
+                float sTop = Math.min(Math.min(py[a], py[bI]), Math.min(py[c], py[d])) - (t - fty) * kY;
+                float sLow = Math.max(Math.max(py[a], py[bI]), Math.max(py[c], py[d])) - (low - fty) * kY;
+                if (mxx < 0 || mnx >= w || sLow < 0 || sTop >= h) { bLo[a] = 127; bHi[a] = -1; continue; }
+                bLo[a] = (byte) Math.max(0, Math.floor((sTop - 2) * nb / h));
+                bHi[a] = (byte) Math.min(nb - 1, Math.floor((sLow + 2) * nb / h));
+            }
+        });
+        int bands = nb;
         IntStream.range(0, bands).parallel().forEach(band -> {
             int ya = h * band / bands, yb = h * (band + 1) / bands;
             int curRx = Integer.MIN_VALUE, curRz = Integer.MIN_VALUE;
@@ -358,16 +380,7 @@ final class Relief {
                 for (int i = 0; i < nx - 1; i++) {
                     int a = j * nx + i, bI = a + 1, c = a + nx, d = c + 1;
                     float t = hy[a] + 1;
-                    float low = t;
-                    if (i > 0) low = Math.min(low, hy[a - 1] + 1);
-                    if (i < nx - 2) low = Math.min(low, hy[a + 1] + 1);
-                    if (j > 0) low = Math.min(low, hy[a - nx] + 1);
-                    if (j < nz - 2) low = Math.min(low, hy[a + nx] + 1);
-                    float sTop = Math.min(Math.min(py[a], py[bI]), Math.min(py[c], py[d])) - (t - fty) * kY;
-                    float sLow = Math.max(Math.max(py[a], py[bI]), Math.max(py[c], py[d])) - (low - fty) * kY;
-                    if (sLow < ya || sTop >= yb) continue;
-                    float minX = Math.min(Math.min(px[a], px[bI]), Math.min(px[c], px[d])), maxX = Math.max(Math.max(px[a], px[bI]), Math.max(px[c], px[d]));
-                    if (maxX < 0 || minX >= w) continue;
+                    if (bLo[a] > band || bHi[a] < band) continue;
                     int wx = i0 + i, wz = j0 + j;
                     int rx = Math.floorDiv(wx, REGION), rz = Math.floorDiv(wz, REGION);
                     if (rx != curRx || rz != curRz) { tex = src.tex(rx, rz, 0); curRx = rx; curRz = rz; }
@@ -381,16 +394,43 @@ final class Relief {
                     float cx_ = px[c], cy_ = py[c] - dt * kY, cq = pq[c] + dt * kQ;
                     float dx = px[d], dy = py[d] - dt * kY, dq = pq[d] + dt * kQ;
                     int top = shade(col, TOP_L);
-                    triFlat(out, ya, yb, ax, ay, aq, bx, by, bq, cx_, cy_, cq, top);
-                    triFlat(out, ya, yb, bx, by, bq, dx, dy, dq, cx_, cy_, cq, top);
-                    // paredes até o vizinho mais baixo
-                    if (i > 0 && hy[a - 1] + 1 < t) wall(out, ya, yb, px, py, pq, a, c, t, hy[a - 1] + 1, fty, kY, kQ, shade(col, WEST_L));
-                    if (i < nx - 2 && hy[a + 1] + 1 < t) wall(out, ya, yb, px, py, pq, bI, d, t, hy[a + 1] + 1, fty, kY, kQ, shade(col, EAST_L));
-                    if (j > 0 && hy[a - nx] + 1 < t) wall(out, ya, yb, px, py, pq, a, bI, t, hy[a - nx] + 1, fty, kY, kQ, shade(col, NORTH_L));
-                    if (j < nz - 2 && hy[a + nx] + 1 < t) wall(out, ya, yb, px, py, pq, c, d, t, hy[a + nx] + 1, fty, kY, kQ, shade(col, SOUTH_L));
+                    int seed = hash(wx, wz, 0);
+                    if (detail) {
+                        triTex(out, ya, yb, ax, ay, aq, 0, 0, bx, by, bq, 16, 0, cx_, cy_, cq, 0, 16, top, seed);
+                        triTex(out, ya, yb, bx, by, bq, 16, 0, dx, dy, dq, 16, 16, cx_, cy_, cq, 0, 16, top, seed);
+                    } else {
+                        triFlat(out, ya, yb, ax, ay, aq, bx, by, bq, cx_, cy_, cq, top);
+                        triFlat(out, ya, yb, bx, by, bq, dx, dy, dq, cx_, cy_, cq, top);
+                    }
+                    // paredes até o vizinho mais baixo; em estruturas altas a cor é a média da fachada (o mapa só guarda o topo de cada coluna)
+                    int wc = col;
+                    boolean tall = (i > 0 && hy[a - 1] + 3 < t) || (i < nx - 2 && hy[a + 1] + 3 < t) || (j > 0 && hy[a - nx] + 3 < t) || (j < nz - 2 && hy[a + nx] + 3 < t);
+                    if (tall) wc = facade(src, hy, nx, nz, i, j, i0, j0, col);
+                    if (i > 0 && hy[a - 1] + 1 < t) wall(out, ya, yb, px, py, pq, detail, hash(wx, wz, 1), a, c, t, hy[a - 1] + 1, fty, kY, kQ, shade(wc, WEST_L));
+                    if (i < nx - 2 && hy[a + 1] + 1 < t) wall(out, ya, yb, px, py, pq, detail, hash(wx, wz, 1), bI, d, t, hy[a + 1] + 1, fty, kY, kQ, shade(wc, EAST_L));
+                    if (j > 0 && hy[a - nx] + 1 < t) wall(out, ya, yb, px, py, pq, detail, hash(wx, wz, 1), a, bI, t, hy[a - nx] + 1, fty, kY, kQ, shade(wc, NORTH_L));
+                    if (j < nz - 2 && hy[a + nx] + 1 < t) wall(out, ya, yb, px, py, pq, detail, hash(wx, wz, 1), c, d, t, hy[a + nx] + 1, fty, kY, kQ, shade(wc, SOUTH_L));
                 }
             }
         });
+    }
+
+
+    /** Cor média da coluna e dos vizinhos que fazem parte da mesma estrutura (quase da mesma altura). */
+    private static int facade(Source src, float[] hy, int nx, int nz, int i, int j, int i0, int j0, int own) {
+        int sr = (own >> 16) & 255, sg = (own >> 8) & 255, sb = own & 255, n = 1;
+        float t = hy[j * nx + i];
+        for (int k = 0; k < 4; k++) {
+            int ii = i + (k == 0 ? -1 : k == 1 ? 1 : 0), jj = j + (k == 2 ? -1 : k == 3 ? 1 : 0);
+            if (ii < 0 || jj < 0 || ii >= nx || jj >= nz || Math.abs(hy[jj * nx + ii] - t) > 2) continue;
+            int wx = i0 + ii, wz = j0 + jj;
+            int[] tx = src.tex(Math.floorDiv(wx, REGION), Math.floorDiv(wz, REGION), 0);
+            if (tx == null) continue;
+            int c = tx[Math.floorMod(wz, REGION) * REGION + Math.floorMod(wx, REGION)];
+            if ((c >>> 24) < 128) continue;
+            sr += (c >> 16) & 255; sg += (c >> 8) & 255; sb += c & 255; n++;
+        }
+        return 0xFF000000 | (sr / n) << 16 | (sg / n) << 8 | (sb / n);
     }
 
     private static int shade(int c, float l) {
@@ -399,13 +439,72 @@ final class Relief {
     }
 
     /** Parede entre os cantos p1 e p2 da grade, do y {@code top} até {@code bottom}. */
-    private void wall(int[] out, int ya, int yb, float[] px, float[] py, float[] pq, int p1, int p2,
+    private void wall(int[] out, int ya, int yb, float[] px, float[] py, float[] pq, boolean detail, int seed, int p1, int p2,
                       float top, float bottom, float fty, float kY, float kQ, int colour) {
         float dt = top - fty, db = bottom - fty;
         float x1 = px[p1], y1t = py[p1] - dt * kY, q1t = pq[p1] + dt * kQ, y1b = py[p1] - db * kY, q1b = pq[p1] + db * kQ;
         float x2 = px[p2], y2t = py[p2] - dt * kY, q2t = pq[p2] + dt * kQ, y2b = py[p2] - db * kY, q2b = pq[p2] + db * kQ;
+        if (detail) {
+            float vb = (top - bottom) * 16f;
+            triTex(out, ya, yb, x1, y1t, q1t, 0, 0, x2, y2t, q2t, 16, 0, x1, y1b, q1b, 0, vb, colour, seed);
+            triTex(out, ya, yb, x2, y2t, q2t, 16, 0, x2, y2b, q2b, 16, vb, x1, y1b, q1b, 0, vb, colour, seed);
+            return;
+        }
         triFlat(out, ya, yb, x1, y1t, q1t, x2, y2t, q2t, x1, y1b, q1b, colour);
         triFlat(out, ya, yb, x2, y2t, q2t, x2, y2b, q2b, x1, y1b, q1b, colour);
+    }
+
+
+    private static int hash(int x, int z, int k) {
+        int h = x * 0x27d4eb2d ^ z * 0x165667b1 ^ k * 0x9e3779b1;
+        h ^= h >>> 15; h *= 0x85ebca6b; h ^= h >>> 13;
+        return h;
+    }
+
+    /** Brilho (0.78 a 1.12) de cada pixel de um bloco 16x16: ruído fixo por bloco, como as texturas do jogo. */
+    private static final float[] NOISE = new float[256 * 4];
+    static {
+        java.util.Random rnd = new java.util.Random(1234);
+        for (int i = 0; i < NOISE.length; i++) NOISE[i] = 0.84f + rnd.nextFloat() * 0.26f;
+    }
+
+    /** Triângulo com a textura procedural de bloco; (u, v) em 1/16 de bloco. */
+    private void triTex(int[] out, int ya, int yb, float x0, float y0, float q0, float u0, float v0,
+                        float x1, float y1, float q1, float u1, float v1,
+                        float x2, float y2, float q2, float u2, float v2, int colour, int seed) {
+        float area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+        if (Math.abs(area) < 1e-9f) return;
+        int minX = Math.max(0, (int) Math.floor(Math.min(x0, Math.min(x1, x2))));
+        int maxX = Math.min(w - 1, (int) Math.ceil(Math.max(x0, Math.max(x1, x2))));
+        int minY = Math.max(ya, (int) Math.floor(Math.min(y0, Math.min(y1, y2))));
+        int maxY = Math.min(yb - 1, (int) Math.ceil(Math.max(y0, Math.max(y1, y2))));
+        if (minX > maxX || minY > maxY) return;
+        float inv = 1f / area;
+        float b1x = (y2 - y0) * inv, b1y = -(x2 - x0) * inv;
+        float b2x = -(y1 - y0) * inv, b2y = (x1 - x0) * inv;
+        final float eps = -0.0015f;
+        int cr = (colour >> 16) & 255, cg = (colour >> 8) & 255, cb = colour & 255;
+        int tile = (seed & 3) * 256;
+        for (int y = minY; y <= maxY; y++) {
+            float pyy = y + 0.5f - y0, pxs = minX + 0.5f - x0;
+            float b1 = pxs * b1x + pyy * b1y, b2 = pxs * b2x + pyy * b2y;
+            int row = y * w;
+            for (int x = minX; x <= maxX; x++, b1 += b1x, b2 += b2x) {
+                float b0 = 1f - b1 - b2;
+                if (b0 < eps || b1 < eps || b2 < eps) continue;
+                float q = q0 + (q1 - q0) * b1 + (q2 - q0) * b2;
+                int idx = row + x;
+                if (q <= zbuf[idx]) continue;
+                float u = u0 + (u1 - u0) * b1 + (u2 - u0) * b2, v = v0 + (v1 - v0) * b1 + (v2 - v0) * b2;
+                int tu = (int) u, tv = (int) v;
+                tu = tu < 0 ? 0 : Math.min(tu, 15);
+                float f = NOISE[tile + ((tv & 15) << 4) + tu];
+                if (tu == 0 || (tv & 15) == 0) f *= 0.93f;   // borda do bloco, bem leve
+                int r = (int) (cr * f), g = (int) (cg * f), bl = (int) (cb * f);
+                out[idx] = 0xFF000000 | (r > 255 ? 255 : r) << 16 | (g > 255 ? 255 : g) << 8 | (bl > 255 ? 255 : bl);
+                zbuf[idx] = q;
+            }
+        }
     }
 
     /** Triângulo de uma cor só, com teste de profundidade, nas linhas [ya, yb). */
