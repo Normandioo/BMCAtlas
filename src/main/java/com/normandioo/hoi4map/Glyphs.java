@@ -1,6 +1,7 @@
 package com.normandioo.hoi4map;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.RenderPipelines;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -303,22 +304,26 @@ final class Glyphs {
     private Glyphs() {}
 
     /** Desenha o ícone com o canto superior esquerdo em (x, y). */
+    private static final Map<String, WarArt.Tex> CACHE = new HashMap<>();
+
+    /** Cada ícone vira uma textura por combinação de cores (criada uma vez): desenhar é um blit em vez de dezenas de retângulos. */
     static void draw(GuiGraphics g, String name, int x, int y, int main, int accent, int shade) {
         String[] art = ART.get(name);
         if (art == null) return;
-        for (int row = 0; row < art.length; row++) {
-            String line = art[row];
-            int col = 0;
-            while (col < line.length()) {
-                char c = line.charAt(col);
-                int end = col + 1;
-                while (end < line.length() && line.charAt(end) == c) end++;
-                if (c != '.') {
-                    int color = c == '#' ? main : c == 'o' ? accent : shade;
-                    g.fill(x + col, y + row, x + end, y + row + 1, color);
+        String key = "glyph" + name + "_" + main + "_" + accent + "_" + shade;
+        WarArt.Tex t = CACHE.get(key);
+        if (t == null) {
+            int w = art[0].length(), h = art.length;
+            int[] px = new int[w * h];
+            for (int row = 0; row < h; row++) {
+                for (int col = 0; col < w && col < art[row].length(); col++) {
+                    char c = art[row].charAt(col);
+                    px[row * w + col] = c == '.' ? 0 : c == '#' ? main : c == 'o' ? accent : shade;
                 }
-                col = end;
             }
+            t = WarArt.texture(new WarArt.Art(w, h, px), key);
+            CACHE.put(key, t);
         }
+        g.blit(RenderPipelines.GUI_TEXTURED, t.id(), x, y, 0f, 0f, t.w(), t.h(), t.w(), t.h(), t.w(), t.h());
     }
 }
