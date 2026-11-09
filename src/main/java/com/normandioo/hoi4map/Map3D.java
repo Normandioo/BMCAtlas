@@ -74,27 +74,6 @@ final class Map3D {
         return cache[gz * (2 * GRID + 1) + gx];
     }
 
-    /** Altura (y + 64) real da coluna, 0 se desconhecida. */
-    private static int knownH(int wx, int wz) {
-        MapData.Region r = regionAt(wx, wz);
-        if (r == null || r.hgt == null) return 0;
-        return r.hgt[Math.floorMod(wz, MapData.REGION_PX) * MapData.REGION_PX + Math.floorMod(wx, MapData.REGION_PX)];
-    }
-
-    /**
-     * Fundo de uma coluna sem camadas: só até onde ela aparece (abaixo do vizinho mais baixo). Sem isso, na borda do
-     * que foi explorado o lado da coluna desce até o fundo do mundo e mostra o subsolo.
-     */
-    private static int columnBottom(int ix, int iz, int hv) {
-        int mn = hv;
-        int[] d = {1, 0, -1, 0, 0, 1, 0, -1};
-        for (int i = 0; i < 8; i += 2) {
-            int h = knownH(ix + d[i], iz + d[i + 1]);
-            if (h == 0) { mn = Math.min(mn, hv - 3); } else mn = Math.min(mn, h);
-        }
-        return Math.max(1, Math.min(hv - 1, mn - 1));
-    }
-
     /** Altura (y + 64) do bloco; a de regiões sem alturas é uma média plana. */
     private static int heightAt(int wx, int wz) {
         MapData.Region r = regionAt(wx, wz);
@@ -180,7 +159,7 @@ final class Map3D {
                 int blk;
                 if (si == 0) {
                     topPlane = hv == 0 ? UNKNOWN_H : hv;
-                    botPlane = hv == 0 ? UNKNOWN_H - 3 : (reg.bot0 == null || !MapData.layers ? columnBottom(ix, iz, hv) : reg.bot0[idx]);
+                    botPlane = hv == 0 ? UNKNOWN_H - 3 : (reg.bot0 == null || !MapData.layers ? 0 : reg.bot0[idx]);
                     blk = reg.blk == null ? 0 : reg.blk[idx];
                 } else {
                     if (reg.sp == null || !MapData.layers) break;
