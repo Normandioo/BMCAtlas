@@ -77,6 +77,56 @@ final class MapData {
         int styledMode = -1;
         int styledVer = -1;
 
+        /** Sobe sempre que a região precisa ser repintada (dono, site, relevo...). */
+        int inval;
+
+        void invalidate() {
+            styledMode = -1;
+            inval++;
+        }
+
+        // ---- 3D: alturas e a cor já pintada, para o relevo (sem GPU) ----
+
+        /** Altura de cada bloco (y + 64); 0 = desconhecida. null onde o chunk ainda não foi lido com alturas. */
+        short[] hgt;
+        private int hgtSeq, hMipSeq = -1;
+        private final short[][] hMip = new short[Relief.MAX_LEVEL + 1][];
+
+        /** As alturas reduzidas {@code level} vezes (lado 256 >> level), ou null. */
+        short[] heights(int level) {
+            if (hgt == null) return null;
+            if (hMipSeq != hgtSeq) { java.util.Arrays.fill(hMip, null); hMipSeq = hgtSeq; }
+            if (level <= 0) return hgt;
+            if (hMip[level] == null) hMip[level] = Relief.halveHeights(heights(level - 1), Relief.REGION >> (level - 1));
+            return hMip[level];
+        }
+
+        private int[] styled;
+        private int cpuInval = -1, cpuMode = -1, cpuVer = -1, tMipSeq = -1, styledSeq;
+        private final int[][] tMip = new int[Relief.MAX_LEVEL + 1][];
+
+        boolean stylePending(int mode) {
+            return styled == null || cpuInval != inval || cpuMode != mode || cpuVer != MapStyle.overrideVersion;
+        }
+
+        /** Pinta a região no estilo do modo, só na memória (o 3D lê daqui). */
+        void paintCpu(int mode) {
+            styled = MapStyle.paint(this, mode);
+            cpuInval = inval;
+            cpuMode = mode;
+            cpuVer = MapStyle.overrideVersion;
+            styledSeq++;
+        }
+
+        /** Os pixels pintados reduzidos {@code level} vezes, ou null se a região ainda não foi pintada. */
+        int[] colours(int level) {
+            if (styled == null) return null;
+            if (tMipSeq != styledSeq) { java.util.Arrays.fill(tMip, null); tMipSeq = styledSeq; }
+            if (level <= 0) return styled;
+            if (tMip[level] == null) tMip[level] = Relief.halveColours(colours(level - 1), Relief.REGION >> (level - 1));
+            return tMip[level];
+        }
+
         /** Garante a textura e (re)pinta os pixels no estilo do modo atual, se necessário. */
         boolean ensureUploaded(int mode) {
             if (texture == null) {
@@ -113,6 +163,8 @@ final class MapData {
         }
 
         void release() {
+            styled = null;
+            java.util.Arrays.fill(tMip, null);
             if (texture != null) {
                 Minecraft.getInstance().getTextureManager().release(id);
                 texture = null;
@@ -167,7 +219,7 @@ final class MapData {
     static void ownersChanged() {
         ownersVersion++;
         dirty = true;
-        for (Region r : REGIONS.values()) r.styledMode = -1;
+        for (Region r : REGIONS.values()) r.invalidate();
     }
 
     static final int PROVS_PER_REGION = REGION_CHUNKS / PROV;
@@ -181,7 +233,7 @@ final class MapData {
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
                 Region r = region(Math.floorDiv(px + dx, PROVS_PER_REGION), Math.floorDiv(pz + dz, PROVS_PER_REGION), false);
-                if (r != null) r.styledMode = -1;
+                if (r != null) r.invalidate();
             }
         }
     }
@@ -234,7 +286,7 @@ final class MapData {
         for (int rx = Math.floorDiv(minX - 1, size); rx <= Math.floorDiv(maxX + 1, size); rx++) {
             for (int rz = Math.floorDiv(minZ - 1, size); rz <= Math.floorDiv(maxZ + 1, size); rz++) {
                 Region r = region(rx, rz, false);
-                if (r != null) r.styledMode = -1;
+                if (r != null) r.invalidate();
             }
         }
     }
@@ -272,7 +324,7 @@ final class MapData {
         siteApplies = SiteTerritories.dimensionApplies(mc.level.dimension().toString());
         if (siteSeen != SiteTerritories.version()) {
             siteSeen = SiteTerritories.version();
-            for (Region r : REGIONS.values()) r.styledMode = -1;
+            for (Region r : REGIONS.values()) r.invalidate();
         }
         String k = computeKey(mc);
         if (k.equals(worldKey)) return;
@@ -320,6 +372,33 @@ final class MapData {
                 Hoi4MapClient.LOG.warn("Cache de terreno ilegível: {}", regions, e);
             }
         }
+        Path heights = dir().resolve(worldKey + ".heights1");
+        if (Files.exists(heights)) {
+            try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(heights)))) {
+                int n = in.readInt();
+                for (int i = 0; i < n; i++) {
+                    int rx = in.readInt();
+                    int rz = in.readInt();
+                    int len = in.readInt();
+                    byte[] comp = new byte[len];
+                    in.readFully(comp);
+                    Region r = REGIONS.get(key(rx, rz));
+                    if (r == null) continue;
+                    java.util.zip.Inflater inf = new java.util.zip.Inflater();
+                    inf.setInput(comp);
+                    byte[] raw = new byte[REGION_PX * REGION_PX * 2];
+                    int got = 0;
+                    while (got < raw.length && !inf.finished()) got += inf.inflate(raw, got, raw.length - got);
+                    inf.end();
+                    short[] h = new short[REGION_PX * REGION_PX];
+                    for (int k = 0; k < h.length; k++) h[k] = (short) (((raw[2 * k] & 0xFF) << 8) | (raw[2 * k + 1] & 0xFF));
+                    r.hgt = h;
+                    r.hgtSeq++;
+                }
+            } catch (IOException | DataFormatException e) {
+                Hoi4MapClient.LOG.warn("Alturas ilegíveis: {}", heights, e);
+            }
+        }
         Path owners = dir().resolve(worldKey + ".owners.json");
         if (Files.exists(owners)) {
             try (Reader r = Files.newBufferedReader(owners, StandardCharsets.UTF_8)) {
@@ -354,6 +433,30 @@ final class MapData {
                     out.writeInt(r.rz);
                     out.writeInt(comp.length);
                     out.write(comp);
+                }
+            }
+            Path heights = dir().resolve(worldKey + ".heights1");
+            try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(heights)))) {
+                int count = 0;
+                for (Region r : REGIONS.values()) if (r.hgt != null) count++;
+                out.writeInt(count);
+                for (Region r : REGIONS.values()) {
+                    if (r.hgt == null) continue;
+                    byte[] raw = new byte[r.hgt.length * 2];
+                    for (int k = 0; k < r.hgt.length; k++) {
+                        raw[2 * k] = (byte) (r.hgt[k] >> 8);
+                        raw[2 * k + 1] = (byte) r.hgt[k];
+                    }
+                    java.util.zip.Deflater def = new java.util.zip.Deflater(1);
+                    def.setInput(raw);
+                    def.finish();
+                    byte[] buf = new byte[raw.length + 64];
+                    int len = def.deflate(buf);
+                    def.end();
+                    out.writeInt(r.rx);
+                    out.writeInt(r.rz);
+                    out.writeInt(len);
+                    out.write(buf, 0, len);
                 }
             }
             Map<String, String> m = new HashMap<>();
@@ -448,7 +551,15 @@ final class MapData {
         for (int lz = 0; lz < 16; lz++) {
             System.arraycopy(px, lz * 16, reg.px, (oz + lz) * REGION_PX + ox, 16);
         }
+        if (px.length >= 512) {
+            if (reg.hgt == null) reg.hgt = new short[REGION_PX * REGION_PX];
+            for (int lz = 0; lz < 16; lz++) {
+                for (int lx = 0; lx < 16; lx++) reg.hgt[(oz + lz) * REGION_PX + ox + lx] = (short) px[256 + lz * 16 + lx];
+            }
+            reg.hgtSeq++;
+        }
         reg.dirty = true;
+        reg.inval++;
         dirty = true;
     }
 
@@ -481,7 +592,7 @@ final class MapData {
      * do cliente (o servidor interno usa para gerar o mapa sem o jogador estar perto).
      */
     static int[] computeChunk(Level level, ChunkAccess chunk, int cx, int cz) {
-        int[] result = new int[256];
+        int[] result = new int[512];      // 0..255 cores; 256..511 alturas (y + 64)
         ChunkAccess west = neighbor(level, cx - 1, cz);
         ChunkAccess north = neighbor(level, cx, cz - 1);
         ChunkAccess northWest = neighbor(level, cx - 1, cz - 1);
@@ -505,6 +616,7 @@ final class MapData {
                     result[outIndex] = 0;
                     continue;
                 }
+                result[256 + outIndex] = Math.max(1, Math.min(32000, top + 64));
                 BlockState state = stateAtTop(chunk, pos, wx, top, wz);
                 FluidState fluid = state.getFluidState();
 
