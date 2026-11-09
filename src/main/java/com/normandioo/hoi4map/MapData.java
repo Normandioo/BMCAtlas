@@ -111,7 +111,7 @@ final class MapData {
 
         /** Pinta a região no estilo do modo, só na memória (o 3D lê daqui). */
         void paintCpu(int mode) {
-            styled = MapStyle.paint(this, mode);
+            styled = MapStyle.paint(this, mode).clone();   // paint reaproveita um buffer único: cada região precisa do seu
             cpuInval = inval;
             cpuMode = mode;
             cpuVer = MapStyle.overrideVersion;
