@@ -31,13 +31,13 @@ jobs:
         if: always()
         run: |
           J=$(find ./.gradle/loom-cache -name 'minecraft-merged-*.jar' | grep -v sources | head -1)
-          F=$(find ~/.gradle ./.gradle -name 'fabric-rendering-v1*.jar' -o -name 'fabric-api-*.jar' 2>/dev/null | grep -v sources | head -20)
-          echo "FABRIC: $F"
-          for c in net.minecraft.client.gui.render.pip.PictureInPictureRenderer net.minecraft.client.gui.render.state.pip.PictureInPictureRenderState net.minecraft.client.gui.render.pip.GuiBookModelRenderer net.minecraft.client.gui.render.state.pip.GuiBookModelRenderState com.mojang.blaze3d.systems.RenderPass com.mojang.blaze3d.systems.CommandEncoder com.mojang.blaze3d.systems.GpuDevice com.mojang.blaze3d.vertex.MeshData com.mojang.blaze3d.vertex.BufferBuilder com.mojang.blaze3d.vertex.VertexFormat com.mojang.blaze3d.pipeline.RenderPipeline\$Builder net.minecraft.client.renderer.RenderPipelines com.mojang.blaze3d.pipeline.RenderTarget com.mojang.blaze3d.buffers.GpuBuffer; do
+          FR=$(find ./.gradle/loom-cache/remapped_mods -name 'fabric-rendering-v1-*.jar' | head -1)
+          for c in 'net.minecraft.client.gui.render.pip.GuiBookModelRenderer'; do echo "=== CODE $c"; javap -p -c -cp "$J" "$c" | grep -E "invoke|getstatic|ldc|public|protected" | head -80; done
+          for c in net.minecraft.client.gui.GuiGraphics net.minecraft.client.gui.render.state.GuiRenderState 'net.minecraft.client.renderer.MultiBufferSource$BufferSource' net.minecraft.client.renderer.RenderType net.minecraft.client.renderer.block.model.BlockStateModel net.minecraft.client.renderer.block.model.BlockModelPart net.minecraft.client.renderer.block.model.BakedQuad net.minecraft.client.renderer.texture.TextureAtlasSprite com.mojang.blaze3d.vertex.VertexConsumer net.minecraft.client.renderer.CachedOrthoProjectionMatrixBuffer net.minecraft.client.renderer.block.BlockModelShaper; do
             echo "=== $c"
-            javap -p -cp "$J" "$c" | head -90
+            javap -p -cp "$J" "$c" 2>&1 | grep -v -E "lambda\$|synthetic" | head -120
           done
-          for f in $F; do echo "--- $f"; unzip -l "$f" | grep -i -E "SpecialGuiElement|PictureInPicture" | awk '{print $4}'; done
+          for c in 'net.fabricmc.fabric.api.client.rendering.v1.SpecialGuiElementRegistry' 'net.fabricmc.fabric.api.client.rendering.v1.SpecialGuiElementRegistry$Context' 'net.fabricmc.fabric.api.client.rendering.v1.SpecialGuiElementRegistry$Factory'; do echo "=== $c"; javap -p -cp "$FR:$J" "$c"; done
       - uses: actions/upload-artifact@v4
         with:
           name: hoi4map-jar
