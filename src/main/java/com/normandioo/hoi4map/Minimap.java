@@ -91,6 +91,7 @@ final class Minimap {
         }
         g.pose().popMatrix();
 
+        if (d != null && p.minimapCities) drawFront(g, d, tx, ty, scale, gs);
         if (d != null && p.minimapCities) drawCities(g, d, tx, ty, ox, oy, scale, size, gs);
         if (p.minimapPlayers) drawPlayers(g, d, mc, ox, oy, cx, cz, scale, size, partial, gs);
         drawSelf(g, mc, ox, oy, partial);
@@ -129,6 +130,39 @@ final class Minimap {
     private static boolean touchesSite(SiteTerritories.Data d, int rx, int rz) {
         int x0 = rx * MapData.REGION_PX, z0 = rz * MapData.REGION_PX;
         return x0 + MapData.REGION_PX > d.minX && x0 <= d.maxX && z0 + MapData.REGION_PX > d.minZ && z0 <= d.maxZ;
+    }
+
+    /** Conexões da guerra (frentes quentes, metade na cor de cada lado) por baixo dos ícones das cidades. */
+    private static void drawFront(GuiGraphics g, SiteTerritories.Data d, double tx, double ty, double scale, double gs) {
+        WarFront f = MapScreen.minimapFront(d);
+        if (f == null) return;
+        for (WarFront.Hot h : f.innerLines()) {
+            line(g, snap(tx + (h.a().x + 0.5) * scale, gs), snap(ty + (h.a().z + 0.5) * scale, gs), snap(tx + (h.b().x + 0.5) * scale, gs), snap(ty + (h.b().z + 0.5) * scale, gs), 0x80C8C8C8, 1f);
+        }
+        for (WarFront.Hot h : f.hotLines()) {
+            double x0 = snap(tx + (h.a().x + 0.5) * scale, gs), y0 = snap(ty + (h.a().z + 0.5) * scale, gs);
+            double x1 = snap(tx + (h.b().x + 0.5) * scale, gs), y1 = snap(ty + (h.b().z + 0.5) * scale, gs);
+            double mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+            line(g, x0, y0, x1, y1, 0xB0000000, 4f);
+            line(g, x0, y0, mx, my, MapScreen.minimapCtlColor(d, h.controlA()), 2.5f);
+            line(g, mx, my, x1, y1, MapScreen.minimapCtlColor(d, h.controlB()), 2.5f);
+        }
+    }
+
+    private static double snap(double v, double gs) {
+        return Math.round(v * gs) / gs;
+    }
+
+    private static void line(GuiGraphics g, double x0, double y0, double x1, double y1, int color, float thick) {
+        double dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+        if (len < 0.3) return;
+        g.pose().pushMatrix();
+        g.pose().translate((float) x0, (float) y0);
+        g.pose().rotate((float) Math.atan2(dy, dx));
+        g.pose().translate(0f, -thick / 2f);
+        g.pose().scale(1f, thick);
+        g.fill(0, 0, (int) Math.ceil(len) + 1, 1, color);
+        g.pose().popMatrix();
     }
 
     private static void drawCities(GuiGraphics g, SiteTerritories.Data d, double tx, double ty, int ox, int oy, double scale, int size, double gs) {

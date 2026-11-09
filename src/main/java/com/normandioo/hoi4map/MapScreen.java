@@ -2222,6 +2222,22 @@ public class MapScreen extends Screen {
         return extra;
     }
 
+    /** Para o minimapa: guerra em exibição e a frente dela (null fora do modo guerra ou sem conexões). */
+    static WarFront minimapFront(SiteTerritories.Data d) {
+        if (mode != MODE_WAR || d == null) return null;
+        List<SiteTerritories.WarInfo> wars = Relations.wars(d);
+        SiteTerritories.WarInfo w = warSel >= 0 && warSel < wars.size() ? wars.get(warSel) : null;
+        if (w == null || w.sides == null || w.sides.size() < 2) return null;
+        WarFront f = WarFront.of(d, w);
+        return f.hasNetwork() ? f : null;
+    }
+
+    static int minimapCtlColor(SiteTerritories.Data d, int ctl) {
+        List<SiteTerritories.WarInfo> wars = Relations.wars(d);
+        SiteTerritories.WarInfo w = warSel >= 0 && warSel < wars.size() ? wars.get(warSel) : null;
+        return w == null ? 0xFF9A9A9A : ctlColor(w, ctl);
+    }
+
     private static int ctlColor(SiteTerritories.WarInfo war, int ctl) {
         if (ctl >= 0 && war.sides != null && ctl < war.sides.size()) return 0xFF000000 | Relations.sideColor(war.sides.get(ctl), ctl);
         if (ctl == WarFront.CONTESTED) return 0xFF000000 | Relations.CONTESTED;
