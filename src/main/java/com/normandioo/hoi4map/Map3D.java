@@ -131,7 +131,7 @@ final class Map3D {
             Minecraft.getInstance().getTextureManager().register(id, tex);
             frame = new int[rw * rh];
         }
-        java.util.Arrays.fill(frame, BG);
+        java.util.Arrays.fill(frame, 0);
         double focal = 0.9 * rw;
         double halfX = rw / 2.0, halfY = rh / 2.0;
         double cy = camY;
@@ -152,7 +152,25 @@ final class Map3D {
                 int color = reg.styledCpu == null ? 0 : reg.styledCpu[idx];
                 if (color == 0) continue;
                 int hv = reg.hgt == null ? 0 : reg.hgt[idx];
-                double by = (hv == 0 ? UNKNOWN_H : hv) - 64.0;
+                int newTop = top;
+                for (int si = 0; si < 3; si++) {
+                double topPlane, botPlane;
+                int blk;
+                if (si == 0) {
+                    topPlane = hv == 0 ? UNKNOWN_H : hv;
+                    botPlane = hv == 0 ? UNKNOWN_H - 3 : (reg.bot0 == null ? 0 : reg.bot0[idx]);
+                    blk = reg.blk == null ? 0 : reg.blk[idx];
+                } else {
+                    if (reg.sp == null) break;
+                    int sb = idx * MapData.SP_N + (si - 1) * 3;
+                    topPlane = reg.sp[sb];
+                    if (topPlane <= 0) break;
+                    botPlane = reg.sp[sb + 1];
+                    blk = reg.sp[sb + 2] & 0xFFFF;
+                    if (blk == 0) break;
+                }
+                int colorS = color;
+                double by = topPlane - 64.0;
                 double vx = wx - camX, vy = by - cy, vz = wz - camZ;
                 double zc = vx * fx + vy * fy + vz * fz;
                 if (zc < 1) continue;
@@ -163,31 +181,45 @@ final class Map3D {
                 }
                 int ys0 = ys;
                 if (ys < 0) ys = 0;
+                double pxb = focal * uy / zc;                 // pixels da imagem por bloco, na vertical
+                int yEnd = top;
+                if (botPlane != 0) {
+                    double vyB = botPlane - 64.0 - cy;
+                    double zcB = vx * fx + vyB * fy + vz * fz;
+                    if (zcB >= 1) {
+                        double yB = halfY - focal * (vx * ux + vyB * uy + vz * uz) / zcB;
+                        yEnd = (int) Math.min(top, Math.ceil(yB + pxb * 0.6 + 2));
+                    }
+                }
+                final double thick = botPlane == 0 ? 1e9 : topPlane - botPlane + 0.05;
                 float fog = (float) Math.min(0.55, r / 9000.0);
                 MapData.Tex tt = null, st = null;
-                double pxb = focal * uy / zc;                 // pixels da imagem por bloco, na vertical
-                int blk = reg.blk == null ? 0 : reg.blk[idx];
-                if (TEXTURES && blk > 0 && pxb >= 2.5 && (reg.px[idx] >>> 24) == 0xFF) {
+                if (TEXTURES && blk > 0 && pxb >= 2.5 && (si > 0 || (reg.px[idx] >>> 24) == 0xFF)) {
                     tt = MapData.topTexture(blk - 1);
                     st = tt == null ? null : MapData.sideTexture(blk - 1);
+                    if (tt != null && si > 0) colorS = 0xFF000000 | (tt.avg & 0xFFFFFF);
+                }
+                if (si > 0 && tt == null) {
+                    MapData.Tex fl = blk > 0 ? MapData.sideTexture(blk - 1) : null;
+                    colorS = fl == null ? 0xFF707070 : (0xFF000000 | (fl.avg & 0xFFFFFF));
                 }
                 // paredes dos cubos: tom diferente para cada eixo, como nas faces do Minecraft
                 float wallShade = Math.abs(dirx) > Math.abs(dirz) ? (dirx > 0 ? 0.72f : 0.56f) : (dirz > 0 ? 0.86f : 0.68f);
                 if (tt == null) {
                     int topRowsFlat = Math.max(1, (int) (pxb * 0.55));
-                    int cTop = fog <= 0.01f ? color : mixFog(color, fog);
-                    int wc = color;
-                    if (reg.wall != null && (reg.px[idx] >>> 24) == 0xFF) {       // de longe a parede tem a cor da fachada, não a do telhado
+                    int cTop = fog <= 0.01f ? colorS : mixFog(colorS, fog);
+                    int wc = colorS;
+                    if (si == 0 && reg.wall != null && (reg.px[idx] >>> 24) == 0xFF) {       // de longe a parede tem a cor da fachada, não a do telhado
                         int wid = (reg.wall[idx * MapData.WALL_R] & 0xFFFF) >> 5;
                         MapData.Tex wt = wid > 0 ? MapData.sideTexture(wid - 1) : null;
                         if (wt != null) wc = 0xFF000000 | (wt.avg & 0xFFFFFF);
                     }
                     int wallC = shade(wc, wallShade);
                     int cWall = fog <= 0.01f ? wallC : mixFog(wallC, fog);
-                    for (int y = ys; y < top; y++) frame[y * rw + col] = (y - ys0) < topRowsFlat ? cTop : cWall;
+                    for (int y = ys; y < yEnd; y++) { if (frame[y * rw + col] == 0) frame[y * rw + col] = (y - ys0) < topRowsFlat ? cTop : cWall; }
                 } else {
                     // textura de verdade, mapeada exatamente: cada pixel é o ponto onde o raio da câmera toca o bloco
-                    int cr = (color >> 16) & 0xFF, cg = (color >> 8) & 0xFF, cb = color & 0xFF;
+                    int cr = (colorS >> 16) & 0xFF, cg = (colorS >> 8) & 0xFF, cb = colorS & 0xFF;
                     double rr = clamp(cr / Math.max(8.0, (tt.avg >> 16) & 0xFF)), rg = clamp(cg / Math.max(8.0, (tt.avg >> 8) & 0xFF)), rb = clamp(cb / Math.max(8.0, tt.avg & 0xFF));
                     double lum = (rr + rg + rb) / 3.0;
                     rr /= lum; rg /= lum; rb /= lum;                 // só o tom do mapa (bioma); o relevo vem da luz das faces
@@ -200,7 +232,8 @@ final class Map3D {
                     double planeC = alongZ ? (dirx > 0 ? ix : ix + 1) : (dirz > 0 ? iz : iz + 1);
                     int lastDi = -1;
                     MapData.Tex lastTex = null;
-                    for (int y = ys; y < top; y++) {
+                    for (int y = ys; y < yEnd; y++) {
+                        if (frame[y * rw + col] != 0) continue;
                         double vv = halfY - y;
                         double ddx = dcx + ux * vv, ddy = dcy + uy * vv, ddz = dcz + uz * vv;
                         boolean topHit = false;
@@ -218,7 +251,7 @@ final class Map3D {
                             int tx = Math.max(0, Math.min(tt.w - 1, (int) ((hx - ix) * tt.w))), tz = Math.max(0, Math.min(tt.w - 1, (int) ((hz - iz) * tt.w)));
                             int tc = tt.px[tz * tt.w + tx];
                             int tcol;
-                            if ((tc >>> 24) < 32) tcol = color;
+                            if ((tc >>> 24) < 32) tcol = colorS;
                             else tcol = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
                             out = shade(mip >= 0.999 ? tcol : mixRgb(avgC, tcol, (float) mip), topLight);
                         } else {
@@ -230,11 +263,12 @@ final class Map3D {
                                 along = alongZ ? camZ + ddz * t2 : camX + ddx * t2;
                                 depth = by - (cy + ddy * t2);
                                 if (depth < 0) depth = 0;
+                                if (depth > thick) continue;       // o raio passa por baixo desta camada (vão)
                             }
                             int di = (int) depth;
                             MapData.Tex sx = st == null ? tt : st;
                             boolean deep = false;
-                            if (di >= 1 && reg.wall != null) {
+                            if (di >= 1 && si == 0 && reg.wall != null) {
                                 if (di != lastDi) {
                                     int wid = 0, acc = 1;
                                     for (int qq = 0; qq < MapData.WALL_R; qq++) {
@@ -254,23 +288,23 @@ final class Map3D {
                             int ty = Math.max(0, Math.min(sx.w - 1, (int) ((depth - di) * sx.w)));
                             int tc = sx.px[ty * sx.w + tx];
                             int base;
-                            if ((tc >>> 24) < 32) base = color;
+                            if ((tc >>> 24) < 32) base = colorS;
                             else if (deep) base = tc | 0xFF000000;
                             else if (sameTex) base = 0xFF000000 | ((int) Math.min(255, ((tc >> 16) & 0xFF) * rr) << 16) | ((int) Math.min(255, ((tc >> 8) & 0xFF) * rg) << 8) | (int) Math.min(255, (tc & 0xFF) * rb);
-                            else base = mixRgb(tc, color, 0.3f);
+                            else base = mixRgb(tc, colorS, 0.3f);
                             if (mip < 0.999) base = mixRgb(shade(avgC, 1f), base, (float) mip);
                             out = shade(base, (float) (wallShade * Math.max(0.6, 1.0 - depth * 0.010)));
                         }
                         frame[y * rw + col] = fog <= 0.01f ? out : mixFog(out, fog);
                     }
                 }
-                prevX = wx;
-                prevZ = wz;
-                top = ys;
+                if (botPlane == 0 && ys < newTop) newTop = ys;
+                }
+                top = newTop;
             }
         });
         java.util.stream.IntStream.range(0, rh).parallel().forEach(y -> {
-            for (int x = 0; x < rwF; x++) img.setPixel(x, y, frame[y * rwF + x]);
+            for (int x = 0; x < rwF; x++) { int v = frame[y * rwF + x]; img.setPixel(x, y, v == 0 ? BG : v); }
         });
         tex.upload();
         g.blit(RenderPipelines.GUI_TEXTURED, id, 0, 0, 0f, 0f, guiWidth, guiHeight, rw, rh, rw, rh);
