@@ -26,6 +26,7 @@ final class Minimap {
 
     /** Z alterna o minimapa ampliado (centro da tela). */
     static boolean expanded;
+    private static final java.util.Map<net.minecraft.world.entity.EntityType<?>, net.minecraft.world.item.ItemStack> MOB_ICONS = new java.util.HashMap<>();
     private static final String[] HEADING = {"S", "SO", "O", "NO", "N", "NE", "L", "SE"};
 
     static void render(GuiGraphics g, float partial) {
@@ -179,10 +180,21 @@ final class Minimap {
             double sx = Math.round((ox + (ex - cx) * scale) * gs) / gs, sy = Math.round((oy + (ez - cz) * scale) * gs) / gs;
             if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
             int rgb = e instanceof Enemy ? 0xFFE0453C : 0xFF5CCB5F;
+            net.minecraft.world.item.ItemStack icon = MOB_ICONS.computeIfAbsent(e.getType(), t -> {
+                net.minecraft.world.item.SpawnEggItem egg = net.minecraft.world.item.SpawnEggItem.byId(t);
+                return egg == null ? net.minecraft.world.item.ItemStack.EMPTY : new net.minecraft.world.item.ItemStack(egg);
+            });
             g.pose().pushMatrix();
             g.pose().translate((float) sx, (float) sy);
-            g.fill(-2, -2, 3, 3, 0xFF05080C);
-            g.fill(-1, -1, 2, 2, rgb);
+            if (icon.isEmpty()) {
+                g.fill(-2, -2, 3, 3, 0xFF05080C);
+                g.fill(-1, -1, 2, 2, rgb);
+            } else {
+                g.fill(-5, -5, 5, 5, 0xFF05080C);
+                g.fill(-4, -4, 4, 4, rgb);       // contorno: vermelho = hostil, verde = os outros
+                g.pose().scale(0.5f, 0.5f);
+                g.renderItem(icon, -8, -8);
+            }
             g.pose().popMatrix();
         }
     }
