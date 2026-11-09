@@ -31,13 +31,13 @@ jobs:
         if: always()
         run: |
           J=$(find ./.gradle/loom-cache -name 'minecraft-merged-*.jar' | grep -v sources | head -1)
-          FR=$(find ./.gradle/loom-cache/remapped_mods -name 'fabric-rendering-v1-*.jar' | head -1)
-          for c in 'net.minecraft.client.gui.render.pip.GuiBookModelRenderer'; do echo "=== CODE $c"; javap -p -c -cp "$J" "$c" | grep -E "invoke|getstatic|ldc|public|protected" | head -80; done
-          for c in net.minecraft.client.gui.GuiGraphics net.minecraft.client.gui.render.state.GuiRenderState 'net.minecraft.client.renderer.MultiBufferSource$BufferSource' net.minecraft.client.renderer.RenderType net.minecraft.client.renderer.block.model.BlockStateModel net.minecraft.client.renderer.block.model.BlockModelPart net.minecraft.client.renderer.block.model.BakedQuad net.minecraft.client.renderer.texture.TextureAtlasSprite com.mojang.blaze3d.vertex.VertexConsumer net.minecraft.client.renderer.CachedOrthoProjectionMatrixBuffer net.minecraft.client.renderer.block.BlockModelShaper; do
+          for c in net.minecraft.client.renderer.rendertype.RenderTypes 'net.minecraft.client.renderer.rendertype.RenderType' net.minecraft.client.renderer.rendertype.RenderSetup; do
             echo "=== $c"
-            javap -p -cp "$J" "$c" 2>&1 | grep -v -E "lambda\$|synthetic" | head -120
+            javap -p -cp "$J" "$c" 2>&1 | grep -v -E "lambda\$|synthetic" | head -140
           done
-          for c in 'net.fabricmc.fabric.api.client.rendering.v1.SpecialGuiElementRegistry' 'net.fabricmc.fabric.api.client.rendering.v1.SpecialGuiElementRegistry$Context' 'net.fabricmc.fabric.api.client.rendering.v1.SpecialGuiElementRegistry$Factory'; do echo "=== $c"; javap -p -cp "$FR:$J" "$c"; done
+          echo "=== VertexConsumer defaults"; javap -p -cp "$J" com.mojang.blaze3d.vertex.VertexConsumer | grep default
+          echo "=== PiP code"; javap -p -c -cp "$J" net.minecraft.client.gui.render.pip.PictureInPictureRenderer | grep -E "invoke|public|protected|private" | head -80
+          echo "=== Lighting"; javap -p -cp "$J" com.mojang.blaze3d.platform.Lighting
       - uses: actions/upload-artifact@v4
         with:
           name: hoi4map-jar
