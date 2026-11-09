@@ -2221,10 +2221,12 @@ public class MapScreen extends Screen {
             if (sx < -30 || sx > width + 30 || sy < -30 || sy > height + 30) continue;
             if (m.kind() == WarMarkers.Kind.SWORD) {
                 WarArt.Art a = WarArt.SWORD;
-                drawArt(g, a, sx - a.w() + 2, sy - 8 - a.h() * 2, 2);
+                WarArt.Tex t = WarArt.texture(a, "sword");
+                g.blit(RenderPipelines.GUI_TEXTURED, t.id(), sx - a.w() + 2, sy - 8 - a.h() * 2, 0f, 0f, a.w() * 2, a.h() * 2, a.w(), a.h(), a.w(), a.h());
             } else {
-                WarArt.Art a = WarArt.flag(m.rgb(), phase);
-                drawArt(g, a, sx + 3, sy - 4 - a.h() * 2, 2);
+                WarArt.Art a = WarArt.cachedFlag(m.rgb(), phase);
+                WarArt.Tex t = WarArt.texture(a, "flag" + m.rgb() + "_" + phase);
+                g.blit(RenderPipelines.GUI_TEXTURED, t.id(), sx + 3, sy - 4 - a.h() * 2, 0f, 0f, a.w() * 2, a.h() * 2, a.w(), a.h(), a.w(), a.h());
             }
         }
     }

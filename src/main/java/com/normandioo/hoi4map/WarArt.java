@@ -1,5 +1,13 @@
 package com.normandioo.hoi4map;
 
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.resources.Identifier;
+
+import java.util.HashMap;
+import java.util.Map;
+
 /** The small pixel pictures the war effects draw: a sword and a flag, each with a dark outline so they read over any colour. */
 final class WarArt {
     private WarArt() {}
@@ -71,5 +79,33 @@ final class WarArt {
     private static int darker(int rgb) {
         int r = (rgb >> 16 & 255) * 7 / 10, g = (rgb >> 8 & 255) * 7 / 10, b = (rgb & 255) * 7 / 10;
         return (r << 16) | (g << 8) | b;
+    }
+
+    record Tex(Identifier id, int w, int h) {}
+
+    private static final Map<String, Tex> TEXTURES = new HashMap<>();
+    private static final Map<Long, Art> FLAGS = new HashMap<>();
+    private static int counter;
+
+    /** A bandeira dessa cor e fase, montada uma vez só. */
+    static Art cachedFlag(int rgb, int phase) {
+        return FLAGS.computeIfAbsent(((long) rgb << 1) | phase, k -> flag(rgb, phase));
+    }
+
+    /** A figura vira uma textura (criada uma vez): desenhar é um único blit em vez de dezenas de retângulos por quadro. */
+    static Tex texture(Art a, String key) {
+        Tex t = TEXTURES.get(key);
+        if (t != null) return t;
+        NativeImage img = new NativeImage(NativeImage.Format.RGBA, a.w(), a.h(), true);
+        for (int y = 0; y < a.h(); y++) {
+            for (int x = 0; x < a.w(); x++) img.setPixel(x, y, a.argb()[y * a.w() + x]);
+        }
+        DynamicTexture tex = new DynamicTexture(() -> "hoi4map war art", img);
+        Identifier id = Identifier.fromNamespaceAndPath(Hoi4MapClient.MOD_ID, "art/a" + (counter++));
+        Minecraft.getInstance().getTextureManager().register(id, tex);
+        tex.upload();
+        t = new Tex(id, a.w(), a.h());
+        TEXTURES.put(key, t);
+        return t;
     }
 }
