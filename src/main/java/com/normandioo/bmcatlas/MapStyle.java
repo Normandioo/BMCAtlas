@@ -461,14 +461,6 @@ final class MapStyle {
         g *= f;
         b *= f;
 
-        // estrias de ondas na água rasa
-        if (false) {
-            float wave = (float) Math.sin((wx * 0.55f + wz * 0.32f) * 0.9f + big * 9f);
-            float streak = Math.max(0f, wave - 0.86f) / 0.14f * (1f - depth / 22f);
-            r += 22f * streak;
-            g += 30f * streak;
-            b += 34f * streak;
-        }
         // espuma junto à costa
         if (depth <= 2) {
             float foam = depth == 0 ? 0.12f : depth == 1 ? 0.06f : 0.02f;

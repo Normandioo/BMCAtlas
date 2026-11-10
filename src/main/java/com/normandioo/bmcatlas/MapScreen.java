@@ -3809,7 +3809,7 @@ public class MapScreen extends Screen {
         }
         cy += 19;
 
-        if (warCityFilter != 0 || true) {
+        {
             // cidades tomadas, por lado que as segura
             List<WarScore.Holding> taken = new ArrayList<>();
             for (WarScore.Holding h : r.holdings()) if (h.taken()) taken.add(h);
