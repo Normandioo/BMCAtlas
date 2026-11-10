@@ -1,3 +1,7 @@
+## 1.2.2
+
+- Internal cleanup: removed unused code (no change to gameplay or interface)
+
 ## 1.2.1
 
 - Each menu of the map (side panel, wars / legend box, mode bar) is resized on its own by dragging its corner, like an image in an image editor (50-200%; also in the settings)
