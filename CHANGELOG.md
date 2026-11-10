@@ -1,3 +1,15 @@
+## 1.2.0
+
+- Map: smooth zoom, keyboard controls (move, zoom, search, center, help with `H`), `C` copies the coordinates under the cursor
+- Marked points: names, colors, shown on the minimap and found by the search
+- Ruler: routes with any number of points, with times on foot, sprinting, by boat and by elytra
+- Search: alliances, provinces and marked points; ignores accents; more results
+- The map remembers its mode, zoom and the city / player switches
+- Minimap: arrow showing where you look, zoom keys, hold or toggle, opacity, allies in green and enemies in red during a war, online players refreshed every 3 s
+- War recording: record the war map over time and play it back
+- A note on the map tells how old the site data is, and warns when the site cannot be reached
+- One source for every Minecraft version; each release has both jars. License file and mod icon added
+
 ## 1.1.0
 
 - Terrain cache: one file per region, written in the background and only when something changed (no more freeze when the map is saved or closed)

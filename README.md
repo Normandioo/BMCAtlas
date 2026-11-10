@@ -1,6 +1,6 @@
 # BMC Atlas
 
-**Fabric** client mod for **Minecraft 1.21.11**: a full-screen political map and a minimap with countries, provinces, cities, live war tracking and online players. It reads the server's public territory data (GET only) and never changes anything on the server or the site.
+**Fabric** client mod for **Minecraft 1.21.11 and 26.x**: a full-screen political map and a minimap with countries, provinces, cities, live war tracking and online players. It reads the server's public territory data (GET only) and never changes anything on the server or the site.
 
 ## Features
 
@@ -14,8 +14,15 @@
 
 ## Controls
 
-- `N`: open the map. Hold `Z`: enlarge the minimap while the key is down.
-- Drag to move, wheel to zoom, click to select, `1`-`5` to switch modes, `F7` for the performance overlay.
+- `N`: open the map. `Z`: enlarge the minimap (hold, or toggle: see settings). `=` / `-`: minimap zoom. All four can be rebound.
+- On the map: drag or arrows / `WASD` to move, wheel or `+` / `-` to zoom, click to select, `1`-`5` to switch modes.
+- `F` or `/`: search (countries, cities, players, alliances, provinces and your points). `Space`: center on you. `C`: copy the coordinates under the cursor.
+- `M`: mark a point (click a point to rename, recolor or delete it). `R`: measure a route with any number of points.
+- `H`: list of keys. `F7`: performance overlay.
+
+## War recording
+
+Turn on **Recording** on the bar at the bottom of the war map (or in the settings). Every change in who holds the cities of the followed war is saved with its time in `config/bmcatlas/recordings/`. The same bar plays the recording back on the map, step by step or continuously, with score and fronts as they were.
 
 ## Configuration
 
@@ -32,4 +39,4 @@ To use the mod on another server, point `url` at that server's `territories.json
 gradle build
 ```
 
-The jar is in `build/libs/`. CI builds every push to `main` and publishes a release.
+builds the Minecraft 1.21.11 jar. The source is written once, for 1.21.11; `python3 tools/port26.py` rewrites the tree for Minecraft 26.x (renamed classes, `port26/Compat.java`, build files), after which the same command builds the 26.x jar (Java 25). CI does both on every push to `main` and publishes one release with the two jars.

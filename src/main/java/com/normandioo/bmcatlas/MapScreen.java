@@ -454,7 +454,7 @@ public class MapScreen extends Screen {
             if (dipAlliance >= (d.war == null || d.war.alliances == null ? 0 : d.war.alliances.size())) dipAlliance = -1;
             if (warSel >= Relations.wars(d).size()) warSel = -1;
         }
-        int sig = Objects.hash(mode, dipFocus, dipAlliance, warSel, SiteTerritories.version(), rel, mode == MODE_WAR ? DynmapMarkers.markersAt() : 0L);
+        int sig = Objects.hash(mode, dipFocus, dipAlliance, warSel, SiteTerritories.version(), rel, mode == MODE_WAR ? DynmapMarkers.markersAt() : 0L, WarRecorder.index());
         if (sig == ovSig) return;
         ovSig = sig;
         if (!rel) {
