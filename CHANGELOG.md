@@ -1,3 +1,7 @@
+## 1.2.5
+
+- The mod tells you when a newer version is out: once per game start it reads the latest release on GitHub and, the first time you are in a world, shows a chat message with a link to the download page. Turn it off in the settings ("Tell me when a new version is out")
+
 ## 1.2.4
 
 - On a server with the BmcWar plugin (0.18.0 or newer), the server tells the mod who holds each city of the live wars, the bridges the staff opened or closed, and when the site data changed. The mod then stops asking dynmap for the war markers every few seconds and the site every half hour, and site changes show up as soon as the server sees them. On other servers nothing changes

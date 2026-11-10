@@ -67,6 +67,8 @@ final class Prefs {
         boolean minimapHold = true;
         /** Record the map of the followed war over time (see WarRecorder). */
         boolean recordWar = false;
+        /** Tell the player when a newer version of the mod is out (see UpdateCheck). */
+        boolean updateCheck = true;
         // what the big map looked like when it was last closed
         int mapMode = 1;
         double mapScale = 1.0;

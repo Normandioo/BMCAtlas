@@ -1263,6 +1263,11 @@ abstract class MapPanels extends MapUi {
             });
         }
 
+        toggleRow(g, "Tell me when a new version is out", p.updateCheck, mouseX, mouseY, () -> {
+            p.updateCheck = !p.updateCheck;
+            Prefs.save();
+        });
+
         section(g, "Map appearance");
         stepsRow(g, "Country color intensity", p.fillPct + "%", 11, indexOfStep(p.fillPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.fillPct = i * 10;

@@ -34,12 +34,14 @@ public class BmcAtlasClient implements ClientModInitializer {
         Countries.load();
         SiteTerritories.init();
         Compat.registerSync(ServerSync::receive);   // what the server's war plugin tells this mod (bmcatlas:sync)
+        UpdateCheck.start();   // once per game start: is a newer version out?
 
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "minimap"), (graphics, tickCounter) -> Minimap.render(graphics, tickCounter.getGameTimeDeltaPartialTick(false)));
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             ChunkGen.tick(mc);
             if (mc.level == null || mc.player == null) return;
+            UpdateCheck.tick(mc);
             while (OPEN_KEY.consumeClick()) {
                 if (Compat.screen(mc) == null) Compat.setScreen(mc, new MapScreen());
             }
