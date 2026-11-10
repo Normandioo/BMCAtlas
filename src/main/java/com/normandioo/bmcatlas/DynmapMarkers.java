@@ -71,7 +71,7 @@ final class DynmapMarkers {
                 failures = 0;
             } catch (RuntimeException e) {
                 failures++;
-                BmcAtlasClient.LOG.debug("Marcadores do dynmap sem resposta: {}", e.toString());
+                BmcAtlasClient.LOG.debug("No answer from the dynmap markers: {}", e.toString());
             } finally {
                 BUSY.set(false);
             }

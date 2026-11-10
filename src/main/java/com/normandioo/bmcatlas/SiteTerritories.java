@@ -342,7 +342,7 @@ final class SiteTerritories {
         try {
             Files.writeString(settingsFile, GSON.toJson(settings), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
-            BmcAtlasClient.LOG.warn("Não foi possível gravar {}", settingsFile, e);
+            BmcAtlasClient.LOG.warn("Could not write {}", settingsFile, e);
         }
     }
 
@@ -403,7 +403,7 @@ final class SiteTerritories {
             if (settings.maps == null) settings.maps = new ArrayList<>();
             Files.writeString(settingsFile, GSON.toJson(settings), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException e) {
-            BmcAtlasClient.LOG.warn("Não foi possível ler {}", settingsFile, e);
+            BmcAtlasClient.LOG.warn("Could not read {}", settingsFile, e);
         }
         if (!settings.enabled) {
             status = "disabled in site.json";
@@ -439,17 +439,17 @@ final class SiteTerritories {
     private static void loadCache() {
         List<Path> candidates = new ArrayList<>();
         candidates.add(cacheFile);
-        if (active == null) candidates.add(FabricLoader.getInstance().getConfigDir().resolve("cumania_territories_cache.json"));
         for (Path p : candidates) {
             try {
                 if (Files.exists(p)) {
                     String text = Files.readString(p, StandardCharsets.UTF_8);
                     apply(parse(text), "cache");
                     remember(text);
+                    checkedAt = Files.getLastModifiedTime(p).toMillis();
                     return;
                 }
             } catch (IOException | RuntimeException e) {
-                BmcAtlasClient.LOG.warn("Cópia ilegível: {}", p, e);
+                BmcAtlasClient.LOG.warn("Unreadable copy: {}", p, e);
             }
         }
     }
@@ -481,6 +481,8 @@ final class SiteTerritories {
         cacheFile = cacheFileFor(e);
         data = null;
         appliedLen = -1;
+        checkedAt = 0;
+        lastError = null;
         version++;
         status = "loading " + (e == null ? "" : e.name) + "...";
         OnlinePlayers.reset();
@@ -539,12 +541,18 @@ final class SiteTerritories {
                 .whenComplete((response, failure) -> {
                     try {
                         if (failure != null) throw new IOException(failure);
-                        if (response.statusCode() == 304 && data != null) return;      // nothing changed on the site
+                        if (response.statusCode() == 304 && data != null) {
+                            fresh();
+                            return;
+                        }      // nothing changed on the site
                         if (response.statusCode() != 200) throw new IOException("HTTP " + response.statusCode());
                         String body = response.body();
                         if (!url.equals(url())) return;      // o jogador trocou de mapa no meio do download
                         // same content as the one in use: the map is not repainted for nothing
-                        if (data != null && body.length() == appliedLen && body.hashCode() == appliedHash) return;
+                        if (data != null && body.length() == appliedLen && body.hashCode() == appliedHash) {
+                            fresh();
+                            return;
+                        }
                         Data d = parse(body);
                         if (cf != null) {
                             Files.writeString(cf, body, StandardCharsets.UTF_8);
@@ -554,13 +562,37 @@ final class SiteTerritories {
                         }
                         remember(body);
                         apply(d, "site");
+                        fresh();
                     } catch (IOException | RuntimeException e) {
                         if (data == null) status = "failed: " + e;
-                        BmcAtlasClient.LOG.warn("Não foi possível baixar {}: {}", url, e.toString());
+                        lastError = e instanceof IOException && e.getMessage() != null && e.getMessage().startsWith("HTTP") ? e.getMessage() : "no connection";
+                        BmcAtlasClient.LOG.warn("Could not download {}: {}", url, e.toString());
                     } finally {
                         if (url.equals(loadingUrl)) loadingUrl = null;
                     }
                 });
+    }
+
+    private static volatile long checkedAt;
+    private static volatile String lastError;
+
+    private static void fresh() {
+        checkedAt = System.currentTimeMillis();
+        lastError = null;
+    }
+
+    /** When the territories in use were last confirmed with the site (0 = never). */
+    static long checkedAt() {
+        return checkedAt;
+    }
+
+    /** Why the last download failed, or null if it worked. */
+    static String lastError() {
+        return lastError;
+    }
+
+    static int refreshMinutes() {
+        return settings.refreshMinutes;
     }
 
     private static volatile int appliedHash;
@@ -576,7 +608,7 @@ final class SiteTerritories {
         data = d;
         version++;
         status = source + ": " + d.ids.length + " countries, " + d.n + " provinces";
-        BmcAtlasClient.LOG.info("Territórios ({}): {} países, {} províncias {}", source, d.ids.length, d.n, d.generated);
+        BmcAtlasClient.LOG.info("Territories ({}): {} countries, {} provinces {}", source, d.ids.length, d.n, d.generated);
     }
 
     // ------------------------------------------------------------------ leitura

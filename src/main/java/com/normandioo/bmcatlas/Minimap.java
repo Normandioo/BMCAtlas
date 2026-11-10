@@ -58,7 +58,8 @@ final class Minimap {
         g.fill(x - 3, y - 3, x + size + 3, y + size + 3, 0xFF0E0C08);
         g.fill(x - 2, y - 2, x + size + 2, y + size + 2, 0xFF6A6F72);
         g.fill(x - 2, y - 2, x + size + 2, y - 1, 0xFF7E8387);
-        g.fill(x - 1, y - 1, x + size + 1, y + size + 1, 0xFF0B1628);
+        final int alpha = Math.max(40, Math.min(100, p.minimapOpacityPct)) * 255 / 100;
+        g.fill(x - 1, y - 1, x + size + 1, y + size + 1, (alpha << 24) | 0x0B1628);
 
         g.enableScissor(x, y, x + size, y + size);
         double halfBlocks = size / 2.0 / scale;
@@ -85,13 +86,14 @@ final class Minimap {
                 if (r.id == null) continue;
                 MapData.markUsed(r);
                 int rs = MapData.REGION_PX;
-                g.blit(RenderPipelines.GUI_TEXTURED, r.id, rx * rs, rz * rs, 0f, 0f, rs, rs, rs, rs, rs, rs);
+                g.blit(RenderPipelines.GUI_TEXTURED, r.id, rx * rs, rz * rs, 0f, 0f, rs, rs, rs, rs, rs, rs, (alpha << 24) | 0xFFFFFF);
             }
         }
         g.pose().popMatrix();
 
         if (d != null && p.minimapCities) drawFront(g, d, tx, ty, scale, gs);
         if (d != null && p.minimapCities) drawCities(g, d, tx, ty, ox, oy, scale, size, gs);
+        drawMarks(g, font, tx, ty, ox, oy, scale, size, gs);
         if (p.minimapPlayers) drawPlayers(g, d, mc, ox, oy, cx, cz, scale, size, partial, gs);
         drawSelf(g, mc, ox, oy, partial);
         g.disableScissor();
@@ -205,6 +207,34 @@ final class Minimap {
         }
     }
 
+    /** The points you marked on the map (name shown while the minimap is enlarged). */
+    private static void drawMarks(GuiGraphics g, Font font, double tx, double ty, int ox, int oy, double scale, int size, double gs) {
+        String map = MapScreen.activeMapKey();
+        int half = size / 2 + 4;
+        for (Prefs.Mark m : Prefs.get().marks) {
+            if (!map.equals(m.map)) continue;
+            double sx = Math.round((tx + (m.x + 0.5) * scale) * gs) / gs, sy = Math.round((ty + (m.z + 0.5) * scale) * gs) / gs;
+            if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
+            g.pose().pushMatrix();
+            g.pose().translate((float) sx, (float) sy);
+            g.fill(-3, -3, 4, 4, 0xFF0A0B08);
+            g.fill(-2, -2, 3, 3, Prefs.markColor(m));
+            if (expanded && m.name != null) g.drawString(font, m.name, 6, -4, Prefs.markColor(m), true);
+            g.pose().popMatrix();
+        }
+    }
+
+    /** Frame color of a player: green on your side of the followed war, red on the other, else the given color. */
+    private static int relationColor(SiteTerritories.Data d, SiteTerritories.WarInfo war, int mySide, String account, int fallback) {
+        if (d == null || war == null || mySide < 0) return fallback;
+        String low = account.toLowerCase(Locale.ROOT);
+        String site = d.ignToSite.get(low);
+        Integer ci = d.countryOfPlayer.get(site != null ? site.toLowerCase(Locale.ROOT) : low);
+        if (ci == null) return fallback;
+        int side = WarScore.sideOfCountry(war, d.ids[ci]);
+        return side < 0 ? fallback : side == mySide ? 0xFF57C26B : 0xFFE5534B;
+    }
+
     private static RemoteImages.Img cityImage(SiteTerritories.Locality l, int size) {
         String root = SiteTerritories.rootUrl();
         if (root.isEmpty()) return null;
@@ -224,6 +254,14 @@ final class Minimap {
         String self = mc.player.getName().getString();
         double half = size / 2.0 + 6;
         java.util.Set<String> drawn = new java.util.HashSet<>();
+        SiteTerritories.WarInfo war = d == null ? null : MapScreen.minimapWar(d);
+        int mySide = -1;
+        if (war != null) {
+            String low = self.toLowerCase(Locale.ROOT);
+            String site = d.ignToSite.get(low);
+            Integer mine = d.countryOfPlayer.get(site != null ? site.toLowerCase(Locale.ROOT) : low);
+            if (mine != null) mySide = WarScore.sideOfCountry(war, d.ids[mine]);
+        }
         for (AbstractClientPlayer pl : mc.level.players()) {
             if (pl == mc.player) continue;
             drawn.add(pl.getName().getString().toLowerCase(Locale.ROOT));
@@ -232,7 +270,7 @@ final class Minimap {
             if (Math.abs(sx - ox) > half || Math.abs(sy - oy) > half) continue;
             g.pose().pushMatrix();
             g.pose().translate((float) sx, (float) sy);
-            g.fill(-6, -6, 6, 6, 0xFF05080C);
+            g.fill(-6, -6, 6, 6, relationColor(d, war, mySide, pl.getName().getString(), 0xFF05080C));
             Compat.face(g, pl, -5, -5, 10);
             g.pose().popMatrix();
         }
@@ -250,6 +288,7 @@ final class Minimap {
                 Integer ci = d.countryOfPlayer.get(site != null ? site.toLowerCase(Locale.ROOT) : e.account.toLowerCase(Locale.ROOT));
                 if (ci != null) rgb = d.rgb[ci] | 0xFF000000;
             }
+            rgb = relationColor(d, war, mySide, e.account, rgb);
             RemoteImages.Img face = dyn == null ? null : RemoteImages.icon(dyn + "tiles/faces/32x32/" + e.account + ".png", 10);
             g.pose().pushMatrix();
             g.pose().translate((float) sx, (float) sy);
@@ -271,6 +310,14 @@ final class Minimap {
         g.fill(-7, -7, 7, 7, 0xFF05080C);
         g.fill(-6, -6, 6, 6, 0xFFFFF2B0);
         Compat.face(g, mc.player, -5, -5, 10);
+        g.pose().popMatrix();
+        // where you are looking (yaw 0 = south = down on the map)
+        double yaw = Math.toRadians(mc.player.getYRot());
+        g.pose().pushMatrix();
+        g.pose().translate(ox, oy);
+        g.pose().rotate((float) Math.atan2(Math.cos(yaw), -Math.sin(yaw)));
+        for (int i = 0; i < 5; i++) g.fill(8 + i, -(5 - i), 9 + i, 5 - i, 0xFF05080C);
+        for (int i = 0; i < 4; i++) g.fill(9 + i, -(3 - i), 10 + i, 3 - i, 0xFFFFF2B0);
         g.pose().popMatrix();
     }
 }

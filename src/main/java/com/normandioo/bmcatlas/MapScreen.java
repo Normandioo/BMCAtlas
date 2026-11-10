@@ -55,10 +55,10 @@ public class MapScreen extends Screen {
 
     // O estado da vista persiste entre aberturas da tela.
     private static double viewX, viewZ;
-    private static double scale = 1.0;
+    private static double scale = Prefs.get().mapScale;
     private static boolean viewInit;
     private static SiteTerritories.Locality pendingFocus;     // cidade a focar ao abrir (aviso de captura)
-    private static int mode = MODE_POLITICAL;
+    private static int mode = Prefs.get().mapMode <= MODE_PROVINCES ? Prefs.get().mapMode : MODE_POLITICAL;
     private static int tab = TAB_NONE;
     private static String lastWaveKey;     // guerra e mapa da última leitura de cores
     private static int listTab;            // aba da lista de países (lista / ranking)
@@ -68,8 +68,18 @@ public class MapScreen extends Screen {
     private record SearchHit(String label, String kind, Runnable action) {}
     private List<SearchHit> searchHits = List.of();
     private int toolMode;                  // 0 nenhuma, 1 medir, 2 marcar ponto
-    private int measureN;
-    private int mx0, mz0, mx1, mz1;
+    private final List<int[]> measurePts = new ArrayList<>();     // route being measured (blocks)
+    private Prefs.Mark markMenu;           // marked point with its little menu open
+    private Prefs.Mark renameMark;         // marked point being renamed in the search box
+    private long searchOpenedAt;           // the key that opens the search must not land in the box
+    private boolean helpOpen;
+    private int hoverMX, hoverMY;
+    private String toastText;
+    private long toastUntil;
+    // smooth zoom: scale runs after zoomTarget, keeping the block under the cursor in place
+    private static double zoomTarget = scale, zoomSeen = scale;
+    private double zoomBX, zoomBZ, zoomMX, zoomMY;
+    private long zoomAt;
     private boolean photoMode;
     private long photoAt;
     private final java.util.LinkedHashMap<String, SiteTerritories.Locality> simCities = new java.util.LinkedHashMap<>();
@@ -84,9 +94,9 @@ public class MapScreen extends Screen {
     private static int infoTab;            // aba da janela do país
     private static final double[] SCROLL = new double[10];
     private static double cardScroll;
-    private static boolean showCities = true;
+    private static boolean showCities = Prefs.get().showCities;
     private static boolean showLimits = Prefs.get().limits;
-    private static boolean showPlayers = true;
+    private static boolean showPlayers = Prefs.get().showPlayers;
     private static int dmTab;               // aba do menu diplomático: 0 alianças, 1 NAP, 2 purge, 3 diplolock
     private static boolean dmAllPurge;
     private static int warTab;              // aba do painel da guerra: 0 lados, 1 cidades, 2 Lei 7
@@ -230,6 +240,15 @@ public class MapScreen extends Screen {
     @Override
     public void onClose() {
         MapData.save();
+        WarRecorder.stop();
+        Prefs.Data pr = Prefs.get();
+        if (pr.mapMode != mode || pr.mapScale != zoomTarget || pr.showCities != showCities || pr.showPlayers != showPlayers) {
+            pr.mapMode = mode;
+            pr.mapScale = zoomTarget;
+            pr.showCities = showCities;
+            pr.showPlayers = showPlayers;
+            Prefs.save();
+        }
         // os marcadores da guerra ficam na memória: ao reabrir o mapa o estado atual aparece na hora
         // online players stay in memory: the minimap keeps using them, with no extra request
         super.onClose();
@@ -289,6 +308,9 @@ public class MapScreen extends Screen {
         MapData.nextFrame();
         OnlinePlayers.mapOpenAt = System.currentTimeMillis();
         RemoteImages.pump();
+        hoverMX = mouseX;
+        hoverMY = mouseY;
+        animateZoom();
         if (SiteTerritories.showPlayers()) OnlinePlayers.tick();
         Perf.begin("tick");
         tickWar();
@@ -334,10 +356,14 @@ public class MapScreen extends Screen {
         Perf.begin("outliner");
         drawOutliner(g, mouseX, mouseY);
         Perf.end("outliner");
+        drawRecorder(g, mouseX, mouseY);
         drawHover(g, mouseX, mouseY);
         drawToolBanner(g);
+        drawMarkMenu(g, mouseX, mouseY);
         drawSearch(g, mouseX, mouseY, delta);
         drawTooltip(g, mouseX, mouseY);
+        drawToast(g);
+        drawHelp(g);
         drawPerf(g);
         if (copiedFrames > 0) copiedFrames--;
     }
@@ -1086,12 +1112,207 @@ public class MapScreen extends Screen {
 
     // ------------------------------------------------------------- coordenadas
 
+
+    // ------------------------------------------------------------ zoom, toast, help, data age
+
+    private void animateZoom() {
+        long now = System.nanoTime();
+        double dt = Math.min(50.0, (now - zoomAt) / 1e6);
+        zoomAt = now;
+        if (scale != zoomSeen) {
+            zoomTarget = scale;                    // set somewhere else (focus on a city, fit a country)
+        } else if (scale != zoomTarget) {
+            double k = 1 - Math.exp(-dt / 45.0);
+            scale = Math.abs(zoomTarget - scale) < scale * 0.004 ? zoomTarget : scale * Math.pow(zoomTarget / scale, k);
+            viewX = zoomBX - (zoomMX - areaCx()) / scale;
+            viewZ = zoomBZ - (zoomMY - areaCy()) / scale;
+        }
+        zoomSeen = scale;
+    }
+
+    /** Zooms by a factor around a point of the screen. */
+    private void zoomBy(double factor, double mx, double my) {
+        zoomBX = toBlockX(mx);
+        zoomBZ = toBlockZ(my);
+        zoomMX = mx;
+        zoomMY = my;
+        zoomTarget = Math.max(0.03, Math.min(8.0, zoomTarget * factor));
+    }
+
+    private void toast(String text) {
+        toastText = text;
+        toastUntil = System.currentTimeMillis() + 1800;
+    }
+
+    private void drawToast(GuiGraphics g) {
+        if (toastText == null || System.currentTimeMillis() > toastUntil) return;
+        int w = font.width(toastText) + 14, x = (width - w) / 2, y = height - 84;
+        g.fill(x, y, x + w, y + 16, 0xF21E2123);
+        g.fill(x, y + 15, x + w, y + 16, 0xFF7E8387);
+        g.drawString(font, toastText, x + 7, y + 4, COL_TEXT, false);
+    }
+
+    private void copyCoords() {
+        if (blockedAt(hits, hoverMX, hoverMY)) return;
+        String text = (int) Math.floor(blockX(hoverMX, hoverMY)) + " " + (int) Math.floor(blockZ(hoverMX, hoverMY));
+        try {
+            Compat.setClipboard(Minecraft.getInstance(), text);
+            toast("Copied: " + text);
+        } catch (RuntimeException e) {
+            toast("Could not copy");
+        }
+    }
+
+    private static final String[][] HELP = {
+            {"Drag", "Move the map"}, {"Wheel, + / -", "Zoom"}, {"Arrows, W A S D", "Move the map"},
+            {"Space", "Center on you"}, {"F or /", "Search"}, {"C", "Copy the coordinates under the cursor"},
+            {"M", "Mark a point (click a point to rename, recolor or delete it)"}, {"R", "Measure a route"},
+            {"Backspace", "Remove the last point of the route"}, {"1 - 5", "Map modes"},
+            {"Right click", "Close the panel / leave a tool"}, {"F2", "Screenshot (use Photo in the search box for a clean map)"},
+            {"F7", "Performance overlay"}, {"H", "This help"},
+    };
+
+    private void drawHelp(GuiGraphics g) {
+        if (!helpOpen) return;
+        int keyW = 0, textW = 0;
+        for (String[] row : HELP) {
+            keyW = Math.max(keyW, font.width(row[0]));
+            textW = Math.max(textW, font.width(row[1]));
+        }
+        int w = Math.min(width - 16, keyW + textW + 34), h = HELP.length * 12 + 30;
+        int x = (width - w) / 2, y = Math.max(4, (height - h) / 2);
+        g.fill(0, 0, width, height, 0x90000000);
+        box(g, x, y, w, h, COL_PANEL);
+        g.drawString(font, "Keys", x + 10, y + 8, COL_TEXT, false);
+        int ry = y + 24;
+        for (String[] row : HELP) {
+            g.drawString(font, row[0], x + 10, ry, 0xFFE8D9A0, false);
+            g.drawString(font, fit(row[1], w - keyW - 30), x + 22 + keyW, ry, COL_TEXT, false);
+            ry += 12;
+        }
+    }
+
+    /** Bottom right: how old the site data is, in orange when the site cannot be reached. */
+    private void drawDataAge(GuiGraphics g) {
+        if (SiteTerritories.data() == null) return;
+        long at = SiteTerritories.checkedAt();
+        if (at <= 0) return;
+        long min = Math.max(0, (System.currentTimeMillis() - at) / 60000);
+        String age = min < 1 ? "just now" : min < 90 ? min + " min ago" : min < 2880 ? (min / 60) + " h ago" : (min / 1440) + " days ago";
+        String err = SiteTerritories.lastError();
+        boolean stale = err != null && min > Math.max(5, SiteTerritories.refreshMinutes());
+        String text = stale ? "Site unreachable (" + err + "). Data from " + age : "Site data checked " + age;
+        g.drawString(font, text, width - MARGIN - font.width(text), height - 12, stale ? 0xFFF0A040 : COL_DIM, true);
+    }
+
+    // ------------------------------------------------------------ marked points
+
+    private Prefs.Mark markAt(double bx0, double bz0) {
+        String map = activeMapKey();
+        double radius = 7 / Math.max(scale, 0.01);
+        for (Prefs.Mark m : Prefs.get().marks) {
+            if (map.equals(m.map) && Math.hypot(m.x + 0.5 - bx0, m.z + 0.5 - bz0) <= radius) return m;
+        }
+        return null;
+    }
+
+    private void startRename(Prefs.Mark m) {
+        searchOpen = true;
+        renameMark = m;
+        searchBox.setValue(m.name == null ? "" : m.name);
+        setFocused(searchBox);
+        searchHits = List.of();
+    }
+
+    /** Rename / color / delete, next to the marked point that was clicked. */
+    private void drawMarkMenu(GuiGraphics g, int mouseX, int mouseY) {
+        Prefs.Mark m = markMenu;
+        if (m == null) return;
+        if (!Prefs.get().marks.contains(m) || searchOpen) {
+            if (!searchOpen) markMenu = null;
+            return;
+        }
+        int sx = (int) Math.round(toScreenX(m.x + 0.5)), sy = (int) Math.round(toScreenY(m.z + 0.5));
+        int w = 170, h = 38;
+        int x = Math.max(4, Math.min(width - w - 4, sx + 8)), y = Math.max(TOP + 4, Math.min(height - h - 4, sy + 8));
+        box(g, x, y, w, h, COL_PANEL);
+        hits.add(new Hit(x, y, w, h, null, null));
+        g.fill(x + 7, y + 6, x + 13, y + 12, Prefs.markColor(m));
+        g.drawString(font, fit((m.name == null ? "Point" : m.name) + "  " + m.x + ", " + m.z, w - 24), x + 17, y + 5, COL_TEXT, false);
+        int bw3 = (w - 18) / 3;
+        textButtonFixed(g, x + 7, y + 18, bw3, 16, "Rename", mouseX, mouseY, () -> startRename(m));
+        textButtonFixed(g, x + 9 + bw3, y + 18, bw3, 16, "Color", mouseX, mouseY, () -> {
+            m.color = (m.color + 1) % Prefs.MARK_COLORS.length;
+            Prefs.save();
+        });
+        textButtonFixed(g, x + 11 + 2 * bw3, y + 18, bw3, 16, "Delete", mouseX, mouseY, () -> {
+            Prefs.get().marks.remove(m);
+            Prefs.save();
+            markMenu = null;
+        });
+    }
+
+    // ------------------------------------------------------------ war recording
+
+    /** Bar at the bottom of the war map: record the war over time and play the recording back. */
+    private void drawRecorder(GuiGraphics g, int mouseX, int mouseY) {
+        SiteTerritories.Data d = SiteTerritories.data();
+        SiteTerritories.WarInfo w = mode == MODE_WAR && siteMode() && d != null ? viewedWar(d) : null;
+        WarRecorder.tick(w);
+        if (w == null) return;
+        int n = WarRecorder.count(w);
+        boolean rec = Prefs.get().recordWar, replay = WarRecorder.replaying();
+        int at = WarRecorder.index();
+        String info = replay ? "Replay " + (at + 1) + "/" + n + "   " + dateText(WarRecorder.time())
+                : n >= 2 ? n + " moments recorded" : rec ? "Recording: changes will show up here" : "Record this war to play it back later";
+        int recW = font.width(rec ? "Recording: on" : "Recording: off") + 12;
+        int bwn = n >= 2 ? 30 * 3 + 44 + (replay ? 40 : 0) + 10 : 0;
+        int wBar = recW + bwn + font.width(info) + 26;
+        int x = Math.max(4, (width - wBar) / 2), y = height - 58;
+        box(g, x, y, wBar, 22, COL_PANEL);
+        hits.add(new Hit(x, y, wBar, 22, null, null));
+        int cx = x + 4;
+        textButtonFixed(g, cx, y + 3, recW, 16, rec ? "Recording: on" : "Recording: off", mouseX, mouseY, () -> {
+            Prefs.get().recordWar = !Prefs.get().recordWar;
+            Prefs.save();
+        });
+        cx += recW + 4;
+        if (n >= 2) {
+            textButtonFixed(g, cx, y + 3, 28, 16, "<<", mouseX, mouseY, () -> {
+                WarRecorder.pause();
+                WarRecorder.show(w, 0);
+            });
+            cx += 30;
+            textButtonFixed(g, cx, y + 3, 28, 16, " <", mouseX, mouseY, () -> {
+                WarRecorder.pause();
+                WarRecorder.show(w, (WarRecorder.replaying() ? WarRecorder.index() : n) - 1);
+            });
+            cx += 30;
+            textButtonFixed(g, cx, y + 3, 42, 16, WarRecorder.playing() ? "Pause" : "Play", mouseX, mouseY, () -> {
+                if (WarRecorder.playing()) WarRecorder.pause();
+                else WarRecorder.play(w);
+            });
+            cx += 44;
+            textButtonFixed(g, cx, y + 3, 28, 16, " >", mouseX, mouseY, () -> {
+                WarRecorder.pause();
+                WarRecorder.show(w, (WarRecorder.replaying() ? WarRecorder.index() : n - 2) + 1);
+            });
+            cx += 30;
+            if (replay) {
+                textButtonFixed(g, cx, y + 3, 38, 16, "Live", mouseX, mouseY, WarRecorder::stop);
+                cx += 40;
+            }
+        }
+        g.drawString(font, info, cx + 6, y + 7, replay ? 0xFFF0B429 : COL_DIM, false);
+    }
+
     private void drawHover(GuiGraphics g, int mouseX, int mouseY) {
         if (panelVisible && tab == TAB_SET) return;
         boolean side = panelVisible && panelX <= MARGIN;
         int hx = side ? panelX + panelW + 8 : MARGIN;
-        String hint = "Drag: move  |  Wheel: zoom  |  Click: select  |  1-5: modes";
+        String hint = "Drag: move  |  Wheel: zoom  |  Click: select  |  1-5: modes  |  H: all keys";
         if (!side) g.drawString(font, hint, MARGIN, height - 12, COL_DIM, true);
+        drawDataAge(g);
         if (blockedAt(hits, mouseX, mouseY)) return;
         int bxx = (int) Math.floor(blockX(mouseX, mouseY));
         int bzz = (int) Math.floor(blockZ(mouseX, mouseY));
@@ -2152,6 +2373,8 @@ public class MapScreen extends Screen {
     // ------------------------------------------------------------ busca e ferramentas
 
     private void openSearch() {
+        renameMark = null;
+        markMenu = null;
         searchOpen = true;
         searchBox.setValue("");
         setFocused(searchBox);
@@ -2159,6 +2382,7 @@ public class MapScreen extends Screen {
     }
 
     private void closeSearch() {
+        renameMark = null;
         searchOpen = false;
         setFocused(null);
     }
@@ -2168,36 +2392,100 @@ public class MapScreen extends Screen {
         h.action().run();
     }
 
+    /** Lower case without accents, so "sao" finds "São". */
+    private static String fold(String text) {
+        return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
+    }
+
     private void updateSearch() {
         searchIdx = 0;
-        String q = searchBox.getValue().trim().toLowerCase(Locale.ROOT);
-        SiteTerritories.Data d = SiteTerritories.data();
-        if (q.isEmpty() || d == null || !siteMode()) {
+        if (renameMark != null) {
             searchHits = List.of();
             return;
         }
+        String raw = searchBox.getValue();
+        // the key that opened the box (F or /) arrives here as a typed character: drop it
+        if (System.currentTimeMillis() - searchOpenedAt < 250 && raw.length() == 1 && "fF/".contains(raw)) {
+            searchOpenedAt = 0;
+            searchBox.setValue("");
+            return;
+        }
+        String q = fold(raw.trim());
+        SiteTerritories.Data d = SiteTerritories.data();
         List<SearchHit> first = new ArrayList<>(), rest = new ArrayList<>();
         java.util.function.BiConsumer<String, SearchHit> add = (text, hit) -> {
-            String low = text.toLowerCase(Locale.ROOT);
+            String low = fold(text);
             if (low.startsWith(q)) first.add(hit);
             else if (low.contains(q)) rest.add(hit);
         };
-        for (int i = 0; i < d.ids.length; i++) {
-            if (d.provinceCount[i] <= 0) continue;
-            final int c = i;
-            add.accept(d.labels[i], new SearchHit(d.labels[i], "Country", () -> selectCountry(c)));
+        if (q.isEmpty()) {
+            searchHits = List.of();
+            return;
         }
-        for (SiteTerritories.Locality l : d.localities) {
-            String name = SiteTerritories.splitCamel(l.name);
-            add.accept(name, new SearchHit(name, "City", () -> {
-                focusCity(l);
-                tab = TAB_CITY;
-                SCROLL[TAB_CITY] = 0;
+        String map = activeMapKey();
+        for (Prefs.Mark m : Prefs.get().marks) {
+            if (!map.equals(m.map) || m.name == null) continue;
+            add.accept(m.name, new SearchHit(m.name, "Point", () -> {
+                viewX = m.x + 0.5;
+                viewZ = m.z + 0.5;
+                if (scale < 0.7) scale = 0.7;
+                markMenu = m;
             }));
         }
-        for (String name : d.players.keySet()) add.accept(name, new SearchHit(name, "Player", () -> openPlayer(name)));
+        if (d != null && siteMode()) {
+            for (int i = 0; i < d.ids.length; i++) {
+                if (d.provinceCount[i] <= 0) continue;
+                final int c = i;
+                add.accept(d.labels[i], new SearchHit(d.labels[i], "Country", () -> selectCountry(c)));
+            }
+            for (SiteTerritories.Locality l : d.localities) {
+                String name = SiteTerritories.splitCamel(l.name);
+                add.accept(name, new SearchHit(name, "City", () -> {
+                    focusCity(l);
+                    tab = TAB_CITY;
+                    SCROLL[TAB_CITY] = 0;
+                }));
+            }
+            for (String name : d.players.keySet()) add.accept(name, new SearchHit(name, "Player", () -> openPlayer(name)));
+            List<SiteTerritories.AllianceInfo> alliances = d.war == null || d.war.alliances == null ? List.of() : d.war.alliances;
+            for (int i = 0; i < alliances.size(); i++) {
+                SiteTerritories.AllianceInfo a = alliances.get(i);
+                if (a == null || a.name == null || Relations.isBilateral(a)) continue;
+                final int idx = i;
+                add.accept(a.name, new SearchHit(a.name, "Alliance", () -> {
+                    enterDiplomacy();
+                    mineOnly = false;
+                    tab = TAB_DIPLOMENU;
+                    dmTab = 0;
+                    dipAlliance = idx;
+                }));
+            }
+            if (q.length() >= 2 && first.size() + rest.size() < 12) {
+                for (int i = 0; i < d.n; i++) {
+                    String label = d.provLabel[i];
+                    if (label == null) continue;
+                    String low = fold(label);
+                    if (!low.contains(q)) continue;
+                    final int prov = i;
+                    String shown = label + " (" + d.labels[d.provCountry[i]] + ")";
+                    SearchHit hit = new SearchHit(shown, "Province", () -> {
+                        int[] bb = d.bounds[prov];
+                        viewX = (bb[0] + bb[2] + 1) / 2.0;
+                        viewZ = (bb[1] + bb[3] + 1) / 2.0;
+                        if (scale < 0.7) scale = 0.7;
+                        setSite(prov);
+                        selCity = -1;
+                        tab = TAB_INFO;
+                        SCROLL[TAB_INFO] = 0;
+                    });
+                    if (low.startsWith(q)) first.add(hit);
+                    else rest.add(hit);
+                    if (first.size() + rest.size() >= 40) break;
+                }
+            }
+        }
         first.addAll(rest);
-        searchHits = first.size() > 7 ? List.copyOf(first.subList(0, 7)) : List.copyOf(first);
+        searchHits = first.size() > 12 ? List.copyOf(first.subList(0, 12)) : List.copyOf(first);
     }
 
     private void drawSearch(GuiGraphics g, int mouseX, int mouseY, float delta) {
@@ -2212,7 +2500,7 @@ public class MapScreen extends Screen {
         searchBox.setX(searchX + 11);
         searchBox.setY(searchY + 10);
         searchBox.setWidth(searchW - 22);
-        if (searchBox.getValue().isEmpty()) g.drawString(font, "Country, city or player", searchX + 11, searchY + 10, COL_DIM, false);
+        if (searchBox.getValue().isEmpty()) g.drawString(font, renameMark != null ? "Name of the point" : "Country, city, player, alliance, province or point", searchX + 11, searchY + 10, COL_DIM, false);
         searchBox.render(g, mouseX, mouseY, delta);
         int ry = searchY + 24;
         for (int i = 0; i < searchHits.size(); i++) {
@@ -2224,6 +2512,10 @@ public class MapScreen extends Screen {
             g.drawString(font, h.kind(), searchX + searchW - 11 - kw, ry + 3, COL_DIM, false);
             hits.add(new Hit(searchX + 6, ry, searchW - 12, 14, () -> runSearchHit(h), null));
             ry += 14;
+        }
+        if (renameMark != null) {
+            g.drawString(font, "Enter: save    Esc: cancel", searchX + 11, ry + 7, COL_DIM, false);
+            return;
         }
         int btnW = (searchW - 18) / 3;
         toolButton(g, searchX + 7, ry + 3, btnW, "Measure", 1, mouseX, mouseY);
@@ -2239,7 +2531,7 @@ public class MapScreen extends Screen {
         textButtonFixed(g, x, y, w, 16, label, mouseX, mouseY, () -> {
             closeSearch();
             toolMode = tool;
-            measureN = 0;
+            measurePts.clear();
         });
     }
 
@@ -2254,40 +2546,29 @@ public class MapScreen extends Screen {
 
     private void drawToolBanner(GuiGraphics g) {
         if (toolMode == 0 || searchOpen) return;
-        String t = toolMode == 1 ? "Measure: click two points. Right click exits." : "Mark: click the map. Click a point to delete it. Right click exits.";
+        String t = toolMode == 1 ? "Measure: click to add points. Backspace removes the last. Right click exits." : "Mark: click the map to add a point. Click a point to rename, recolor or delete it. Right click exits.";
         int w = font.width(t) + 12, x = (width - w) / 2, y = TOP + 8;
         g.fill(x, y, x + w, y + 15, 0xF21E2123);
         g.fill(x, y + 14, x + w, y + 15, 0xFF7E8387);
         g.drawString(font, t, x + 6, y + 3, COL_TEXT, false);
     }
 
-    private static String activeMapKey() {
+    static String activeMapKey() {
         MapCatalog.Entry cur = SiteTerritories.activeMap();
         return cur == null ? "padrao" : cur.key;
     }
 
     private void toolClick(int bx0, int bz0) {
         if (toolMode == 1) {
-            if (measureN == 1) {
-                mx1 = bx0;
-                mz1 = bz0;
-                measureN = 2;
-            } else {
-                mx0 = bx0;
-                mz0 = bz0;
-                measureN = 1;
-            }
+            measurePts.add(new int[]{bx0, bz0});
             return;
         }
         Prefs.Data p = Prefs.get();
         String map = activeMapKey();
-        double radius = 7 / Math.max(scale, 0.01);
-        for (Prefs.Mark m : p.marks) {
-            if (map.equals(m.map) && Math.hypot(m.x - bx0, m.z - bz0) <= radius) {
-                p.marks.remove(m);
-                Prefs.save();
-                return;
-            }
+        Prefs.Mark hit = markAt(bx0 + 0.5, bz0 + 0.5);
+        if (hit != null) {
+            markMenu = hit;
+            return;
         }
         int n = 1;
         for (Prefs.Mark m : p.marks) if (map.equals(m.map)) n++;
@@ -2298,6 +2579,25 @@ public class MapScreen extends Screen {
         m.name = "Point " + n;
         p.marks.add(m);
         Prefs.save();
+        startRename(m);
+    }
+
+    private static String travelTime(double blocks, double blocksPerSecond) {
+        long sec = Math.round(blocks / blocksPerSecond);
+        if (sec < 60) return sec + " s";
+        long min = Math.round(sec / 60.0);
+        return min < 60 ? min + " min" : (min / 60) + " h " + (min % 60) + " min";
+    }
+
+    private void routeLabel(GuiGraphics g, double sx, double sy, double dist, boolean dim) {
+        String a = String.format(Locale.ROOT, "%,d blocks", Math.round(dist));
+        String b = "walk " + travelTime(dist, 4.317) + "  |  sprint " + travelTime(dist, 5.612) + "  |  boat " + travelTime(dist, 8.0) + "  |  elytra ~" + travelTime(dist, 30.0);
+        int w = Math.max(font.width(a), font.width(b)) + 10, lx = (int) sx + 8, ly = (int) sy - 12;
+        lx = Math.max(2, Math.min(width - w - 2, lx));
+        g.fill(lx, ly, lx + w, ly + 25, dim ? 0xC01E2123 : 0xF21E2123);
+        g.fill(lx, ly + 24, lx + w, ly + 25, 0xFF7E8387);
+        g.drawString(font, a, lx + 5, ly + 3, COL_TEXT, false);
+        g.drawString(font, b, lx + 5, ly + 14, COL_DIM, false);
     }
 
     private void drawMarksAndMeasure(GuiGraphics g, int mouseX, int mouseY) {
@@ -2306,25 +2606,36 @@ public class MapScreen extends Screen {
             if (!map.equals(m.map)) continue;
             int sx = (int) Math.round(toScreenX(m.x + 0.5)), sy = (int) Math.round(toScreenY(m.z + 0.5));
             if (sx < -40 || sx > width + 40 || sy < -20 || sy > height + 20) continue;
+            int color = Prefs.markColor(m);
+            g.fill(sx - 4, sy - 4, sx + 5, sy + 5, m == markMenu ? 0xFFFFFFFF : 0xFF0A0B08);
             g.fill(sx - 3, sy - 3, sx + 4, sy + 4, 0xFF0A0B08);
-            g.fill(sx - 2, sy - 2, sx + 3, sy + 3, 0xFFECEBE4);
-            g.drawString(font, m.name, sx + 6, sy - 4, 0xFFECEBE4, true);
+            g.fill(sx - 2, sy - 2, sx + 3, sy + 3, color);
+            if (m.name != null) g.drawString(font, m.name, sx + 7, sy - 4, color, true);
         }
-        if (toolMode != 1 || measureN == 0) return;
-        double x0 = toScreenX(mx0 + 0.5), y0 = toScreenY(mz0 + 0.5);
-        int bx1 = measureN == 2 ? mx1 : (int) Math.floor(toBlockX(mouseX)), bz1 = measureN == 2 ? mz1 : (int) Math.floor(toBlockZ(mouseY));
-        double x1 = toScreenX(bx1 + 0.5), y1 = toScreenY(bz1 + 0.5);
-        segment(g, x0, y0, x1, y1, 0xA0000000, 3f);
-        dottedLine(g, x0, y0, x1, y1, 0xFFECEBE4);
-        squareRing(g, (int) Math.round(x0), (int) Math.round(y0), 3, 0xFFECEBE4);
-        squareRing(g, (int) Math.round(x1), (int) Math.round(y1), 3, 0xFFECEBE4);
-        double dist = Math.hypot(bx1 - mx0, bz1 - mz0);
-        long mins = Math.round(dist / 4.317 / 60);
-        String t = String.format(Locale.ROOT, "%,d blocks, %s on foot", Math.round(dist), mins < 1 ? "under 1 min" : mins + " min");
-        int w = font.width(t) + 10, lx = (int) ((x0 + x1) / 2) + 6, ly = (int) ((y0 + y1) / 2) - 7;
-        g.fill(lx, ly, lx + w, ly + 15, 0xF21E2123);
-        g.fill(lx, ly + 14, lx + w, ly + 15, 0xFF7E8387);
-        g.drawString(font, t, lx + 5, ly + 3, COL_TEXT, false);
+        if (toolMode != 1 || measurePts.isEmpty()) return;
+        // the route so far, then a lighter leg up to the cursor
+        double fixed = 0;
+        for (int i = 0; i < measurePts.size(); i++) {
+            int[] a = measurePts.get(i);
+            double x0 = toScreenX(a[0] + 0.5), y0 = toScreenY(a[1] + 0.5);
+            squareRing(g, (int) Math.round(x0), (int) Math.round(y0), 3, 0xFFECEBE4);
+            if (i == 0) continue;
+            int[] b = measurePts.get(i - 1);
+            double x1 = toScreenX(b[0] + 0.5), y1 = toScreenY(b[1] + 0.5);
+            segment(g, x1, y1, x0, y0, 0xA0000000, 3f);
+            dottedLine(g, x1, y1, x0, y0, 0xFFECEBE4);
+            fixed += Math.hypot(a[0] - b[0], a[1] - b[1]);
+        }
+        int[] last = measurePts.get(measurePts.size() - 1);
+        double lx = toScreenX(last[0] + 0.5), ly = toScreenY(last[1] + 0.5);
+        boolean free = !blockedAt(hits, mouseX, mouseY);
+        if (free) {
+            int cbx = (int) Math.floor(toBlockX(mouseX)), cbz = (int) Math.floor(toBlockZ(mouseY));
+            double cxs = toScreenX(cbx + 0.5), cys = toScreenY(cbz + 0.5);
+            dottedLine(g, lx, ly, cxs, cys, 0xFFB9B8B0);
+            routeLabel(g, cxs, cys + 22, fixed + Math.hypot(cbx - last[0], cbz - last[1]), true);
+        }
+        if (measurePts.size() >= 2) routeLabel(g, lx, ly, fixed, false);
     }
 
     // ------------------------------------------------------------ simulador de guerra
@@ -2821,6 +3132,7 @@ public class MapScreen extends Screen {
         SiteTerritories.WarInfo viewed = viewedWar(d);
         SiteTerritories.WarInfo watched = viewed != null ? viewed : minimapWar(d);   // sem guerra escolhida, segue a primeira em andamento
         if (watched != null && watched.live && watched.ended == null && SiteTerritories.liveWar()) DynmapMarkers.want();
+        if (watched != null && d != null) WarRecorder.observe(d, watched);
         DynmapMarkers.tick();
     }
 
@@ -3674,6 +3986,10 @@ public class MapScreen extends Screen {
         }
         section(g, "War");
         toggleRow(g, "Live control (dynmap)", SiteTerritories.liveWar(), mouseX, mouseY, () -> SiteTerritories.setLiveWar(!SiteTerritories.liveWar()));
+        toggleRow(g, "Record the war map (replay on the war map)", p.recordWar, mouseX, mouseY, () -> {
+            p.recordWar = !p.recordWar;
+            Prefs.save();
+        });
 
         section(g, "Minimap");
         toggleRow(g, "Minimap on the game screen", p.minimap, mouseX, mouseY, () -> {
@@ -3698,6 +4014,15 @@ public class MapScreen extends Screen {
         });
         toggleRow(g, "Players on the minimap", p.minimapPlayers, mouseX, mouseY, () -> {
             p.minimapPlayers = !p.minimapPlayers;
+            Prefs.save();
+        });
+        stepsRow(g, "Opacity", p.minimapOpacityPct + "%", 7, indexOfStep(p.minimapOpacityPct, 40, 10, 7), mouseX, mouseY, i -> {
+            p.minimapOpacityPct = 40 + i * 10;
+            Prefs.save();
+        });
+        choiceRow(g, "Enlarge key", new String[]{"Hold", "Toggle"}, p.minimapHold ? 0 : 1, mouseX, mouseY, i -> {
+            p.minimapHold = i == 0;
+            Minimap.expanded = false;
             Prefs.save();
         });
 
@@ -4502,6 +4827,10 @@ public class MapScreen extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = event.x(), my = event.y();
+        if (helpOpen) {
+            helpOpen = false;
+            return true;
+        }
         if (photoMode) {
             photoMode = false;
             return true;
@@ -4512,7 +4841,7 @@ public class MapScreen extends Screen {
         }
         if (toolMode != 0 && event.button() == 1) {
             toolMode = 0;
-            measureN = 0;
+            measurePts.clear();
             return true;
         }
         for (int i = hits.size() - 1; i >= 0; i--) {
@@ -4522,6 +4851,10 @@ public class MapScreen extends Screen {
             return true;
         }
         if (event.button() == 1) {
+            if (markMenu != null) {
+                markMenu = null;
+                return true;
+            }
             closePanel();
             selPlayer = null;
             return true;
@@ -4538,6 +4871,7 @@ public class MapScreen extends Screen {
         if (dragging) {
             if (Math.abs(event.x() - pressX) > 3 || Math.abs(event.y() - pressY) > 3) moved = true;
             if (moved) {
+                zoomTarget = scale;          // dragging ends a zoom in progress
                 viewX -= dx / scale;
                 viewZ -= dy / scale;
             }
@@ -4561,6 +4895,12 @@ public class MapScreen extends Screen {
             toolClick((int) Math.floor(bxx), (int) Math.floor(bzz));
             return;
         }
+        Prefs.Mark mark = markAt(bxx, bzz);
+        if (mark != null) {
+            markMenu = mark;
+            return;
+        }
+        markMenu = null;
         if (siteMode() && simActive()) {
             SiteTerritories.Locality simCity = cityAt(sx, sy);
             if (simCity != null) {
@@ -4620,17 +4960,17 @@ public class MapScreen extends Screen {
             return true;
         }
         if (blockedAt(hits, mouseX, mouseY)) return true;
-        double bxx = toBlockX(mouseX);
-        double bzz = toBlockZ(mouseY);
-        scale = Math.max(0.03, Math.min(8.0, scale * Math.pow(1.2, scrollY)));
-        viewX = bxx - (mouseX - areaCx()) / scale;
-        viewZ = bzz - (mouseY - areaCy()) / scale;
+        zoomBy(Math.pow(1.2, scrollY), mouseX, mouseY);
         return true;
     }
 
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key0 = event.key();
+        if (helpOpen) {
+            helpOpen = false;
+            return true;
+        }
         if (photoMode) {
             if (key0 == InputConstants.KEY_ESCAPE) {
                 photoMode = false;
@@ -4647,6 +4987,16 @@ public class MapScreen extends Screen {
                 closeSearch();
                 return true;
             }
+            if (renameMark != null && (key0 == InputConstants.KEY_RETURN || key0 == InputConstants.KEY_NUMPADENTER)) {
+                String name = searchBox.getValue().trim();
+                if (!name.isEmpty()) {
+                    renameMark.name = name;
+                    Prefs.save();
+                }
+                markMenu = renameMark;
+                closeSearch();
+                return true;
+            }
             if (key0 == InputConstants.KEY_RETURN || key0 == InputConstants.KEY_NUMPADENTER) {
                 if (searchIdx >= 0 && searchIdx < searchHits.size()) runSearchHit(searchHits.get(searchIdx));
                 return true;
@@ -4659,7 +5009,7 @@ public class MapScreen extends Screen {
         }
         if (toolMode != 0 && key0 == InputConstants.KEY_ESCAPE) {
             toolMode = 0;
-            measureN = 0;
+            measurePts.clear();
             return true;
         }
         if (BmcAtlasClient.OPEN_KEY.matches(event)) {
@@ -4667,6 +5017,62 @@ public class MapScreen extends Screen {
             return true;
         }
         int k = event.key();
+        if (toolMode == 1 && k == InputConstants.KEY_BACKSPACE) {
+            if (!measurePts.isEmpty()) measurePts.remove(measurePts.size() - 1);
+            return true;
+        }
+        if (markMenu != null && k == InputConstants.KEY_ESCAPE) {
+            markMenu = null;
+            return true;
+        }
+        if (k == InputConstants.KEY_F || k == InputConstants.KEY_SLASH) {
+            openSearch();
+            searchOpenedAt = System.currentTimeMillis();
+            return true;
+        }
+        if (k == InputConstants.KEY_SPACE) {
+            centerOnPlayer();
+            return true;
+        }
+        if (k == InputConstants.KEY_H) {
+            helpOpen = true;
+            return true;
+        }
+        if (k == InputConstants.KEY_C) {
+            copyCoords();
+            return true;
+        }
+        if (k == InputConstants.KEY_M || k == InputConstants.KEY_R) {
+            toolMode = k == InputConstants.KEY_M ? 2 : 1;
+            measurePts.clear();
+            markMenu = null;
+            return true;
+        }
+        if (k == InputConstants.KEY_EQUALS || k == InputConstants.KEY_ADD || k == InputConstants.KEY_MINUS) {
+            zoomBy(k == InputConstants.KEY_MINUS ? 1 / 1.3 : 1.3, areaCx(), areaCy());
+            return true;
+        }
+        double step = 60 / Math.max(scale, 0.01);
+        if (k == InputConstants.KEY_LEFT || k == InputConstants.KEY_A) {
+            zoomTarget = scale;
+            viewX -= step;
+            return true;
+        }
+        if (k == InputConstants.KEY_RIGHT || k == InputConstants.KEY_D) {
+            zoomTarget = scale;
+            viewX += step;
+            return true;
+        }
+        if (k == InputConstants.KEY_UP || k == InputConstants.KEY_W) {
+            zoomTarget = scale;
+            viewZ -= step;
+            return true;
+        }
+        if (k == InputConstants.KEY_DOWN || k == InputConstants.KEY_S) {
+            zoomTarget = scale;
+            viewZ += step;
+            return true;
+        }
         if (k == InputConstants.KEY_1) {
             mode = MODE_PHYSICAL;
             return true;

@@ -65,7 +65,13 @@ final class LiveControl {
     }
 
     /** As cidades tomadas da guerra: a lista dela, com a leitura do dynmap por cima quando está ao vivo. */
-    static synchronized List<SiteTerritories.Captured> captured(SiteTerritories.Data d, SiteTerritories.WarInfo war) {
+    static List<SiteTerritories.Captured> captured(SiteTerritories.Data d, SiteTerritories.WarInfo war) {
+        List<SiteTerritories.Captured> recorded = WarRecorder.replayList(war);     // playing back a recording
+        return recorded != null ? recorded : live(d, war);
+    }
+
+    /** The same, always from the live sources (never a recording being played back). */
+    static synchronized List<SiteTerritories.Captured> live(SiteTerritories.Data d, SiteTerritories.WarInfo war) {
         List<SiteTerritories.Captured> own = war.captured == null ? List.of() : war.captured;
         if (!isLive(war)) return own;
         if (cachedData != d || cachedAt != DynmapMarkers.markersAt()) {

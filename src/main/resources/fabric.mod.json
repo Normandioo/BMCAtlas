@@ -6,6 +6,11 @@
   "description": "Full-screen political map and minimap with countries, provinces, live war tracking and online players.",
   "authors": ["Normandioo"],
   "license": "MIT",
+  "icon": "assets/bmcatlas/icon.png",
+  "contact": {
+    "sources": "https://github.com/Normandioo/BMCAtlas",
+    "issues": "https://github.com/Normandioo/BMCAtlas/issues"
+  },
   "environment": "client",
   "entrypoints": {
     "client": ["com.normandioo.bmcatlas.BmcAtlasClient"]

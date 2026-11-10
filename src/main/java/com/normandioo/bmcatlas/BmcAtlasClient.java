@@ -16,6 +16,8 @@ public class BmcAtlasClient implements ClientModInitializer {
 
     public static KeyMapping OPEN_KEY;
     public static KeyMapping MINIMAP_KEY;
+    public static KeyMapping ZOOM_IN_KEY;
+    public static KeyMapping ZOOM_OUT_KEY;
     private int ticks;
 
     @Override
@@ -24,6 +26,9 @@ public class BmcAtlasClient implements ClientModInitializer {
         OPEN_KEY = Compat.key("key.bmcatlas.open", InputConstants.KEY_N, category);
 
         MINIMAP_KEY = Compat.key("key.bmcatlas.minimap", InputConstants.KEY_Z, category);
+
+        ZOOM_IN_KEY = Compat.key("key.bmcatlas.minimap_zoom_in", InputConstants.KEY_EQUALS, category);
+        ZOOM_OUT_KEY = Compat.key("key.bmcatlas.minimap_zoom_out", InputConstants.KEY_MINUS, category);
 
         Prefs.load();
         Countries.load();
@@ -37,10 +42,23 @@ public class BmcAtlasClient implements ClientModInitializer {
             while (OPEN_KEY.consumeClick()) {
                 if (Compat.screen(mc) == null) Compat.setScreen(mc, new MapScreen());
             }
-            while (MINIMAP_KEY.consumeClick()) {
-                // o minimapa aumenta enquanto a tecla está segurada (ver abaixo)
+            boolean free = Compat.screen(mc) == null;
+            if (Prefs.get().minimapHold) {       // enlarged while the key is held
+                while (MINIMAP_KEY.consumeClick()) {
+                    // nothing: the key state below decides
+                }
+                Minimap.expanded = free && MINIMAP_KEY.isDown();
+            } else {                             // the key switches it
+                while (MINIMAP_KEY.consumeClick()) if (free) Minimap.expanded = !Minimap.expanded;
             }
-            Minimap.expanded = Compat.screen(mc) == null && MINIMAP_KEY.isDown();
+            int zoom = 0;
+            while (ZOOM_IN_KEY.consumeClick()) zoom++;
+            while (ZOOM_OUT_KEY.consumeClick()) zoom--;
+            if (zoom != 0 && free) {
+                Prefs.Data p = Prefs.get();
+                p.minimapZoomPct = Math.max(50, Math.min(400, p.minimapZoomPct + zoom * 25));
+                Prefs.save();
+            }
             MapData.tick(mc);
             RemoteImages.pump();
             if (++ticks % 6000 == 0 && MapData.isDirty()) MapData.save();

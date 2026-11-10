@@ -20,6 +20,8 @@ final class Prefs {
     static final class Mark {
         String map, name;
         int x, z;
+        /** Index in MARK_COLORS. */
+        int color;
     }
 
     /** Os valores salvos em disco. */
@@ -55,10 +57,27 @@ final class Prefs {
         int minimapCorner = 0;       // 0 sup. esq., 1 sup. dir., 2 inf. esq., 3 inf. dir.
         boolean minimapCities = true;
         boolean minimapPlayers = true;
+        /** Minimap opacity (40-100%). */
+        int minimapOpacityPct = 100;
+        /** true: the minimap is enlarged while the key is held; false: the key switches it. */
+        boolean minimapHold = true;
+        /** Record the map of the followed war over time (see WarRecorder). */
+        boolean recordWar = false;
+        // what the big map looked like when it was last closed
+        int mapMode = 1;
+        double mapScale = 1.0;
+        boolean showCities = true;
+        boolean showPlayers = true;
         /** Limites das cidades desenhados no terreno (mapa e minimapa). */
         boolean limits = true;
         /** Pontos marcados pelo jogador no mapa (só neste computador). */
         java.util.List<Mark> marks = new java.util.ArrayList<>();
+    }
+
+    static final int[] MARK_COLORS = {0xECEBE4, 0xE5534B, 0xF0B429, 0x57C26B, 0x4FA3E3, 0xB574E0};
+
+    static int markColor(Mark m) {
+        return 0xFF000000 | MARK_COLORS[Math.floorMod(m.color, MARK_COLORS.length)];
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -79,7 +98,7 @@ final class Prefs {
                 if (read != null) data = read;
             }
         } catch (Exception e) {
-            BmcAtlasClient.LOG.warn("Não foi possível ler prefs.json: {}", e.toString());
+            BmcAtlasClient.LOG.warn("Could not read prefs.json: {}", e.toString());
         }
         clamp();
     }
@@ -96,7 +115,7 @@ final class Prefs {
         try {
             Files.writeString(file, GSON.toJson(data), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            BmcAtlasClient.LOG.warn("Não foi possível gravar prefs.json: {}", e.toString());
+            BmcAtlasClient.LOG.warn("Could not write prefs.json: {}", e.toString());
         }
     }
 
@@ -106,6 +125,11 @@ final class Prefs {
         data.reliefPct = Math.max(100, Math.min(300, data.reliefPct));
         data.smoothPct = Math.max(0, Math.min(100, data.smoothPct));
         data.waterSatPct = Math.max(0, Math.min(100, data.waterSatPct));
+        data.cityIconPct = Math.max(50, Math.min(300, data.cityIconPct));
+        data.minimapOpacityPct = Math.max(40, Math.min(100, data.minimapOpacityPct));
+        data.mapMode = Math.max(0, Math.min(4, data.mapMode));
+        data.mapScale = Double.isFinite(data.mapScale) ? Math.max(0.03, Math.min(8.0, data.mapScale)) : 1.0;
+        if (data.marks == null) data.marks = new java.util.ArrayList<>();
         data.playerIconPct = Math.max(100, Math.min(400, data.playerIconPct));
         data.zoomBiasPct = Math.max(50, Math.min(200, data.zoomBiasPct));
         data.minimapSize = Math.max(64, Math.min(256, data.minimapSize));

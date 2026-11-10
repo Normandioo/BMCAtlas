@@ -82,10 +82,10 @@ final class OnlinePlayers {
     static long mapOpenAt;
     private static int failures;
 
-    /** Milliseconds between dynmap requests: 2 s with the map open, 5 s for the minimap; longer after errors. */
+    /** Milliseconds between dynmap requests: 2 s with the map open, 3 s for the minimap; longer after errors. */
     static int interval() {
         boolean open = System.currentTimeMillis() - mapOpenAt < 1000;
-        int base = Math.max(open ? 2000 : 5000, SiteTerritories.playersRefreshMs());
+        int base = Math.max(open ? 2000 : 3000, SiteTerritories.playersRefreshMs());
         return failures == 0 ? base : (int) Math.min(60_000L, (long) base << Math.min(failures, 4));
     }
     private static String error;

@@ -67,7 +67,7 @@ final class MapCatalog {
                 source = "local copy";
             }
         } catch (IOException | RuntimeException e) {
-            BmcAtlasClient.LOG.warn("Cópia da lista de mapas ilegível: {}", e.toString());
+            BmcAtlasClient.LOG.warn("Unreadable copy of the map list: {}", e.toString());
         }
     }
 
@@ -166,7 +166,7 @@ final class MapCatalog {
                     } catch (IOException | RuntimeException e) {
                         error = e.getMessage() == null ? e.toString() : e.getMessage();
                         // sem catálogo (404 etc.) é normal: o servidor só tem um mapa
-                        BmcAtlasClient.LOG.debug("Lista de mapas indisponível em {}: {}", url, error);
+                        BmcAtlasClient.LOG.debug("No map list at {}: {}", url, error);
                     }
                 });
     }

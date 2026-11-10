@@ -263,7 +263,7 @@ final class ChunkGen {
                 try {
                     job(sl, cx, cz);
                 } catch (Throwable t) {
-                    if (failures.incrementAndGet() <= 5) BmcAtlasClient.LOG.warn("Falha ao gerar o chunk {},{}", cx, cz, t);
+                    if (failures.incrementAndGet() <= 5) BmcAtlasClient.LOG.warn("Could not generate chunk {},{}", cx, cz, t);
                 } finally {
                     inflight.decrementAndGet();
                 }

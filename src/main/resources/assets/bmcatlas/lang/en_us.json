@@ -1,5 +1,7 @@
 {
   "key.bmcatlas.open": "Open the map",
   "key.category.bmcatlas.main": "BMC Atlas",
-  "key.bmcatlas.minimap": "Enlarge the minimap"
+  "key.bmcatlas.minimap": "Enlarge the minimap (hold or toggle: see settings)",
+  "key.bmcatlas.minimap_zoom_in": "Minimap: zoom in",
+  "key.bmcatlas.minimap_zoom_out": "Minimap: zoom out"
 }
