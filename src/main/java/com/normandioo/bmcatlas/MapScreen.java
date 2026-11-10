@@ -335,6 +335,36 @@ public class MapScreen extends Screen {
         return Math.max(0.6f, Math.min(1.5f, auto));
     }
 
+    // resizing the menus by dragging the corner of the panel
+    private boolean uiDrag;
+    private float uiDragFrom;
+    private double uiDragOX, uiDragOY, uiDragDist;
+
+    /** Grip on the bottom right corner of the open panel: drag it to make the menus larger or smaller. */
+    private void drawUiGrip(GuiGraphics g, int mouseX, int mouseY) {
+        if (!panelVisible) return;
+        int gx = panelX + panelW - 11, gy = panelY + panelH - 11;
+        boolean hover = uiDrag || (mouseX >= gx && mouseX < gx + 11 && mouseY >= gy && mouseY < gy + 11);
+        int c = hover ? 0xFFFFFFFF : 0xFF8F959A;
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j <= i; j++) g.fill(gx + 8 - j * 3, gy + 2 + i * 3, gx + 10 - j * 3, gy + 4 + i * 3, c);
+        }
+        if (uiDrag) {
+            String t = "Menu size " + Math.round(ui * 100) + "%";
+            int w = font.width(t) + 10;
+            g.fill(gx + 14, gy - 4, gx + 14 + w, gy + 11, 0xF21E2123);
+            g.drawString(font, t, gx + 19, gy, COL_TEXT, false);
+        }
+        hits.add(new Hit(gx, gy, 11, 11, () -> {
+            // measured in real interface pixels from the corner where the panel starts
+            uiDrag = true;
+            uiDragFrom = ui;
+            uiDragOX = panelX * ui;
+            uiDragOY = panelY * ui;
+            uiDragDist = Math.max(20, Math.hypot(hoverMX * ui - uiDragOX, hoverMY * ui - uiDragOY));
+        }, "Drag to resize the menus\n(Settings > Menu size > first step for automatic)"));
+    }
+
     private void applyUi() {
         com.mojang.blaze3d.platform.Window win = Minecraft.getInstance().getWindow();
         ui = uiScaleFor(win.getGuiScaledHeight());
@@ -388,6 +418,7 @@ public class MapScreen extends Screen {
         Perf.begin("panel");
         drawPanel(g, mouseX, mouseY);
         Perf.end("panel");
+        drawUiGrip(g, mouseX, mouseY);
         Perf.begin("card");
         drawCard(g, mouseX, mouseY);
         Perf.end("card");
@@ -4916,6 +4947,13 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (uiDrag) {
+            double realX = (event.x() / ui) * ui, realY = (event.y() / ui) * ui;
+            double f = Math.hypot(realX - uiDragOX, realY - uiDragOY) / uiDragDist;
+            int pct = (int) (Math.round(uiDragFrom * f * 20) * 5);
+            Prefs.get().uiScalePct = Math.max(60, Math.min(150, pct));
+            return true;
+        }
         dx /= ui;
         dy /= ui;
         if (dragging) {
@@ -4932,6 +4970,11 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (uiDrag) {
+            uiDrag = false;
+            Prefs.save();
+            return true;
+        }
         if (dragging) {
             dragging = false;
             if (!moved) select(blockX((event.x() / ui), (event.y() / ui)), blockZ((event.x() / ui), (event.y() / ui)), (event.x() / ui), (event.y() / ui));
