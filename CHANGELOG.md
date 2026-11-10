@@ -1,3 +1,8 @@
+## 1.2.3
+
+- Internal: the map screen code is split into smaller files (MapUi, MapPanels and helpers); no change to gameplay or interface
+- Automatic tests for the war score, war fronts, relation colours and the map list, run on every build
+
 ## 1.2.2
 
 - Internal cleanup: removed unused code (no change to gameplay or interface)
