@@ -472,7 +472,7 @@ public class MapScreen extends MapPanels {
             if (dipAlliance >= (d.war == null || d.war.alliances == null ? 0 : d.war.alliances.size())) dipAlliance = -1;
             if (warSel >= Relations.wars(d).size()) warSel = -1;
         }
-        int sig = Objects.hash(mode, dipFocus, dipAlliance, warSel, SiteTerritories.version(), rel, mode == MODE_WAR ? DynmapMarkers.markersAt() : 0L, WarRecorder.index());
+        int sig = Objects.hash(mode, dipFocus, dipAlliance, warSel, SiteTerritories.version(), rel, mode == MODE_WAR ? DynmapMarkers.markersAt() + 31 * ServerSync.version() : 0L, WarRecorder.index());
         if (sig == ovSig) return;
         ovSig = sig;
         if (!rel) {
@@ -2180,7 +2180,8 @@ public class MapScreen extends MapPanels {
         if (d == null || !siteMode()) return;
         SiteTerritories.WarInfo viewed = viewedWar(d);
         SiteTerritories.WarInfo watched = viewed != null ? viewed : minimapWar(d);   // sem guerra escolhida, segue a primeira em andamento
-        if (watched != null && watched.live && watched.ended == null && SiteTerritories.liveWar()) DynmapMarkers.want();
+        // a live war the server's war plugin covers needs no dynmap markers: the plugin says who holds what
+        if (watched != null && watched.live && watched.ended == null && SiteTerritories.liveWar() && ServerSync.war(watched.id) == null) DynmapMarkers.want();
         if (watched != null && d != null) WarRecorder.observe(d, watched);
         DynmapMarkers.tick();
     }

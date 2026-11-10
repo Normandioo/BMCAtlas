@@ -24,6 +24,10 @@
 
 Turn on **Recording** on the bar at the bottom of the war map (or in the settings). Every change in who holds the cities of the followed war is saved with its time in `config/bmcatlas/recordings/`. The same bar plays the recording back on the map, step by step or continuously, with score and fronts as they were.
 
+## Server plugin (BmcWar)
+
+On a server running the BmcWar plugin (0.18.0 or newer), the plugin tells the mod through the game connection (channel `bmcatlas:sync`) who holds each city of the live wars, the bridges the staff opened or closed, and when the site data changed, only when something changes. The mod then reads none of that from dynmap or the site by itself: it downloads `territories.json` once when the server says the site changed. On a server without the plugin, the mod asks dynmap and the site as before. Online players still come from dynmap.
+
 ## Configuration
 
 - Server and map settings: `config/bmcatlas/site.json` (`url`, `mapsUrl`, `dynmapUrl`, `dynmapWorld`, `worldHalfSize`).

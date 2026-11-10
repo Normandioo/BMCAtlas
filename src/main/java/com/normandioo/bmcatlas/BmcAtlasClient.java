@@ -33,6 +33,7 @@ public class BmcAtlasClient implements ClientModInitializer {
         Prefs.load();
         Countries.load();
         SiteTerritories.init();
+        Compat.registerSync(ServerSync::receive);   // what the server's war plugin tells this mod (bmcatlas:sync)
 
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "minimap"), (graphics, tickCounter) -> Minimap.render(graphics, tickCounter.getGameTimeDeltaPartialTick(false)));
 
@@ -67,6 +68,7 @@ public class BmcAtlasClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
             ChunkGen.reset();
             MapData.unload();
+            ServerSync.reset();
         });
     }
 }

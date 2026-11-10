@@ -24,6 +24,11 @@ final class Bridges {
                 }
             }
         }
+        ServerSync.WarState fromServer = war == null ? null : ServerSync.war(war.id);
+        if (fromServer != null) {   // the server's war plugin: the bridges its staff opened or closed
+            Boolean set = fromServer.bridges().get(lowerKey);
+            return set != null ? set : drawnOpen;
+        }
         if (LiveControl.isLive(war)) {
             Boolean live = liveState(lowerKey);
             if (live != null) return live;

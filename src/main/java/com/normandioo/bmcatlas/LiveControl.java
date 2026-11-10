@@ -59,9 +59,10 @@ final class LiveControl {
     private static long cachedAt = -1;
     private static SiteTerritories.Data cachedData;
 
-    /** Se o controle desta guerra está sendo lido ao vivo agora. */
+    /** Whether who holds this war's cities is being read live right now: from the server's war plugin, else from dynmap. */
     static boolean isLive(SiteTerritories.WarInfo war) {
-        return war != null && war.live && war.ended == null && SiteTerritories.liveWar() && DynmapMarkers.known();
+        return war != null && war.live && war.ended == null && SiteTerritories.liveWar()
+                && (ServerSync.war(war.id) != null || DynmapMarkers.known());
     }
 
     /** As cidades tomadas da guerra: a lista dela, com a leitura do dynmap por cima quando está ao vivo. */
@@ -74,21 +75,62 @@ final class LiveControl {
     static synchronized List<SiteTerritories.Captured> live(SiteTerritories.Data d, SiteTerritories.WarInfo war) {
         List<SiteTerritories.Captured> own = war.captured == null ? List.of() : war.captured;
         if (!isLive(war)) return own;
-        if (cachedData != d || cachedAt != DynmapMarkers.markersAt()) {
+        ServerSync.WarState fromServer = ServerSync.war(war.id);
+        // what the cached lists were made from: the server's last message, or dynmap's last read (negative so the two never match)
+        long stamp = fromServer != null ? ServerSync.version() : -1 - DynmapMarkers.markersAt();
+        if (cachedData != d || cachedAt != stamp) {
             CACHE.clear();
             cachedData = d;
-            cachedAt = DynmapMarkers.markersAt();
+            cachedAt = stamp;
         }
         String id = war.id == null ? String.valueOf(System.identityHashCode(war)) : war.id;
         List<SiteTerritories.Captured> cur = CACHE.get(id);
         if (cur != null) return cur;
-        List<SiteTerritories.Captured> merged = merge(d, war, own, DynmapMarkers.markers());
+        List<SiteTerritories.Captured> merged = fromServer != null ? mergeServer(d, war, own, fromServer.cities()) : merge(d, war, own, DynmapMarkers.markers());
         // a mesma lista de antes (mesmo objeto) quando nada mudou: placar e frente não são recalculados a cada leitura do dynmap
         List<SiteTerritories.Captured> prev = LAST.get(id);
         if (prev != null && sameContent(prev, merged)) merged = prev;
         LAST.put(id, merged);
         CACHE.put(id, merged);
         return merged;
+    }
+
+    /**
+     * The war's captured list with what the server's war plugin says on top, the same way merge() puts dynmap's icons on top:
+     * for each city of a country in the war, the side holding it (held), contested or uncontrolled; a city the server does not
+     * list is held by its own country.
+     */
+    static List<SiteTerritories.Captured> mergeServer(SiteTerritories.Data d, SiteTerritories.WarInfo war,
+                                                      List<SiteTerritories.Captured> own, Map<String, Integer> cities) {
+        Map<String, SiteTerritories.Captured> byKey = new HashMap<>();
+        List<SiteTerritories.Captured> out = new ArrayList<>();
+        for (SiteTerritories.Captured c : own) {
+            byKey.put(WarScore.key(c.name, c.country), c);
+            out.add(c);
+        }
+        for (SiteTerritories.Locality l : d.localities) {
+            if (WarScore.sideOfCountry(war, l.country) < 0) continue;   // only cities of countries in the war
+            String k = WarScore.key(l.name, l.country);
+            Integer state = cities.get(k);
+            if (state == null) continue;
+            SiteTerritories.Captured c = new SiteTerritories.Captured();
+            c.name = l.name;
+            c.country = l.country;
+            c.x = l.x;
+            c.z = l.z;
+            if (state == ServerSync.CONTESTED) c.state = "contested";
+            else if (state == ServerSync.UNCONTROLLED) c.state = "uncontrolled";
+            else if (state >= 0 && war.sides != null && state < war.sides.size()) {
+                c.state = "held";
+                c.liveSide = state;
+                c.holder = war.sides.get(state).name;
+            } else continue;   // a side this war does not have
+            SiteTerritories.Captured old = byKey.get(k);
+            if (old != null) out.set(out.indexOf(old), c);
+            else out.add(c);   // the server is worth more than the list
+            byKey.put(k, c);
+        }
+        return List.copyOf(out);
     }
 
     static List<SiteTerritories.Captured> merge(SiteTerritories.Data d, SiteTerritories.WarInfo war,

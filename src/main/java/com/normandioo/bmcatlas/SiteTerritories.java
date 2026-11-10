@@ -421,6 +421,8 @@ final class SiteTerritories {
             return t;
         });
         Runnable job = () -> {
+            // on a server whose war plugin tells us when the site changed, nothing is asked by the clock
+            if (ServerSync.active() && data != null) return;
             MapCatalog.refresh();
             reload();
         };

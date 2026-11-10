@@ -1,3 +1,7 @@
+## 1.2.4
+
+- On a server with the BmcWar plugin (0.18.0 or newer), the server tells the mod who holds each city of the live wars, the bridges the staff opened or closed, and when the site data changed. The mod then stops asking dynmap for the war markers every few seconds and the site every half hour, and site changes show up as soon as the server sees them. On other servers nothing changes
+
 ## 1.2.3
 
 - Internal: the map screen code is split into smaller files (MapUi, MapPanels and helpers); no change to gameplay or interface

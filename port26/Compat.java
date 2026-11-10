@@ -111,4 +111,27 @@ final class Compat {
     static void setClipboard(Minecraft mc, String text) {
         mc.keyboardHandler.setClipboard(text);
     }
+
+    /** The "bmcatlas:sync" channel: what the server's BmcWar plugin sends this mod (see ServerSync). The bytes are a JSON text. */
+    record SyncPayload(byte[] data) implements net.minecraft.network.protocol.common.custom.CustomPacketPayload {
+        static final Type<SyncPayload> TYPE = new Type<>(net.minecraft.resources.Identifier.fromNamespaceAndPath(BmcAtlasClient.MOD_ID, "sync"));
+        static final net.minecraft.network.codec.StreamCodec<net.minecraft.network.FriendlyByteBuf, SyncPayload> CODEC = net.minecraft.network.codec.StreamCodec.of(
+                (buf, p) -> buf.writeBytes(p.data()),
+                buf -> {
+                    byte[] b = new byte[buf.readableBytes()];
+                    buf.readBytes(b);
+                    return new SyncPayload(b);
+                });
+
+        @Override
+        public Type<? extends net.minecraft.network.protocol.common.custom.CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** Listens on the "bmcatlas:sync" channel; the handler runs on the game thread with each message's bytes. */
+    static void registerSync(java.util.function.Consumer<byte[]> handler) {
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay().register(SyncPayload.TYPE, SyncPayload.CODEC);
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(SyncPayload.TYPE, (payload, context) -> handler.accept(payload.data()));
+    }
 }
