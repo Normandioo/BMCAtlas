@@ -335,34 +335,106 @@ public class MapScreen extends Screen {
         return Math.max(0.6f, Math.min(1.5f, auto));
     }
 
-    // resizing the menus by dragging the corner of the panel
-    private boolean uiDrag;
-    private float uiDragFrom;
-    private double uiDragOX, uiDragOY, uiDragDist;
+    // ---- menus resized one by one, by dragging a corner (like an image in an image editor)
 
-    /** Grip on the bottom right corner of the open panel: drag it to make the menus larger or smaller. */
-    private void drawUiGrip(GuiGraphics g, int mouseX, int mouseY) {
-        if (!panelVisible) return;
-        int gx = panelX + panelW - 11, gy = panelY + panelH - 11;
-        boolean hover = uiDrag || (mouseX >= gx && mouseX < gx + 11 && mouseY >= gy && mouseY < gy + 11);
-        int c = hover ? 0xFFFFFFFF : 0xFF8F959A;
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j <= i; j++) g.fill(gx + 8 - j * 3, gy + 2 + i * 3, gx + 10 - j * 3, gy + 4 + i * 3, c);
+    private static final int G_PANEL = 0, G_OUT = 1, G_BAR = 2;
+    /** Scale of the group being drawn right now (1 outside a group). */
+    private static float groupScale = 1f;
+    private int gSaveW, gSaveH, gFirstHit;
+    private int gDrag = -1;
+    private float gDragFrom;
+    private double gDragAX, gDragAY, gDragDist;
+    private int cardW = CARD_W;
+
+    private static float groupPct(int id) {
+        Prefs.Data p = Prefs.get();
+        return (id == G_PANEL ? p.panelScalePct : id == G_OUT ? p.outlinerScalePct : p.barScalePct) / 100f;
+    }
+
+    private static void setGroupPct(int id, int pct) {
+        Prefs.Data p = Prefs.get();
+        pct = Math.max(50, Math.min(200, pct));
+        if (id == G_PANEL) p.panelScalePct = pct;
+        else if (id == G_OUT) p.outlinerScalePct = pct;
+        else p.barScalePct = pct;
+    }
+
+    /** Size of the mode bar seen from the group being drawn (it may have another scale). */
+    private int barWLocal() {
+        return Math.round(barW * groupPct(G_BAR) / groupScale);
+    }
+
+    private int barHLocal() {
+        return Math.round(barH * groupPct(G_BAR) / groupScale);
+    }
+
+    /**
+     * Starts a group of menus drawn in their own scale: inside it the screen is width/scale by height/scale, so what
+     * is anchored to an edge of the screen stays there. Returns the scale (divide the mouse by it).
+     */
+    private float beginGroup(GuiGraphics g, int id) {
+        float s = groupPct(id);
+        groupScale = s;
+        gSaveW = width;
+        gSaveH = height;
+        width = (int) Math.ceil(width / s);
+        height = (int) Math.ceil(height / s);
+        RemoteImages.extraScale = ui * s;
+        g.pose().pushMatrix();
+        g.pose().scale(s, s);
+        gFirstHit = hits.size();
+        return s;
+    }
+
+    /** Ends the group: its clickable areas go to screen coordinates, and the resize handle is drawn on its corner. */
+    private void endGroup(GuiGraphics g, int id, int mouseX, int mouseY) {
+        float s = groupScale;
+        g.pose().popMatrix();
+        width = gSaveW;
+        height = gSaveH;
+        groupScale = 1f;
+        RemoteImages.extraScale = ui;
+        int x0 = Integer.MAX_VALUE, y0 = Integer.MAX_VALUE, x1 = Integer.MIN_VALUE, y1 = Integer.MIN_VALUE;
+        for (int i = gFirstHit; i < hits.size(); i++) {
+            Hit h = hits.get(i);
+            int hx = Math.round(h.x() * s), hy = Math.round(h.y() * s), hw = Math.round(h.w() * s), hh = Math.round(h.h() * s);
+            hits.set(i, new Hit(hx, hy, hw, hh, h.action(), h.tip()));
+            x0 = Math.min(x0, hx);
+            y0 = Math.min(y0, hy);
+            x1 = Math.max(x1, hx + hw);
+            y1 = Math.max(y1, hy + hh);
         }
-        if (uiDrag) {
-            String t = "Menu size " + Math.round(ui * 100) + "%";
-            int w = font.width(t) + 10;
-            g.fill(gx + 14, gy - 4, gx + 14 + w, gy + 11, 0xF21E2123);
-            g.drawString(font, t, gx + 19, gy, COL_TEXT, false);
+        if (x1 <= x0) {
+            if (gDrag == id) gDrag = -1;
+            return;
         }
-        hits.add(new Hit(gx, gy, 11, 11, () -> {
-            // measured in real interface pixels from the corner where the panel starts
-            uiDrag = true;
-            uiDragFrom = ui;
-            uiDragOX = panelX * ui;
-            uiDragOY = panelY * ui;
-            uiDragDist = Math.max(20, Math.hypot(hoverMX * ui - uiDragOX, hoverMY * ui - uiDragOY));
-        }, "Drag to resize the menus\n(Settings > Menu size > first step for automatic)"));
+        // the corner that points to the middle of the screen is the one to drag; the opposite one stays in place
+        boolean right = (x0 + x1) / 2 < width / 2, bottom = (y0 + y1) / 2 <= height / 2 + 10;
+        int hx = Math.max(4, Math.min(width - 4, right ? x1 : x0)), hy = Math.max(4, Math.min(height - 4, bottom ? y1 : y0));
+        int ax = right ? x0 : x1, ay = bottom ? y0 : y1;
+        boolean dragging = gDrag == id;
+        boolean near = mouseX >= x0 - 8 && mouseX < x1 + 8 && mouseY >= y0 - 8 && mouseY < y1 + 8;
+        if (!dragging && (!near || gDrag >= 0)) return;
+        if (dragging) {       // outline of what is being resized, and the size
+            g.fill(x0, y0, x1, y0 + 1, 0xFFFFF2B0);
+            g.fill(x0, y1 - 1, x1, y1, 0xFFFFF2B0);
+            g.fill(x0, y0, x0 + 1, y1, 0xFFFFF2B0);
+            g.fill(x1 - 1, y0, x1, y1, 0xFFFFF2B0);
+            String t = Math.round(s * 100) + "%";
+            int tw = font.width(t) + 8, tx = Math.max(2, Math.min(width - tw - 2, hx - tw / 2)), ty = bottom ? hy + 8 : hy - 22;
+            g.fill(tx, ty, tx + tw, ty + 14, 0xF21E2123);
+            g.drawString(font, t, tx + 4, ty + 3, COL_TEXT, false);
+        }
+        boolean hover = dragging || (Math.abs(mouseX - hx) <= 6 && Math.abs(mouseY - hy) <= 6);
+        g.fill(hx - 5, hy - 5, hx + 5, hy + 5, 0xFF0A0B08);
+        g.fill(hx - 4, hy - 4, hx + 4, hy + 4, hover ? 0xFFFFF2B0 : 0xFFCFD3D1);
+        hits.add(new Hit(hx - 6, hy - 6, 12, 12, () -> {
+            gDrag = id;
+            gDragFrom = s;
+            gDragAX = ax;
+            gDragAY = ay;
+            gDragDist = Math.max(20, Math.hypot(hoverMX - ax, hoverMY - ay));
+        }, "Drag to resize"));
     }
 
     private void applyUi() {
@@ -383,7 +455,12 @@ public class MapScreen extends Screen {
         Perf.begin("tick");
         tickWar();
         Perf.end("tick");
-        layoutBar();
+        {   // the mode bar is laid out in its own size
+            int fullW = width;
+            width = (int) Math.ceil(width / groupPct(G_BAR));
+            layoutBar();
+            width = fullW;
+        }
         if (pendingFocus != null) {
             focusCity(pendingFocus);
             tab = TAB_CITY;
@@ -410,20 +487,38 @@ public class MapScreen extends Screen {
         }
 
         Perf.begin("bar");
-        drawBar(g, mouseX, mouseY);
+        float gs1 = beginGroup(g, G_BAR);
+        drawBar(g, (int) (mouseX / gs1), (int) (mouseY / gs1));
+        endGroup(g, G_BAR, mouseX, mouseY);
         Perf.end("bar");
         Perf.begin("top bar");
         drawTopBar(g, mouseX, mouseY);
         Perf.end("top bar");
         Perf.begin("panel");
-        drawPanel(g, mouseX, mouseY);
+        float gs2 = beginGroup(g, G_PANEL);
+        drawPanel(g, (int) (mouseX / gs2), (int) (mouseY / gs2));
         Perf.end("panel");
-        drawUiGrip(g, mouseX, mouseY);
         Perf.begin("card");
-        drawCard(g, mouseX, mouseY);
+        drawCard(g, (int) (mouseX / gs2), (int) (mouseY / gs2));
+        endGroup(g, G_PANEL, mouseX, mouseY);
+        // from here on the panel and the card are known in screen coordinates
+        if (panelVisible) {
+            panelX = Math.round(panelX * gs2);
+            panelY = Math.round(panelY * gs2);
+            panelW = Math.round(panelW * gs2);
+            panelH = Math.round(panelH * gs2);
+        }
+        if (cardVisible) {
+            cardX = Math.round(cardX * gs2);
+            cardY = Math.round(cardY * gs2);
+            cardH = Math.round(cardH * gs2);
+        }
+        cardW = Math.round(CARD_W * gs2);
         Perf.end("card");
         Perf.begin("outliner");
-        drawOutliner(g, mouseX, mouseY);
+        float gs3 = beginGroup(g, G_OUT);
+        drawOutliner(g, (int) (mouseX / gs3), (int) (mouseY / gs3));
+        endGroup(g, G_OUT, mouseX, mouseY);
         Perf.end("outliner");
         drawRecorder(g, mouseX, mouseY);
         drawHover(g, mouseX, mouseY);
@@ -1002,7 +1097,7 @@ public class MapScreen extends Screen {
     }
 
     private static double guiScale() {
-        return Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale()) * ui;
+        return Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale()) * ui * groupScale;
     }
 
     private int iconRadius(SiteTerritories.Locality l) {
@@ -1377,7 +1472,7 @@ public class MapScreen extends Screen {
 
     private void drawHover(GuiGraphics g, int mouseX, int mouseY) {
         if (panelVisible && tab == TAB_SET) return;
-        boolean side = panelVisible && panelX <= MARGIN;
+        boolean side = panelVisible && panelX <= MARGIN * 3;
         int hx = side ? panelX + panelW + 8 : MARGIN;
         String hint = "Drag: move  |  Wheel: zoom  |  Click: select  |  1-5: modes  |  H: all keys";
         if (!side) g.drawString(font, hint, MARGIN, height - 12, COL_DIM, true);
@@ -1604,9 +1699,9 @@ public class MapScreen extends Screen {
     private void drawOutliner(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
         if (!siteMode() || d == null || tab == TAB_SET) return;
-        int w = OUTLINE_W, x = width - w - MARGIN, y = TOP + 8, maxY = height - barH - MARGIN - 6;
-        if (panelVisible && panelX + panelW + 6 > x) return;
-        if (cardVisible && cardX + CARD_W + 6 > x) return;
+        int w = OUTLINE_W, x = width - w - MARGIN, y = TOP + 8, maxY = height - barHLocal() - MARGIN - 6;
+        if (panelVisible && (panelX + panelW + 6) / groupScale > x) return;
+        if (cardVisible && (cardX + cardW + 6) / groupScale > x) return;
         long now = System.currentTimeMillis();
 
         if (!outWars.isEmpty()) {
@@ -1974,7 +2069,7 @@ public class MapScreen extends Screen {
         panelX = wide ? (width - panelW) / 2 : MARGIN;
         panelY = TOP + 8;
         panelH = height - panelY - MARGIN;
-        if (!wide && panelX + panelW > width - barW - MARGIN) panelH -= barH + 8;
+        if (!wide && panelX + panelW > width - barWLocal() - MARGIN) panelH -= barHLocal() + 8;
         panelVisible = true;
         bx = panelX;
         by = panelY;
@@ -3995,6 +4090,19 @@ public class MapScreen extends Screen {
                 p.uiScalePct = i == 0 ? 0 : 50 + i * 10;      // first step = automatic, then 60% to 150%
                 Prefs.save();
             });
+            // each menu on its own (also by dragging its corner on the map)
+            stepsRow(g, "Side panel", p.panelScalePct + "%", 16, indexOfStep(p.panelScalePct, 50, 10, 16), mouseX, mouseY, i -> {
+                p.panelScalePct = 50 + i * 10;
+                Prefs.save();
+            });
+            stepsRow(g, "Wars / legend box", p.outlinerScalePct + "%", 16, indexOfStep(p.outlinerScalePct, 50, 10, 16), mouseX, mouseY, i -> {
+                p.outlinerScalePct = 50 + i * 10;
+                Prefs.save();
+            });
+            stepsRow(g, "Mode bar", p.barScalePct + "%", 16, indexOfStep(p.barScalePct, 50, 10, 16), mouseX, mouseY, i -> {
+                p.barScalePct = 50 + i * 10;
+                Prefs.save();
+            });
         }
 
         section(g, "Map appearance");
@@ -4714,7 +4822,7 @@ public class MapScreen extends Screen {
         if (cardX + CARD_W > width - MARGIN) cardX = Math.max(MARGIN, width - CARD_W - MARGIN);
         cardY = TOP + 8;
         cardH = height - cardY - MARGIN;
-        if (cardX + CARD_W > width - barW - MARGIN) cardH -= barH + 8;
+        if (cardX + CARD_W > width - barWLocal() - MARGIN) cardH -= barHLocal() + 8;
         cardVisible = true;
         bx = cardX;
         by = cardY;
@@ -4947,11 +5055,9 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
-        if (uiDrag) {
-            double realX = (event.x() / ui) * ui, realY = (event.y() / ui) * ui;
-            double f = Math.hypot(realX - uiDragOX, realY - uiDragOY) / uiDragDist;
-            int pct = (int) (Math.round(uiDragFrom * f * 20) * 5);
-            Prefs.get().uiScalePct = Math.max(60, Math.min(150, pct));
+        if (gDrag >= 0) {
+            double f = Math.hypot((event.x() / ui) - gDragAX, (event.y() / ui) - gDragAY) / gDragDist;
+            setGroupPct(gDrag, (int) (Math.round(gDragFrom * f * 20) * 5));
             return true;
         }
         dx /= ui;
@@ -4970,8 +5076,8 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
-        if (uiDrag) {
-            uiDrag = false;
+        if (gDrag >= 0) {
+            gDrag = -1;
             Prefs.save();
             return true;
         }
@@ -5046,7 +5152,7 @@ public class MapScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         mouseX /= ui;
         mouseY /= ui;
-        if (cardVisible && mouseX >= cardX && mouseX < cardX + CARD_W && mouseY >= cardY && mouseY < cardY + cardH) {
+        if (cardVisible && mouseX >= cardX && mouseX < cardX + cardW && mouseY >= cardY && mouseY < cardY + cardH) {
             cardScroll = Math.max(0, cardScroll - scrollY * 20);
             return true;
         }

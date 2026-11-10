@@ -1,3 +1,7 @@
+## 1.2.1
+
+- Each menu of the map (side panel, wars / legend box, mode bar) is resized on its own by dragging its corner, like an image in an image editor (50-200%; also in the settings)
+
 ## 1.2.0
 
 - Map: smooth zoom, keyboard controls (move, zoom, search, center, help with `H`), `C` copies the coordinates under the cursor
@@ -8,7 +12,7 @@
 - Minimap: arrow showing where you look, zoom keys, hold or toggle, opacity, allies in green and enemies in red during a war, online players refreshed every 3 s
 - War recording: record the war map over time and play it back
 - A note on the map tells how old the site data is, and warns when the site cannot be reached
-- Menu size: automatic from the resolution of the game window, or set by hand (60-150%) in the settings or by dragging the corner of a panel
+- Menu size: automatic from the resolution of the game window, or set by hand (60-150%) in the settings
 - One source for every Minecraft version; each release has both jars. License file and mod icon added
 
 ## 1.1.0
