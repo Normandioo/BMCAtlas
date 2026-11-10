@@ -614,7 +614,7 @@ final class SiteTerritories {
     // ------------------------------------------------------------------ leitura
 
     @SuppressWarnings("unchecked")
-    private static Data parse(String json) {
+    static Data parse(String json) {
         FileModel f = GSON.fromJson(json, FileModel.class);
         if (f == null || f.countries == null || f.provinces == null) throw new IllegalArgumentException("not a territories.json");
         if (f.format != 1) throw new IllegalArgumentException("format " + f.format + " not supported");
