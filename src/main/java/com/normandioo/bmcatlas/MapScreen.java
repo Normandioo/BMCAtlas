@@ -25,6 +25,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import static com.normandioo.bmcatlas.MapFormat.*;
+import static com.normandioo.bmcatlas.MapGeometry.*;
+
 /** Tela cheia do mapa, with a bronze-framed grand-strategy look. */
 public class MapScreen extends Screen {
     private static final int BTN = 26;       // lado dos botões de ícone
@@ -922,47 +925,6 @@ public class MapScreen extends Screen {
         }
         z.lods[level] = out;
         return out;
-    }
-
-    private static double[] decimate(double[] ring, double minDist) {
-        int n = ring.length / 2;
-        if (n <= 4) return ring;
-        double[] out = new double[ring.length];
-        int k = 0;
-        double lx = ring[0], lz = ring[1];
-        out[k++] = lx;
-        out[k++] = lz;
-        double min2 = minDist * minDist;
-        for (int i = 1; i < n; i++) {
-            double x = ring[2 * i], zz = ring[2 * i + 1];
-            if ((x - lx) * (x - lx) + (zz - lz) * (zz - lz) >= min2) {
-                out[k++] = x;
-                out[k++] = zz;
-                lx = x;
-                lz = zz;
-            }
-        }
-        if (k < 6) return ring;
-        return Arrays.copyOf(out, k);
-    }
-
-    /** Suaviza o contorno em degraus de blocos (duas passadas de corte de cantos). */
-    private static double[] smoothRing(double[] ring, int passes) {
-        if (ring.length < 6) return ring;
-        double[] cur = ring;
-        for (int pass = 0; pass < passes; pass++) {
-            int m = cur.length / 2;
-            double[] nx = new double[m * 4];
-            for (int i = 0; i < m; i++) {
-                int j = (i + 1) % m;
-                nx[4 * i] = 0.75 * cur[2 * i] + 0.25 * cur[2 * j];
-                nx[4 * i + 1] = 0.75 * cur[2 * i + 1] + 0.25 * cur[2 * j + 1];
-                nx[4 * i + 2] = 0.25 * cur[2 * i] + 0.75 * cur[2 * j];
-                nx[4 * i + 3] = 0.25 * cur[2 * i + 1] + 0.75 * cur[2 * j + 1];
-            }
-            cur = nx;
-        }
-        return cur;
     }
 
     /** Linhas dos limites: fina, branca e suave; a cidade escolhida em dourado e as de guerra na cor de quem segura. */
@@ -2556,11 +2518,6 @@ public class MapScreen extends Screen {
         h.action().run();
     }
 
-    /** Lower case without accents, so "sao" finds "São". */
-    private static String fold(String text) {
-        return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT);
-    }
-
     private void updateSearch() {
         searchIdx = 0;
         if (renameMark != null) {
@@ -2744,13 +2701,6 @@ public class MapScreen extends Screen {
         p.marks.add(m);
         Prefs.save();
         startRename(m);
-    }
-
-    private static String travelTime(double blocks, double blocksPerSecond) {
-        long sec = Math.round(blocks / blocksPerSecond);
-        if (sec < 60) return sec + " s";
-        long min = Math.round(sec / 60.0);
-        return min < 60 ? min + " min" : (min / 60) + " h " + (min % 60) + " min";
     }
 
     private void routeLabel(GuiGraphics g, double sx, double sy, double dist, boolean dim) {
@@ -3059,15 +3009,6 @@ public class MapScreen extends Screen {
             cy += 16;
             place++;
         }
-    }
-
-    /** O maior número do texto, que nas datas do site é o ano. */
-    private static long yearOf(String text) {
-        long best = 0;
-        for (String part : text.split("[^0-9]+")) {
-            if (!part.isEmpty() && part.length() <= 9) best = Math.max(best, Long.parseLong(part));
-        }
-        return best;
     }
 
     private void focusCity(SiteTerritories.Locality l) {
@@ -3521,15 +3462,6 @@ public class MapScreen extends Screen {
     }
 
     // -- painel
-
-    private static String dateText(long ms) {
-        return java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                .format(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()));
-    }
-
-    private static String pts(double v) {
-        return Math.abs(v - Math.rint(v)) < 0.05 ? String.valueOf((long) Math.rint(v)) : String.format(Locale.ROOT, "%.1f", v);
-    }
 
     private static String warName(SiteTerritories.WarInfo w) {
         return w.name == null || w.name.isBlank() ? String.valueOf(w.id) : w.name;
@@ -4245,30 +4177,6 @@ public class MapScreen extends Screen {
     }
 
     // ------------------------------------------------- panorama diplomático
-
-    private static final long NONE = Long.MIN_VALUE;
-    private static final long DAY = 86_400_000L;
-
-    private static long parseMs(String iso) {
-        if (iso == null || iso.isBlank()) return NONE;
-        try {
-            return OffsetDateTime.parse(iso).toInstant().toEpochMilli();
-        } catch (RuntimeException e) {
-            return NONE;
-        }
-    }
-
-    /** "em 2d 5h" / "há 3h 10m". */
-    private static String countdown(long ms) {
-        long a = Math.abs(ms) / 60000;
-        long days = a / 1440, hours = (a % 1440) / 60, mins = a % 60;
-        String t = days > 0 ? days + "d " + hours + "h" : hours > 0 ? hours + "h " + mins + "m" : mins + "m";
-        return ms < 0 ? t + " ago" : "in " + t;
-    }
-
-    private static String stripAt(String n) {
-        return n != null && n.startsWith("@") ? n.substring(1) : n;
-    }
 
     private int tabStrip(GuiGraphics g, int top, String[] labels, int sel, int mouseX, int mouseY, Consumer<Integer> pick) {
         int n = labels.length, gap = 2, avail = bw - 16 - gap * (n - 1), sum = 0;
