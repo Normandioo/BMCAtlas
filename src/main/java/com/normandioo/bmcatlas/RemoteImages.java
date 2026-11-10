@@ -307,9 +307,12 @@ final class RemoteImages {
         return new Ready(url, w, h, out);
     }
 
+    /** Extra scale of the screen being drawn (the map sets it to its menu scale), so icons stay one texel per screen pixel. */
+    static float extraScale = 1f;
+
     /** Desenha a imagem pixel a pixel da tela, centrada em (cx, cy) da interface, sem borrar. */
     static void drawCrisp(net.minecraft.client.gui.GuiGraphics g, Img img, double cx, double cy) {
-        double gs = Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale());
+        double gs = Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale()) * extraScale;
         g.pose().pushMatrix();
         g.pose().translate((float) cx, (float) cy);
         g.pose().scale((float) (1.0 / gs), (float) (1.0 / gs));

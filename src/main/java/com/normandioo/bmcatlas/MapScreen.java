@@ -209,6 +209,7 @@ public class MapScreen extends Screen {
 
     @Override
     protected void init() {
+        applyUi();
         String oldQuery = searchBox == null ? "" : searchBox.getValue();
         searchBox = new EditBox(font, 0, 0, 200, 12, Component.literal("Search"));
         searchBox.setMaxLength(40);
@@ -305,6 +306,43 @@ public class MapScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+        // the whole screen is drawn in a virtual size (menu size setting, or automatic from the resolution)
+        applyUi();
+        mouseX = (int) (mouseX / ui);
+        mouseY = (int) (mouseY / ui);
+        RemoteImages.extraScale = ui;
+        g.pose().pushMatrix();
+        g.pose().scale(ui, ui);
+        try {
+            renderScaled(g, mouseX, mouseY, delta);
+        } finally {
+            g.pose().popMatrix();
+            RemoteImages.extraScale = 1f;
+        }
+    }
+
+    /** Scale of the menus over the game interface scale: 1 = as the game draws its own menus. */
+    private static float ui = 1f;
+
+    /**
+     * The scale in use. Automatic: the screen is laid out for about 520 interface pixels of height, so on a small
+     * window (or a large game interface scale) everything shrinks to fit, and on a large one it grows.
+     */
+    static float uiScaleFor(int guiHeight) {
+        int pct = Prefs.get().uiScalePct;
+        if (pct > 0) return pct / 100f;
+        float auto = Math.round(guiHeight / 520f * 20f) / 20f;
+        return Math.max(0.6f, Math.min(1.5f, auto));
+    }
+
+    private void applyUi() {
+        com.mojang.blaze3d.platform.Window win = Minecraft.getInstance().getWindow();
+        ui = uiScaleFor(win.getGuiScaledHeight());
+        width = (int) Math.ceil(win.getGuiScaledWidth() / ui);
+        height = (int) Math.ceil(win.getGuiScaledHeight() / ui);
+    }
+
+    private void renderScaled(GuiGraphics g, int mouseX, int mouseY, float delta) {
         MapData.nextFrame();
         OnlinePlayers.mapOpenAt = System.currentTimeMillis();
         RemoteImages.pump();
@@ -933,7 +971,7 @@ public class MapScreen extends Screen {
     }
 
     private static double guiScale() {
-        return Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale());
+        return Math.max(1.0, Minecraft.getInstance().getWindow().getGuiScale()) * ui;
     }
 
     private int iconRadius(SiteTerritories.Locality l) {
@@ -3918,6 +3956,16 @@ public class MapScreen extends Screen {
         boolean twoCols = bw >= 440;
         if (twoCols) bw = fullW / 2;
 
+        section(g, "Interface");
+        {
+            int pct = p.uiScalePct;
+            String shown = pct == 0 ? "Auto (" + Math.round(ui * 100) + "%)" : pct + "%";
+            stepsRow(g, "Menu size", shown, 11, pct == 0 ? 0 : indexOfStep(pct, 50, 10, 11), mouseX, mouseY, i -> {
+                p.uiScalePct = i == 0 ? 0 : 50 + i * 10;      // first step = automatic, then 60% to 150%
+                Prefs.save();
+            });
+        }
+
         section(g, "Map appearance");
         stepsRow(g, "Country color intensity", p.fillPct + "%", 11, indexOfStep(p.fillPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.fillPct = i * 10;
@@ -4826,7 +4874,7 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        double mx = event.x(), my = event.y();
+        double mx = (event.x() / ui), my = (event.y() / ui);
         if (helpOpen) {
             helpOpen = false;
             return true;
@@ -4868,8 +4916,10 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        dx /= ui;
+        dy /= ui;
         if (dragging) {
-            if (Math.abs(event.x() - pressX) > 3 || Math.abs(event.y() - pressY) > 3) moved = true;
+            if (Math.abs((event.x() / ui) - pressX) > 3 || Math.abs((event.y() / ui) - pressY) > 3) moved = true;
             if (moved) {
                 zoomTarget = scale;          // dragging ends a zoom in progress
                 viewX -= dx / scale;
@@ -4884,7 +4934,7 @@ public class MapScreen extends Screen {
     public boolean mouseReleased(MouseButtonEvent event) {
         if (dragging) {
             dragging = false;
-            if (!moved) select(blockX(event.x(), event.y()), blockZ(event.x(), event.y()), event.x(), event.y());
+            if (!moved) select(blockX((event.x() / ui), (event.y() / ui)), blockZ((event.x() / ui), (event.y() / ui)), (event.x() / ui), (event.y() / ui));
             return true;
         }
         return super.mouseReleased(event);
@@ -4951,6 +5001,8 @@ public class MapScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        mouseX /= ui;
+        mouseY /= ui;
         if (cardVisible && mouseX >= cardX && mouseX < cardX + CARD_W && mouseY >= cardY && mouseY < cardY + cardH) {
             cardScroll = Math.max(0, cardScroll - scrollY * 20);
             return true;

@@ -57,6 +57,8 @@ final class Prefs {
         int minimapCorner = 0;       // 0 sup. esq., 1 sup. dir., 2 inf. esq., 3 inf. dir.
         boolean minimapCities = true;
         boolean minimapPlayers = true;
+        /** Size of the map menus: 0 = automatic from the resolution, else 60-150%. */
+        int uiScalePct = 0;
         /** Minimap opacity (40-100%). */
         int minimapOpacityPct = 100;
         /** true: the minimap is enlarged while the key is held; false: the key switches it. */
@@ -125,6 +127,7 @@ final class Prefs {
         data.reliefPct = Math.max(100, Math.min(300, data.reliefPct));
         data.smoothPct = Math.max(0, Math.min(100, data.smoothPct));
         data.waterSatPct = Math.max(0, Math.min(100, data.waterSatPct));
+        data.uiScalePct = data.uiScalePct <= 0 ? 0 : Math.max(60, Math.min(150, data.uiScalePct));
         data.cityIconPct = Math.max(50, Math.min(300, data.cityIconPct));
         data.minimapOpacityPct = Math.max(40, Math.min(100, data.minimapOpacityPct));
         data.mapMode = Math.max(0, Math.min(4, data.mapMode));
