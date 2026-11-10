@@ -27,6 +27,7 @@ import java.util.function.Consumer;
 
 import static com.normandioo.bmcatlas.MapFormat.*;
 import static com.normandioo.bmcatlas.MapGeometry.*;
+import static com.normandioo.bmcatlas.MapWarInfo.*;
 
 /** Tela cheia do mapa, with a bronze-framed grand-strategy look. */
 public class MapScreen extends Screen {
@@ -1499,18 +1500,6 @@ public class MapScreen extends Screen {
             Integer ci = d.countryOfPlayer.get(site != null ? site.toLowerCase(Locale.ROOT) : low);
             if (me < 0 || (ci != null && ci == me)) myPlayersN++;
         }
-    }
-
-    private static boolean warInvolves(SiteTerritories.Data d, SiteTerritories.WarInfo w, int me) {
-        if (w.sides == null) return false;
-        for (SiteTerritories.Side side : w.sides) if (Relations.countriesOf(d, side).contains(me)) return true;
-        return false;
-    }
-
-    private static boolean nameIsMe(SiteTerritories.Data d, String name, int me) {
-        if (name == null) return false;
-        Integer ci = Relations.nameIndex(d).get(Relations.norm(name));
-        return ci != null && ci == me;
     }
 
     /** Só o país do jogador quando a lista foi aberta pela barra de cima; -1 = tudo. */
@@ -3205,10 +3194,6 @@ public class MapScreen extends Screen {
     private WarFront frontCache;
     private SiteTerritories.WarInfo frontCacheWar;
 
-    private static boolean warRunning(SiteTerritories.WarInfo w) {
-        return w != null && WarStatus.running(w);
-    }
-
     private int activeWarCount() {
         SiteTerritories.Data d = SiteTerritories.data();
         if (d == null) return 0;
@@ -3463,17 +3448,6 @@ public class MapScreen extends Screen {
 
     // -- painel
 
-    private static String warName(SiteTerritories.WarInfo w) {
-        return w.name == null || w.name.isBlank() ? String.valueOf(w.id) : w.name;
-    }
-
-    private static String sideName(SiteTerritories.WarInfo w, int i) {
-        String n = i >= 0 && w.sides != null && i < w.sides.size() ? w.sides.get(i).name : null;
-        if ("Attackers".equalsIgnoreCase(n)) return "Attackers";
-        if ("Defenders".equalsIgnoreCase(n)) return "Defenders";
-        return n == null || n.isBlank() ? "Side " + (i + 1) : n;
-    }
-
     /** Barra de pesos por lado, com a porcentagem dentro de cada trecho largo o bastante. */
     private void sideBar(GuiGraphics g, SiteTerritories.WarInfo war, double[] weights, int x, int y, int w) {
         double total = 0;
@@ -3717,11 +3691,6 @@ public class MapScreen extends Screen {
             }
             cy += 2;
         }
-    }
-
-    private static int countryIndex(SiteTerritories.Data d, String name) {
-        Integer i = Relations.nameIndex(d).get(Relations.norm(name));
-        return i == null ? -1 : i;
     }
 
     private void warCities(GuiGraphics g, SiteTerritories.Data d, SiteTerritories.WarInfo w, int mouseX, int mouseY) {
@@ -4694,28 +4663,6 @@ public class MapScreen extends Screen {
             if (e.getKey().equalsIgnoreCase(name)) return e.getValue();
         }
         return null;
-    }
-
-    private static String ago(String iso) {
-        try {
-            OffsetDateTime t = OffsetDateTime.parse(iso);
-            long days = Duration.between(t.toInstant(), Instant.now()).toDays();
-            return (days <= 0 ? "today" : days == 1 ? "yesterday" : days + " days ago") + "  (" + iso.replace('T', ' ') + ")";
-        } catch (RuntimeException e) {
-            return iso;
-        }
-    }
-
-    private static String purgeText(SiteTerritories.Player p) {
-        if (p.lastJoined == null || p.purge == null || p.purge.days <= 0) return null;
-        try {
-            OffsetDateTime t = OffsetDateTime.parse(p.lastJoined).plusDays(p.purge.days);
-            long left = Duration.between(Instant.now(), t.toInstant()).toDays();
-            String date = t.toLocalDate().toString();
-            return left < 0 ? "since " + date : "in " + (left + 1) + " day(s), " + date;
-        } catch (RuntimeException e) {
-            return null;
-        }
     }
 
     private void drawCard(GuiGraphics g, int mouseX, int mouseY) {
