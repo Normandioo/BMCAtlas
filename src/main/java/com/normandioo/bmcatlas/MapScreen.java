@@ -30,7 +30,7 @@ import static com.normandioo.bmcatlas.MapGeometry.*;
 import static com.normandioo.bmcatlas.MapWarInfo.*;
 
 /** Tela cheia do mapa, with a bronze-framed grand-strategy look. */
-public class MapScreen extends MapPanels {
+public class MapScreen extends MapEditor {
 
     public MapScreen() {
         super(Component.literal("Map"));
@@ -98,6 +98,7 @@ public class MapScreen extends MapPanels {
     @Override
     public void onClose() {
         MapData.save();
+        closeEditor();
         WarRecorder.stop();
         Prefs.Data pr = Prefs.get();
         if (pr.mapMode != mode || pr.mapScale != zoomTarget || pr.showCities != showCities || pr.showPlayers != showPlayers) {
@@ -335,6 +336,11 @@ public class MapScreen extends MapPanels {
         Perf.begin("map total");
         drawMap(g, mouseX, mouseY);
         Perf.end("map total");
+        if (editing()) {   // the replay editor: the map, then its own timeline instead of the menus
+            drawEditor(g, mouseX, mouseY);
+            drawTooltip(g, mouseX, mouseY);
+            return;
+        }
         if (photoMode) {
             drawPhotoHint(g);
             return;
@@ -375,6 +381,7 @@ public class MapScreen extends MapPanels {
         endGroup(g, G_OUT, mouseX, mouseY);
         Perf.end("outliner");
         drawRecorder(g, mouseX, mouseY);
+        drawRecordingsList(g, mouseX, mouseY);
         drawHover(g, mouseX, mouseY);
         drawToolBanner(g);
         drawMarkMenu(g, mouseX, mouseY);
@@ -1245,7 +1252,7 @@ public class MapScreen extends MapPanels {
         int recW = font.width(rec ? "Recording: on" : "Recording: off") + 12;
         int speedW = font.width("0.25x") + 10;
         int bwn = n >= 1 ? 30 * 3 + 44 + (replay ? 18 + speedW + 18 + 2 + 40 : 0) + 10 : 0;
-        int wBar = Math.max(recW + bwn + font.width(info) + 26, replay ? 320 : 0);
+        int wBar = Math.max(recW + font.width("Recordings") + 16 + bwn + font.width(info) + 26, replay ? 320 : 0);
         int barH = replay ? 34 : 22;
         int x = Math.max(4, (width - wBar) / 2), y = height - 58 - (barH - 22);
         box(g, x, y, wBar, barH, COL_PANEL);
@@ -1256,6 +1263,9 @@ public class MapScreen extends MapPanels {
             Prefs.save();
         });
         cx += recW + 4;
+        int listW = font.width("Recordings") + 12;
+        textButtonFixed(g, cx, y + 3, listW, 16, "Recordings", mouseX, mouseY, this::openList);
+        cx += listW + 4;
         if (n >= 1) {
             textButtonFixed(g, cx, y + 3, 28, 16, "<<", mouseX, mouseY, () -> {
                 WarRecorder.pause();
@@ -2460,6 +2470,7 @@ public class MapScreen extends MapPanels {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (editorDrag(event.x() / ui)) return true;
         if (timelineDrag) {
             seekTimeline(event.x() / ui);
             return true;
@@ -2485,6 +2496,7 @@ public class MapScreen extends MapPanels {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (editorRelease()) return true;
         if (timelineDrag) {
             timelineDrag = false;
             return true;
@@ -2592,6 +2604,7 @@ public class MapScreen extends MapPanels {
             }
             return false;
         }
+        if (editorKey(key0, event.hasShiftDown())) return true;   // the replay editor and the list of recordings
         if (key0 == InputConstants.KEY_F7) {
             Perf.on = !Perf.on;
             return true;

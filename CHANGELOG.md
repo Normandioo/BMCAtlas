@@ -1,3 +1,10 @@
+## 1.5.0
+
+- Replay editor: the "Recordings" button on the war map bar lists every recording (war, date, length, sessions, whether it has players); opening one shows it on the map with a timeline of the whole recording, every session, with the time away in grey
+- Highlights found by themselves and marked on the timeline: captures, cities retaken, contested, capitals, capitulations, battles (3 or more players of 2 sides close together for 10 s); click one to go there
+- Clips for the video: In/Out marks and "Add clip", or "Auto highlights" (each highlight from 20 s before to 15 s after, with the stretches in between at 120x); drag a clip to move it, or its ends to resize it; each clip has its own speed. Saved in project.json in the recording's folder
+- Keys: Space play, Left/Right 1 s, Shift+Left/Right highlights, I/O, Enter, Delete, Home/End, Esc
+
 ## 1.4.0
 
 - Replay of a war recording: the players move on the map, with the faces they had when it was recorded, and the cities change hands with the capture wave

@@ -31,7 +31,8 @@ final class Replay {
     final List<RecFormat.Frame> frames;
     final Map<Integer, RecFormat.PlayerInfo> players;
     final RecTrack.Track track;
-    private final long length, from, to;
+    private final long length;
+    private long from, to;
     private double t;
     private double speed = 1;
     private boolean playing;
@@ -89,6 +90,32 @@ final class Replay {
 
     long to() {
         return to;
+    }
+
+    /** The editor plays the whole folder, every session, with the time away in between. */
+    void useWhole() {
+        from = 0;
+        to = length;
+        seek(time());
+    }
+
+    /** The sessions of the folder, [from, to] in ms since the start (one covering everything when none were kept). */
+    List<long[]> sessions() {
+        List<long[]> out = new ArrayList<>();
+        for (int i = 0; i < meta.intervals.size(); i++) {
+            long[] iv = meta.intervals.get(i);
+            long a = Math.max(0, Math.min(length, iv[0] - meta.start));
+            long b = i == meta.intervals.size() - 1 ? length : Math.max(a, Math.min(length, iv[1] - meta.start));
+            out.add(new long[]{a, b});
+        }
+        if (out.isEmpty()) out.add(new long[]{0, length});
+        return out;
+    }
+
+    /** Whether the moment t was recorded (inside a session). */
+    boolean recorded(long time) {
+        for (long[] s : sessions()) if (time >= s[0] && time <= s[1]) return true;
+        return false;
     }
 
     /** The moment on screen (ms since the start). */

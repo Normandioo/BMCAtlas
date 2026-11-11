@@ -554,6 +554,50 @@ final class WarRecorder {
         return true;
     }
 
+    /**
+     * Opens a given recording folder for the editor (the whole folder, every session). war is the war it belongs to in the site
+     * data, or null when the site no longer has it (then the map shows the players but not the colours). Null when it cannot be read.
+     */
+    static Replay openDir(SiteTerritories.WarInfo war, Path dir) {
+        Session s = session;
+        if (s != null && s.dir.equals(dir)) s.flush(true);
+        importOldOnce();
+        Replay r = Replay.open(dir);
+        if (r == null) return null;
+        r.useWhole();
+        replay = r;
+        replayKey = war != null ? keyOf(war) : "editor|" + dir;
+        LISTS.clear();
+        jumped = true;
+        MapClock.showData(r.absTime());
+        return r;
+    }
+
+    /** Moves the playback forward without checking which war is on screen (the editor owns it). */
+    static void advance() {
+        if (replay == null) return;
+        replay.advance(MapClock.anim());
+        MapClock.showData(replay.absTime());
+    }
+
+    /** A recorded cities frame as the list the rest of the mod reads (LiveControl.captured). */
+    static List<SiteTerritories.Captured> toCaptured(RecFormat.Frame fr) {
+        List<SiteTerritories.Captured> out = new ArrayList<>();
+        for (RecFormat.City r : fr.cities) {
+            SiteTerritories.Captured c = new SiteTerritories.Captured();
+            c.name = r.name;
+            c.country = r.country;
+            c.state = r.state;
+            c.holder = r.holder;
+            c.holderKey = r.holderKey;
+            c.liveSide = r.side;
+            c.x = r.x;
+            c.z = r.z;
+            out.add(c);
+        }
+        return List.copyOf(out);
+    }
+
     /** How many moments (changes of who holds the cities) this war has recorded. */
     static int count(SiteTerritories.WarInfo war) {
         return war == null ? 0 : frames(war).size();
@@ -666,21 +710,6 @@ final class WarRecorder {
         int i = replay.frameIndex();
         if (i < 0) return List.of();
         RecFormat.Frame frame = replay.frames.get(i);
-        return LISTS.computeIfAbsent(frame, fr -> {
-            List<SiteTerritories.Captured> out = new ArrayList<>();
-            for (RecFormat.City r : fr.cities) {
-                SiteTerritories.Captured c = new SiteTerritories.Captured();
-                c.name = r.name;
-                c.country = r.country;
-                c.state = r.state;
-                c.holder = r.holder;
-                c.holderKey = r.holderKey;
-                c.liveSide = r.side;
-                c.x = r.x;
-                c.z = r.z;
-                out.add(c);
-            }
-            return List.copyOf(out);
-        });
+        return LISTS.computeIfAbsent(frame, WarRecorder::toCaptured);
     }
 }
