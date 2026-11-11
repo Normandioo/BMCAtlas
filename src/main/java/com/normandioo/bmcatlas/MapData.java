@@ -354,6 +354,11 @@ final class MapData {
     private static final Queue<Loaded> LOADED = new ConcurrentLinkedQueue<>();
     private static final AtomicInteger pendingWrites = new AtomicInteger();
     private static int loadingCount;
+
+    /** Whether region files are still being read (the video export waits for the terrain). */
+    static boolean loading() {
+        return loadingCount > 0 || !LOADED.isEmpty();
+    }
     private static int inMemory;
 
     static {

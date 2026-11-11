@@ -1,3 +1,10 @@
+## 1.7.0
+
+- Video export from the replay editor: "Export" makes one video per camera marked for export (or one of the view on screen when there are no cameras), through every clip, saved in `bmcatlas/videos/` inside the game folder
+- With ffmpeg installed (found on the PATH, in the usual places, or where "ffmpeg path" says) each video is an .mp4 (H.264); without it, a folder of PNG frames with the ffmpeg command to join them. Nothing is downloaded
+- The recording is played in the window at a fixed step (30 or 60 fps), so the video is smooth however fast the game draws; before each clip it waits for the terrain and images to load. The date and the score show inside the video
+- During the export: progress, time left, Cancel (or Esc). Keep the window as it is: resizing or minimizing stops the export
+
 ## 1.6.0
 
 - Cameras in the replay editor: "New camera" frames the view on screen; each camera shows on the map as a coloured rectangle with its name. Drag the name to move it and a corner to resize it (keeping its aspect): either makes a keyframe at the moment on screen, and the camera moves smoothly between keyframes

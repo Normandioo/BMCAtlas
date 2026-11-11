@@ -71,6 +71,8 @@ final class Prefs {
         boolean recordLiveWars = false;
         /** The recording bar on the war map is unfolded. */
         boolean recorderOpen = true;
+        /** Where ffmpeg is, when it is not found by itself (video export). */
+        String ffmpegPath;
         /** Tell the player when a newer version of the mod is out (see UpdateCheck). */
         boolean updateCheck = true;
         // what the big map looked like when it was last closed

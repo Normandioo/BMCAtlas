@@ -673,6 +673,15 @@ final class WarRecorder {
         MapClock.showData(replay.absTime());
     }
 
+    /** The video export's step: goes to a moment; jump (a clip starting) means no capture wave for that change. */
+    static void exportSeek(long t, boolean jump) {
+        if (replay == null) return;
+        int before = replay.frameIndex();
+        replay.seek(t);
+        if (jump && replay.frameIndex() != before) jumped = true;
+        MapClock.showData(replay.absTime());
+    }
+
     /** Goes to a fraction (0-1) of the recording of this war. */
     static void seekFraction(SiteTerritories.WarInfo war, double f) {
         if (!open(war)) return;

@@ -57,6 +57,13 @@ final class RemoteImages {
     }
 
     private static final Object PENDING = new Object();
+
+    /** How many images are still downloading or waiting to become textures (the video export waits for them). */
+    static int pending() {
+        int n = READY.size();
+        for (Object o : CACHE.values()) if (o == PENDING) n++;
+        return n;
+    }
     private static final Map<String, Object> CACHE = new ConcurrentHashMap<>();
     private static final Queue<Ready> READY = new ConcurrentLinkedQueue<>();
     private static final HttpClient HTTP = HttpClient.newBuilder()

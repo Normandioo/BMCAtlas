@@ -100,6 +100,9 @@ abstract class MapEditor extends MapPanels {
     }
 
     void closeEditor() {
+        if (exp != null) exp.cancel();
+        exp = null;
+        exportDialog = false;
         if (ed == null) return;
         ed.save();
         ed = null;
@@ -186,9 +189,146 @@ abstract class MapEditor extends MapPanels {
         return t[0];
     }
 
+    // ------------------------------------------------------------------ video export (phase 4)
+
+    /** The export running or just finished, or null. */
+    VideoExport exp;
+    /** The export dialog is open. */
+    boolean exportDialog;
+    private volatile String ffmpegFound;
+    private volatile boolean ffmpegSearching;
+
+    /** Whether an export is running (the screen then shows only the video being made). */
+    boolean exportBusy() {
+        return exp != null && exp.running();
+    }
+
+    private void searchFfmpeg() {
+        ffmpegSearching = true;
+        String pref = Prefs.get().ffmpegPath;
+        Thread t = new Thread(() -> {
+            ffmpegFound = FfmpegEncoder.find(pref);
+            ffmpegSearching = false;
+        }, "bmcatlas-ffmpeg-search");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Start of a map frame (MapScreen, before the map is drawn): the export sets the moment and view of its next frame. */
+    void exportBeforeFrame() {
+        if (exportBusy()) exp.beforeFrame(width);
+    }
+
+    /** End of a map frame: the export queues the capture of the frame just drawn. */
+    void exportAfterFrame() {
+        if (exp != null) exp.afterFrame();
+    }
+
+    /** The dialog: frames per second, the encoder found, the videos it will make; then the result. */
+    private void drawExportDialog(GuiGraphics g, ReplayEditor e, int mouseX, int mouseY) {
+        int w = Math.min(width - 20, 380), x = (width - w) / 2;
+        List<String> lines = new ArrayList<>();
+        int fbW = net.minecraft.client.Minecraft.getInstance().getWindow().getWidth(), fbH = net.minecraft.client.Minecraft.getInstance().getWindow().getHeight();
+        List<ExportPlan.Pass> passes = ExportPlan.of(e.project, e.dir.getFileName().toString());
+        boolean finished = exp != null && !exp.running();
+        if (finished) {
+            lines.add(exp.message);
+            for (Path p : exp.outputs) lines.add("  " + p.getFileName());
+        } else {
+            lines.add(ffmpegSearching ? "Looking for ffmpeg..." : ffmpegFound != null ? "Encoder: ffmpeg (" + ffmpegFound + ")"
+                    : "ffmpeg not found: PNG frames, with the command to join them");
+            long total = 0;
+            for (ExportPlan.Pass p : passes) {
+                int[] s = p.camera() != null ? p.camera().outputSize(fbW, fbH) : new int[]{fbW & ~1, fbH & ~1};
+                lines.add("  " + p.name() + "   " + s[0] + "x" + s[1] + "   " + ExportPlan.duration(p.frames(), e.project.fps));
+                total += p.frames();
+            }
+            if (passes.isEmpty()) lines.add("Nothing to export: add clips first (and mark a camera for export).");
+            else lines.add(passes.size() + (passes.size() == 1 ? " video, " : " videos, ") + total + " frames. Keep the window as it is while it runs.");
+        }
+        int h = 30 + lines.size() * 11 + 26, y = Math.max(10, (height - h) / 2);
+        box(g, x, y, w, h, COL_PANEL);
+        hits.add(new Hit(x, y, w, h, null, null));
+        g.drawString(font, finished ? "Export finished" : "Export video", x + 8, y + 7, COL_TEXT, false);
+        int ly = y + 22;
+        for (String l : lines) {
+            drawFit(g, l, w - 16, x + 8, ly, l.startsWith("  ") ? COL_TEXT : COL_DIM, false);
+            ly += 11;
+        }
+        int by = y + h - 22, bx = x + 8;
+        if (finished) {
+            int cw = font.width("Copy folder path") + 12;
+            textButtonFixed(g, bx, by, cw, 16, "Copy folder path", mouseX, mouseY, () -> Compat.setClipboard(net.minecraft.client.Minecraft.getInstance(), exp.outDir.toString()));
+            textButtonFixed(g, x + w - 8 - 50, by, 50, 16, "Close", mouseX, mouseY, () -> {
+                exp = null;
+                exportDialog = false;
+            });
+            return;
+        }
+        int fw = font.width("60 fps") + 12;
+        textButtonFixed(g, bx, by, fw, 16, e.project.fps + " fps", mouseX, mouseY, () -> {
+            e.project.fps = e.project.fps == 30 ? 60 : 30;
+            e.save();
+        });
+        bx += fw + 4;
+        int pw = font.width("ffmpeg path") + 12;
+        textButtonFixed(g, bx, by, pw, 16, "ffmpeg path", mouseX, mouseY, () -> askName(Prefs.get().ffmpegPath == null ? "" : Prefs.get().ffmpegPath, p -> {
+            Prefs.get().ffmpegPath = p;
+            Prefs.save();
+            searchFfmpeg();
+        }));
+        hits.set(hits.size() - 1, new Hit(bx, by, pw, 16, hits.get(hits.size() - 1).action(), "Where ffmpeg.exe is, if it is not found by itself"));
+        int sw = font.width("Start") + 12;
+        textButton(g, x + w - 8 - 50 - 4 - sw, by, sw, 16, "Start", mouseX, mouseY, !ffmpegSearching && !passes.isEmpty(), () -> {
+            exportDialog = false;
+            viewCam = false;
+            exp = new VideoExport(e, ffmpegFound);
+            if (!exp.running()) exportDialog = true;
+        });
+        textButtonFixed(g, x + w - 8 - 50, by, 50, 16, "Close", mouseX, mouseY, () -> exportDialog = false);
+    }
+
+    /** While exporting: the date and score inside the video's rectangle, and (on frames not captured) the progress. */
+    private void drawExportRunning(GuiGraphics g, ReplayEditor e, int mouseX, int mouseY) {
+        double pxPerGui = net.minecraft.client.Minecraft.getInstance().getWindow().getWidth() / (double) Math.max(1, width);
+        int[] r = exp.rect();
+        int rx = (int) Math.round(r[0] / pxPerGui), ry = (int) Math.round(r[1] / pxPerGui), rw = (int) Math.round(r[2] / pxPerGui);
+        SiteTerritories.Data d = SiteTerritories.data();
+        int oy = ry + 6;
+        if (e.project.show.clock) {
+            String when = MapFormat.dateText(e.replay.absTime());
+            g.fill(rx + 6, oy - 2, rx + 12 + font.width(when), oy + 10, 0xB0101214);
+            g.drawString(font, when, rx + 9, oy, COL_TEXT, false);
+            oy += 14;
+        }
+        if (e.project.show.score && e.war != null && e.war.sides != null && e.war.sides.size() >= 2 && d != null) {
+            int sw = Math.min(200, rw - 12);
+            g.fill(rx + 6, oy - 2, rx + 12 + sw, oy + 10, 0xB0101214);
+            sideBar(g, e.war, WarScore.of(d, e.war).points().clone(), rx + 9, oy, sw - 6);
+        }
+        if (exp.capturing()) return;   // the progress is never in the video
+        int w = Math.min(width - 20, 320), x = (width - w) / 2, y = height - 60;
+        box(g, x, y, w, 46, COL_PANEL);
+        hits.add(new Hit(x, y, w, 46, null, null));
+        String title = "Exporting " + (exp.passIndex() + 1) + "/" + exp.passes.size() + ": " + exp.passName();
+        drawFit(g, title, w - 70, x + 8, y + 6, COL_TEXT, false);
+        g.fill(x + 8, y + 20, x + w - 8, y + 26, 0xFF1E2123);
+        g.fill(x + 8, y + 20, x + 8 + (int) ((w - 16) * exp.progress()), y + 26, 0xFFF0B429);
+        g.drawString(font, Math.round(exp.progress() * 100) + "%   " + exp.left() + "   Esc cancels", x + 8, y + 32, COL_DIM, false);
+        textButtonFixed(g, x + w - 58, y + 3, 50, 16, "Cancel", mouseX, mouseY, () -> {
+            exp.cancel();
+            exportDialog = true;
+        });
+    }
+
     void drawEditor(GuiGraphics g, int mouseX, int mouseY) {
         ReplayEditor e = ed;
         Replay r = e.replay;
+        if (exp != null && !exp.running() && !exportDialog) exportDialog = true;   // finished: show the result
+        if (exportBusy()) {
+            drawExportRunning(g, e, mouseX, mouseY);
+            return;
+        }
         WarRecorder.advance();
         SiteTerritories.Data d = SiteTerritories.data();
         long now = r.time();
@@ -257,7 +397,11 @@ abstract class MapEditor extends MapPanels {
             e.newCamera(viewX, viewZ, Math.max(16, width * 0.6 / scale));
         });
         int closeW = font.width("Close") + 12, expW = font.width("Export") + 12;
-        textButton(g, px + pw - 4 - closeW - 2 - expW, by, expW, 16, "Export", mouseX, mouseY, false, () -> {});
+        textButtonFixed(g, px + pw - 4 - closeW - 2 - expW, by, expW, 16, "Export", mouseX, mouseY, () -> {
+            exportDialog = true;
+            exp = null;
+            searchFfmpeg();
+        });
         textButtonFixed(g, px + pw - 4 - closeW, by, closeW, 16, "Close", mouseX, mouseY, this::closeEditor);
 
         // track 1: the recording (sessions light, time away dark), hour marks, highlights, In/Out marks
@@ -376,6 +520,7 @@ abstract class MapEditor extends MapPanels {
                     : "Space play   Left/Right 1 s   Shift+Left/Right highlights   I/O marks   Enter clip   K keyframe   Del delete   Esc back";
             drawFit(g, help, pw - 16, px + 8, ly + 4, hot != null ? COL_TEXT : COL_DIM, false);
         }
+        if (exportDialog) drawExportDialog(g, e, mouseX, mouseY);
     }
 
     /** The cameras on the map: a rectangle each, with its name on a tab (drag it to move) and, when selected, corner handles. */
@@ -554,6 +699,18 @@ abstract class MapEditor extends MapPanels {
 
     /** The editor's keys; true when one was used. */
     boolean editorKey(int k, boolean shift) {
+        if (exportBusy()) {   // while exporting only Esc counts: it cancels
+            if (k == InputConstants.KEY_ESCAPE) {
+                exp.cancel();
+                exportDialog = true;
+            }
+            return true;
+        }
+        if (exportDialog && k == InputConstants.KEY_ESCAPE) {
+            exportDialog = false;
+            exp = null;
+            return true;
+        }
         if (listOpen && k == InputConstants.KEY_ESCAPE) {
             listOpen = false;
             return true;

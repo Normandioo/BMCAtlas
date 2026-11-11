@@ -334,6 +334,7 @@ public class MapScreen extends MapEditor {
         panelVisible = false;
         cardVisible = false;
         if (relationalMode() && !siteMode()) mode = MODE_POLITICAL;
+        if (editing()) exportBeforeFrame();   // a video export sets the moment and the view of its next frame
         Perf.begin("colors");
         refreshOverrides();
         Perf.end("colors");
@@ -344,8 +345,11 @@ public class MapScreen extends MapEditor {
         Perf.end("map total");
         if (editing()) {   // the replay editor: the map, then its own timeline instead of the menus
             drawEditor(g, mouseX, mouseY);
-            drawSearch(g, mouseX, mouseY, delta);
-            drawTooltip(g, mouseX, mouseY);
+            if (!exportBusy()) {
+                drawSearch(g, mouseX, mouseY, delta);
+                drawTooltip(g, mouseX, mouseY);
+            }
+            exportAfterFrame();   // the frame just drawn is captured at the start of the next one
             return;
         }
         if (photoMode) {
@@ -2502,6 +2506,7 @@ public class MapScreen extends MapEditor {
             selPlayer = null;
             return true;
         }
+        if (exportBusy()) return true;   // the view belongs to the export
         dragging = true;
         moved = false;
         pressX = mx;
@@ -2618,6 +2623,7 @@ public class MapScreen extends MapEditor {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (exportBusy()) return true;   // the view belongs to the export
         mouseX /= ui;
         mouseY /= ui;
         if (cardVisible && mouseX >= cardX && mouseX < cardX + cardW && mouseY >= cardY && mouseY < cardY + cardH) {
