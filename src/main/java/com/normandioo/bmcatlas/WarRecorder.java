@@ -280,10 +280,11 @@ final class WarRecorder {
             try {
                 Path bin = dir.resolve("players.bin");
                 if (Files.exists(bin)) {
-                    List<RecTrack.Block> blocks = RecTrack.read(Files.readAllBytes(bin));
+                    byte[] all = Files.readAllBytes(bin);   // read once: the blocks and the cut both come from it
+                    List<RecTrack.Block> blocks = RecTrack.read(all);
                     if (blocks != null) {
                         writer = RecTrack.Writer.after(blocks);
-                        truncateTo(bin);   // a block cut short by a crash would spoil what is written after it
+                        truncateTo(bin, all);   // a block cut short by a crash would spoil what is written after it
                     }
                 }
             } catch (IOException e) {
@@ -319,8 +320,7 @@ final class WarRecorder {
     }
 
     /** Drops a block cut short at the end of players.bin, so new blocks follow whole ones. */
-    private static void truncateTo(Path bin) throws IOException {
-        byte[] all = Files.readAllBytes(bin);
+    private static void truncateTo(Path bin, byte[] all) throws IOException {
         int whole = RecTrack.wholeLength(all);
         if (whole < all.length) {
             byte[] keep = java.util.Arrays.copyOf(all, whole);

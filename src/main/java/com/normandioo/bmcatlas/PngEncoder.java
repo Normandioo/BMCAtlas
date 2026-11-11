@@ -110,10 +110,6 @@ final class PngEncoder implements VideoEncoder {
         return dir;
     }
 
-    int frames() {
-        return n;
-    }
-
     /** A whole PNG file of an RGBA image (8 bits per channel, no interlace), fast compression. */
     static byte[] png(byte[] rgba, int w, int h) throws IOException {
         ByteArrayOutputStream file = new ByteArrayOutputStream(rgba.length / 2 + 1024);

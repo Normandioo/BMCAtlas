@@ -203,14 +203,9 @@ final class RecCamera {
         return new int[]{Math.max(2, ow & ~1), Math.max(2, oh & ~1)};
     }
 
-    /** The map's zoom (pixels per block) that shows widthBlocks across outWidthPx. */
-    static double scaleFor(double widthBlocks, int outWidthPx) {
-        return outWidthPx / Math.max(1e-6, widthBlocks);
-    }
-
-    /** The width in blocks kept inside the map's zoom range for a video outWidthPx wide. */
-    static double clampWidth(double widthBlocks, int outWidthPx) {
-        return Math.max(outWidthPx / MAX_SCALE, Math.min(outWidthPx / MIN_SCALE, widthBlocks));
+    /** The zoom (pixels per block) kept inside the map's range: the editor view and the export both use it. */
+    static double clampScale(double scale) {
+        return Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
     }
 
     /**

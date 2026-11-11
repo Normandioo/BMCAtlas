@@ -417,7 +417,7 @@ final class MapData {
         }
     }
 
-    private static void writeRegion(Path file, long[] known, byte[] comp, int len) throws IOException {
+    static void writeRegion(Path file, long[] known, byte[] comp, int len) throws IOException {
         writeAtomic(file, out -> {
             try {
                 out.writeInt(MAGIC);
@@ -429,7 +429,7 @@ final class MapData {
         });
     }
 
-    private static int[] readRegion(Path file) throws IOException, DataFormatException {
+    static int[] readRegion(Path file) throws IOException, DataFormatException {
         byte[] all = Files.readAllBytes(file);
         if (all.length <= HEADER || ByteBuffer.wrap(all).getInt() != MAGIC) throw new IOException("not a region file");
         int[] px = new int[REGION_PX * REGION_PX];
@@ -645,7 +645,7 @@ final class MapData {
         dirty = false;
     }
 
-    private static byte[] deflate(int[] px) {
+    static byte[] deflate(int[] px) {
         ByteBuffer bb = ByteBuffer.allocate(px.length * 4);
         bb.asIntBuffer().put(px);
         Deflater d = new Deflater(Deflater.BEST_SPEED);

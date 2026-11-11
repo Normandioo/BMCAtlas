@@ -1285,7 +1285,7 @@ public class MapScreen extends MapEditor {
         String info = replay && r != null
                 ? "Replay  " + dateText(WarRecorder.time())
                 : rec ? dot : n >= 1 ? n + (n == 1 ? " moment recorded" : " moments recorded") : "Start recording to play this war back later";
-        String speed = r == null ? "1x" : r.speedText();
+        String speed = r == null ? "1x" : ReplayEditor.speedText(r.speed());
         String recLabel = rec ? "Stop recording" : "Start recording";
         int recW = font.width(recLabel) + 12 + (rec ? 0 : 8);
         int speedW = font.width("0.25x") + 10;

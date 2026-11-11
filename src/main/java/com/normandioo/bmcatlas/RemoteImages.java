@@ -181,7 +181,15 @@ final class RemoteImages {
         }
     }
 
+    /** shortcut: only PNG headers are read (the site's images are PNG); a bigger picture would take gigabytes of memory to decode. */
+    static boolean tooBig(byte[] b) {
+        if (b.length < 24 || b[0] != (byte) 0x89 || b[1] != 'P') return false;
+        java.nio.ByteBuffer size = java.nio.ByteBuffer.wrap(b, 16, 8);   // width, then height, both big-endian in the IHDR chunk
+        return size.getInt() > 4096 || size.getInt() > 4096;
+    }
+
     private static void decode(String key, byte[] bytes, Converter conv) throws Exception {
+        if (tooBig(bytes)) throw new IOException("image too large");
         try (NativeImage src = NativeImage.read(new ByteArrayInputStream(bytes))) {
             READY.add(conv.apply(src));
         }

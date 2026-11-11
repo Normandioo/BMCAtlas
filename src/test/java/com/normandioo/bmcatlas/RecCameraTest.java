@@ -121,10 +121,9 @@ class RecCameraTest {
 
     @Test
     void widthInBlocksToZoomAndItsLimits() {
-        assertEquals(1920 / 480.0, RecCamera.scaleFor(480, 1920), 1e-9);
-        assertEquals(1920 / 8.0, RecCamera.clampWidth(10, 1920), 1e-9);       // closer than 8 px per block
-        assertEquals(1920 / 0.03, RecCamera.clampWidth(1e9, 1920), 1e-6);     // further than 0.03
-        assertEquals(500, RecCamera.clampWidth(500, 1920), 1e-9);
+        assertEquals(8, RecCamera.clampScale(10), 1e-9);      // closer than 8 px per block
+        assertEquals(0.03, RecCamera.clampScale(0.001), 1e-9); // further than 0.03
+        assertEquals(1.5, RecCamera.clampScale(1.5), 1e-9);
     }
 
     @Test

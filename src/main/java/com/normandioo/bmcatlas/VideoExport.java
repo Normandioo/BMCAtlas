@@ -22,7 +22,7 @@ import java.util.List;
 final class VideoExport {
     enum Stage { RUNNING, DONE, FAILED, CANCELLED }
 
-    private static final long SETTLE_MIN_FRAMES = 5, SETTLE_MAX_MS = 8_000, LOADING_MAX_MS = 3_000, CAPTURE_MAX_MS = 10_000;
+    private static final long LOADING_MAX_MS = 3_000, CAPTURE_MAX_MS = 10_000;
 
     final ReplayEditor ed;
     final List<ExportPlan.Pass> passes;
@@ -41,7 +41,8 @@ final class VideoExport {
     private final long savedTime;
     private final int fbW, fbH;
     private int pass;
-    private long k, framesDone;
+    private long k;
+    private volatile long framesDone;
     private EncodeWorker worker;
     private int x0, y0, ow, oh;
     /** The capture of the frame just drawn is queued but not yet asked of the game (it is asked at the start of the next frame). */
@@ -51,8 +52,10 @@ final class VideoExport {
     private final java.util.concurrent.atomic.AtomicInteger inFlight = new java.util.concurrent.atomic.AtomicInteger();
     private volatile long lastArrival;
     private boolean captureThisFrame;
-    private long settleFrames, settleSince, loadingSince;
-    private boolean settling;
+    private long loadingSince;
+    private Settle settle = new Settle();
+    /** Set from the capture's thread when it fails there; the game thread then stops the export. */
+    private volatile String asyncFailure;
 
     VideoExport(ReplayEditor ed, String ffmpeg) {
         this.ed = ed;
@@ -131,6 +134,10 @@ final class VideoExport {
     /** Start of a map frame (guiW: the map's width in its own units): sets what frame k shows, or keeps waiting. */
     void beforeFrame(int guiW) {
         if (!running()) return;
+        if (asyncFailure != null) {
+            fail(asyncFailure);
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.getWindow().getWidth() != fbW || mc.getWindow().getHeight() != fbH) {
             fail("The window changed size or was minimized: export again with the window as it was.");
@@ -183,21 +190,13 @@ final class VideoExport {
             double[] f = ed.frame(cam, t);
             MapPanels.viewX = f[0];
             MapPanels.viewZ = f[1];
-            MapPanels.scale = MapPanels.zoomTarget = Math.max(1e-4, ow / pxPerGui / f[2]);
+            MapPanels.scale = MapPanels.zoomTarget = RecCamera.clampScale(ow / pxPerGui / f[2]);
         }
 
         // before a clip: let the terrain and images of its area load; while the camera moves: whenever regions are still read
         long now = System.currentTimeMillis();
-        if (start && !settling && settleFrames == 0) {
-            settling = true;
-            settleSince = now;
-        }
-        if (settling) {
-            boolean busy = MapData.loading() || RemoteImages.pending() > 0;
-            settleFrames = busy ? 0 : settleFrames + 1;
-            if (settleFrames < SETTLE_MIN_FRAMES && now - settleSince < SETTLE_MAX_MS) return;
-            settling = false;
-        } else if (MapData.loading()) {
+        if (settle.wait(k, start, MapData.loading() || RemoteImages.pending() > 0, now)) return;
+        if (MapData.loading()) {
             if (loadingSince == 0) loadingSince = now;
             if (now - loadingSince < LOADING_MAX_MS) return;
         }
@@ -218,8 +217,7 @@ final class VideoExport {
         worker = new EncodeWorker(mp4 ? new FfmpegEncoder(ffmpeg) : new PngEncoder());
         worker.start(ow, oh, fps, out);
         k = 0;
-        settleFrames = 0;
-        settling = false;
+        settle = new Settle();
         return true;
     }
 
@@ -244,13 +242,13 @@ final class VideoExport {
                         if (!running() || w != worker) return;
                         int iw = img.getWidth(), ih = img.getHeight();
                         if (iw != fbW || ih != fbH) {
-                            fail("The captured frame is " + iw + "x" + ih + ", not " + fbW + "x" + fbH + ".");
+                            asyncFailure = "The captured frame is " + iw + "x" + ih + ", not " + fbW + "x" + fbH + ".";
                             return;
                         }
                         w.add(new EncodeWorker.Frame(Compat.pixels(img), iw, ih, rx, ry, rw, rh));
                         framesDone++;
                     } catch (RuntimeException e) {
-                        fail("Capture failed: " + e);
+                        asyncFailure = "Capture failed: " + e;
                     } finally {
                         img.close();
                         lastArrival = System.currentTimeMillis();

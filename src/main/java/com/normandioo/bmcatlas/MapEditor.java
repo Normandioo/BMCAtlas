@@ -499,7 +499,7 @@ abstract class MapEditor extends MapPanels {
             double cr = viewed.ratio(ratio), fw = f[2], fh = fw / cr;
             viewX = f[0];
             viewZ = f[1];
-            scale = zoomTarget = Math.max(0.03, Math.min(8, Math.min(width / fw, height / fh)));
+            scale = zoomTarget = RecCamera.clampScale(Math.min(width / fw, height / fh));
         }
         if (r.playing()) followCursor(now);
 
@@ -539,7 +539,7 @@ abstract class MapEditor extends MapPanels {
         cx += 17;
         int sw = font.width("0.25x") + 10;
         box(g, cx, by, sw, 16, COL_PANEL);
-        g.drawString(font, r.speedText(), cx + (sw - font.width(r.speedText())) / 2, by + 4, COL_TEXT, false);
+        g.drawString(font, ReplayEditor.speedText(r.speed()), cx + (sw - font.width(ReplayEditor.speedText(r.speed()))) / 2, by + 4, COL_TEXT, false);
         cx += sw + 1;
         textButtonFixed(g, cx, by, 16, 16, "+", mouseX, mouseY, () -> r.changeSpeed(1));
         cx += 24;

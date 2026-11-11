@@ -209,15 +209,4 @@ final class RecProject {
         for (Clip c : clips) n += frames(c, fps);
         return n;
     }
-
-    /** The moment of the recording (ms since its start) shown at video frame k, or -1 past the end. */
-    long timeAt(long k) {
-        if (k < 0) return -1;
-        for (Clip c : clips) {
-            long n = frames(c, fps);
-            if (k < n) return c.from + Math.round(k * 1000.0 / fps * c.speed);
-            k -= n;
-        }
-        return -1;
-    }
 }

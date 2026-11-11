@@ -135,11 +135,17 @@ final class ReplayEditor {
     }
 
     /** "New camera": framing the view now on screen, from the moment on screen. */
-    RecCamera newCamera(double cx, double cz, double width) {
+    /** The number of the first camera id not used yet ("cam1", "cam2"...). */
+    private int freeCameraNumber() {
         int n = 1;
         java.util.Set<String> ids = new java.util.HashSet<>();
         for (RecCamera c : project.cameras) ids.add(c.id);
         while (ids.contains("cam" + n)) n++;
+        return n;
+    }
+
+    RecCamera newCamera(double cx, double cz, double width) {
+        int n = freeCameraNumber();
         RecCamera c = new RecCamera();
         c.id = "cam" + n;
         c.name = "Camera " + n;
@@ -154,10 +160,7 @@ final class ReplayEditor {
     void duplicateCamera() {
         RecCamera c = camera();
         if (c == null) return;
-        int n = project.cameras.size() + 1;
-        java.util.Set<String> ids = new java.util.HashSet<>();
-        for (RecCamera o : project.cameras) ids.add(o.id);
-        while (ids.contains("cam" + n)) n++;
+        int n = freeCameraNumber();
         RecCamera copy = c.copy("cam" + n, c.name + " copy");
         copy.color = RecCamera.COLORS[(n - 1) % RecCamera.COLORS.length];
         project.cameras.add(copy);

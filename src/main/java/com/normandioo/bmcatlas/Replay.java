@@ -132,11 +132,6 @@ final class Replay {
         return speed;
     }
 
-    /** The speed as shown on the bar: 0.25x, 0.5x, 1x, 60x... */
-    String speedText() {
-        return (speed == Math.rint(speed) ? String.valueOf((long) speed) : String.format(Locale.ROOT, "%s", speed)) + "x";
-    }
-
     boolean playing() {
         return playing;
     }

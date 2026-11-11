@@ -30,14 +30,8 @@ class RecProjectTest {
         assertEquals(300, RecProject.frames(p.clips.get(0), 30));
         assertEquals(300, RecProject.frames(p.clips.get(1), 30));
         assertEquals(600, p.totalFrames());
-        assertEquals(0, p.timeAt(0));
-        assertEquals(1000, p.timeAt(30));                // one second in
-        assertEquals(20_000, p.timeAt(300));             // the second clip starts
-        assertEquals(20_000 + 60_000, p.timeAt(330));    // a second of video at 60x is a minute
-        assertEquals(-1, p.timeAt(600));
         p.fps = 60;
         assertEquals(1200, p.totalFrames());
-        assertEquals(500, p.timeAt(30));
     }
 
     @Test

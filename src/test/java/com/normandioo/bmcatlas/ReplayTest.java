@@ -122,17 +122,17 @@ class ReplayTest {
     @Test
     void speedsGoUpAndDownAndStopAtTheEnds() {
         Replay r = replay(1000, 0);
-        assertEquals("1x", r.speedText());
+        assertEquals("1x", ReplayEditor.speedText(r.speed()));
         r.changeSpeed(-1);
-        assertEquals("0.5x", r.speedText());
+        assertEquals("0.5x", ReplayEditor.speedText(r.speed()));
         r.changeSpeed(-1);
-        assertEquals("0.25x", r.speedText());
+        assertEquals("0.25x", ReplayEditor.speedText(r.speed()));
         r.changeSpeed(-1);
         assertEquals(0.25, r.speed());
         for (int i = 0; i < 20; i++) r.changeSpeed(1);
-        assertEquals("300x", r.speedText());
+        assertEquals("300x", ReplayEditor.speedText(r.speed()));
         r.changeSpeed(-1);
-        assertEquals("60x", r.speedText());
+        assertEquals("60x", ReplayEditor.speedText(r.speed()));
     }
 
     @Test
