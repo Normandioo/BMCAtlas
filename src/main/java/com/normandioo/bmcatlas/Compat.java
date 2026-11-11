@@ -102,4 +102,30 @@ final class Compat {
             net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new SyncPayload(data));
         }
     }
+
+    // ---- video export (plan phase 0: these are what the export will call; nothing calls them yet)
+
+    /** The image the game draws each frame into, interface included: what F2 saves. */
+    static com.mojang.blaze3d.pipeline.RenderTarget mainTarget(Minecraft mc) {
+        return mc.getMainRenderTarget();
+    }
+
+    /** Reads the frame in the main target, asynchronously (the GPU copies it). The consumer owns the image and must close it. */
+    static void grabFrame(Minecraft mc, java.util.function.Consumer<com.mojang.blaze3d.platform.NativeImage> done) {
+        net.minecraft.client.Screenshot.takeScreenshot(mainTarget(mc), done);
+    }
+
+    /**
+     * Runs the task at the start of the next frame: the game runs its queued tasks before it clears the main target and draws
+     * again, so the frame drawn now (with its interface) is complete in the target. schedule() always queues; execute() would
+     * run it at once when called from the game thread.
+     */
+    static void afterFrame(Minecraft mc, Runnable task) {
+        mc.schedule(task);
+    }
+
+    /** All the pixels in one array, as stored (ABGR), row by row. */
+    static int[] pixels(com.mojang.blaze3d.platform.NativeImage image) {
+        return image.getPixelsABGR();
+    }
 }

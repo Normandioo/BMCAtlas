@@ -164,4 +164,45 @@ final class Compat {
             net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new SyncPayload(data));
         }
     }
+
+    // ---- video export (plan phase 0: these are what the export will call; nothing calls them yet)
+
+    private static Method mainTargetMc, mainTargetGame;
+    private static boolean mainTargetLooked;
+
+    /**
+     * The image the game draws each frame into, interface included: what F2 saves. 26.1 keeps it in Minecraft
+     * (getMainRenderTarget); 26.2 and 26.3 moved it to GameRenderer (mainRenderTarget), which is also what their F2 reads.
+     */
+    static com.mojang.blaze3d.pipeline.RenderTarget mainTarget(Minecraft mc) {
+        if (!mainTargetLooked) {
+            mainTargetLooked = true;
+            try { mainTargetMc = Minecraft.class.getMethod("getMainRenderTarget"); } catch (Throwable ignored) {}
+            if (mainTargetMc == null) try { mainTargetGame = mc.gameRenderer.getClass().getMethod("mainRenderTarget"); } catch (Throwable ignored) {}
+        }
+        try {
+            if (mainTargetMc != null) return (com.mojang.blaze3d.pipeline.RenderTarget) mainTargetMc.invoke(mc);
+            if (mainTargetGame != null) return (com.mojang.blaze3d.pipeline.RenderTarget) mainTargetGame.invoke(mc.gameRenderer);
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    /** Reads the frame in the main target, asynchronously (the GPU copies it). The consumer owns the image and must close it. */
+    static void grabFrame(Minecraft mc, java.util.function.Consumer<com.mojang.blaze3d.platform.NativeImage> done) {
+        com.mojang.blaze3d.pipeline.RenderTarget target = mainTarget(mc);
+        if (target != null) net.minecraft.client.Screenshot.takeScreenshot(target, done);
+    }
+
+    /**
+     * Runs the task at the start of the next frame: the game runs its queued tasks before it draws again, so the frame drawn
+     * now (with its interface) is complete in the target. schedule() always queues; execute() would run it at once.
+     */
+    static void afterFrame(Minecraft mc, Runnable task) {
+        mc.schedule(task);
+    }
+
+    /** All the pixels in one array, as stored (ABGR), row by row. */
+    static int[] pixels(com.mojang.blaze3d.platform.NativeImage image) {
+        return image.getPixelsABGR();
+    }
 }
