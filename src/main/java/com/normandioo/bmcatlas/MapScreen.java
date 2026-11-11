@@ -1239,12 +1239,12 @@ public class MapScreen extends MapPanels {
         boolean rec = Prefs.get().recordWar, replay = WarRecorder.replaying();
         Replay r = WarRecorder.current();
         String info = replay && r != null
-                ? "Replay  " + dateText(WarRecorder.time()) + (r.away(r.time()) ? "  (not recorded: you were away)" : "")
+                ? "Replay  " + dateText(WarRecorder.time())
                 : n >= 1 ? n + (n == 1 ? " moment recorded" : " moments recorded") : rec ? "Recording: changes will show up here" : "Record this war to play it back later";
-        String speed = r == null ? "1x" : r.speed() + "x";
+        String speed = r == null ? "1x" : r.speedText();
         int recW = font.width(rec ? "Recording: on" : "Recording: off") + 12;
-        int speedW = font.width("300x") + 12;
-        int bwn = n >= 1 ? 30 * 3 + 44 + (replay ? speedW + 2 + 40 : 0) + 10 : 0;
+        int speedW = font.width("0.25x") + 10;
+        int bwn = n >= 1 ? 30 * 3 + 44 + (replay ? 18 + speedW + 18 + 2 + 40 : 0) + 10 : 0;
         int wBar = Math.max(recW + bwn + font.width(info) + 26, replay ? 320 : 0);
         int barH = replay ? 34 : 22;
         int x = Math.max(4, (width - wBar) / 2), y = height - 58 - (barH - 22);
@@ -1279,29 +1279,30 @@ public class MapScreen extends MapPanels {
                 else WarRecorder.show(w, n - 1);
             });
             cx += 30;
-            if (replay) {
-                textButtonFixed(g, cx, y + 3, speedW, 16, speed, mouseX, mouseY, WarRecorder::nextSpeed);
-                cx += speedW + 2;
+            if (replay) {   // speed: - slower, + faster
+                textButtonFixed(g, cx, y + 3, 16, 16, "-", mouseX, mouseY, () -> WarRecorder.changeSpeed(-1));
+                cx += 17;
+                box(g, cx, y + 3, speedW, 16, COL_PANEL);
+                g.drawString(font, speed, cx + (speedW - font.width(speed)) / 2, y + 7, COL_TEXT, false);
+                cx += speedW + 1;
+                textButtonFixed(g, cx, y + 3, 16, 16, "+", mouseX, mouseY, () -> WarRecorder.changeSpeed(1));
+                cx += 18;
                 textButtonFixed(g, cx, y + 3, 38, 16, "Live", mouseX, mouseY, WarRecorder::stop);
                 cx += 40;
             }
         }
         g.drawString(font, info, cx + 6, y + 7, replay ? 0xFFF0B429 : COL_DIM, false);
-        if (replay && r != null && r.length() > 0) {   // timeline: click or drag to go to any moment
+        if (replay && r != null && r.to() > r.from()) {   // timeline of the most recent session: click or drag to go to any moment
             int tx = x + 6, tw = wBar - 12, ty = y + 24;
             timelineX = tx;
             timelineW = tw;
-            g.fill(tx, ty, tx + tw, ty + 6, 0xFF2A2E31);
-            long len = r.length();
-            for (long[] iv : r.meta.intervals) {   // the stretches recorded; the gaps were not seen
-                int a = tx + (int) (tw * Math.max(0, iv[0] - r.meta.start) / (double) len);
-                int b = tx + (int) Math.ceil(tw * Math.min(len, iv[1] - r.meta.start) / (double) len);
-                if (b > a) g.fill(a, ty, b, ty + 6, 0xFF4A5056);
-            }
-            int px = tx + (int) (tw * r.time() / (double) len);
+            g.fill(tx, ty, tx + tw, ty + 6, 0xFF4A5056);
+            long from = r.from(), span = r.to() - from;
+            int px = tx + (int) (tw * (r.time() - from) / (double) span);
             g.fill(tx, ty + 2, px, ty + 4, 0xFFF0B429);
             for (RecFormat.Frame f : r.frames) {   // where who holds the cities changed
-                int fx = tx + (int) (tw * f.t / (double) len);
+                if (f.t <= from || f.t > r.to()) continue;
+                int fx = tx + (int) (tw * (f.t - from) / (double) span);
                 g.fill(fx, ty - 1, fx + 1, ty + 7, 0xFFCFD3D1);
             }
             g.fill(px - 1, ty - 2, px + 2, ty + 8, 0xFFFFF2B0);

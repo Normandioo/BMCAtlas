@@ -46,7 +46,7 @@ class MapClockTest {
         meta.start = 0;
         meta.end = 10_000_000;
         meta.periodMs = 2000;
-        for (int speed : Replay.SPEEDS) {
+        for (double speed : Replay.SPEEDS) {
             Replay r = new Replay(null, meta, List.of(), Map.of(), List.of());
             r.setSpeed(speed);
             long anim = 5000;
@@ -55,7 +55,7 @@ class MapClockTest {
                 anim += 1000 / 30;
                 r.advance(anim);
             }
-            assertEquals(990L * speed, r.time());   // 30 x 33 ms of animation, times the speed
+            assertEquals((long) (990 * speed), r.time());   // 30 x 33 ms of animation, times the speed
         }
     }
 }

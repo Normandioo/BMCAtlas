@@ -1,8 +1,8 @@
 ## 1.4.0
 
 - Replay of a war recording: the players move on the map, with the faces they had when it was recorded, and the cities change hands with the capture wave
-- The bar on the war map has a timeline: click or drag it to go to any moment. The parts where you were away are shown darker, and the marks are where cities changed hands
-- Playback speed 1x, 10x, 60x or 300x; "<" and ">" jump to the previous and next change of cities
+- The bar on the war map has a timeline of the most recent session of the recording: click or drag it to go to any moment; the marks are where cities changed hands
+- Playback speed from 0.25x to 300x with the - and + buttons; "<" and ">" jump to the previous and next change of cities
 - The map can be moved and zoomed anywhere while a recording plays
 - While a recording is on screen nothing is recorded and dynmap is not asked
 

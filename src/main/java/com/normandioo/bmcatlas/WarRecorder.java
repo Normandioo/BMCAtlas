@@ -586,7 +586,8 @@ final class WarRecorder {
     static void show(SiteTerritories.WarInfo war, int i) {
         if (!open(war)) return;
         replay.pause();
-        if (!replay.frames.isEmpty()) seek(replay.frames.get(Math.max(0, Math.min(replay.frames.size() - 1, i))).t);
+        if (i <= 0) seek(replay.from());   // the start of the session played back
+        else if (!replay.frames.isEmpty()) seek(replay.frames.get(Math.min(replay.frames.size() - 1, i)).t);
     }
 
     /** Goes to a moment of the recording (ms since its start). A jump: no capture waves for it. */
@@ -601,12 +602,12 @@ final class WarRecorder {
     /** Goes to a fraction (0-1) of the recording of this war. */
     static void seekFraction(SiteTerritories.WarInfo war, double f) {
         if (!open(war)) return;
-        seek(Math.round(replay.length() * Math.max(0, Math.min(1, f))));
+        seek(replay.from() + Math.round((replay.to() - replay.from()) * Math.max(0, Math.min(1, f))));
     }
 
     static void play(SiteTerritories.WarInfo war) {
         if (!open(war)) return;
-        if (replay.time() >= replay.length()) seek(0);
+        if (replay.time() >= replay.to()) seek(replay.from());
         replay.play(MapClock.anim());
     }
 
@@ -614,8 +615,9 @@ final class WarRecorder {
         if (replay != null) replay.pause();
     }
 
-    static void nextSpeed() {
-        if (replay != null) replay.nextSpeed();
+    /** One playback speed faster (steps > 0) or slower (steps < 0). */
+    static void changeSpeed(int steps) {
+        if (replay != null) replay.changeSpeed(steps);
     }
 
     static void nextChange() {
