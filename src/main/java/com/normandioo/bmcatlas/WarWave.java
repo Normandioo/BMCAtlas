@@ -77,20 +77,14 @@ final class WarWave {
     }
 
     /**
-     * Whether a cell at distance dist (blocks) has flipped to the new colour when the front is at front. Each cell flips at once,
-     * somewhere in the band behind the front (a fixed draw per cell), so the front is ragged and eats its way in, cell by cell.
+     * How much of the old colour covers a cell at distance dist (blocks) when the front is at front: 1 not reached yet, 0 passed,
+     * eased in between across the band behind the front.
      */
-    static boolean taken(int prov, int at, double dist, double front, double band) {
-        return front > dist + jitter(prov, at) * band;
-    }
-
-    /** A fixed number in [0, 1) for each cell of each province (the same every frame). */
-    static double jitter(int prov, int at) {
-        int h = at * 0x9E3779B1 + prov * 0x85EBCA6B;
-        h ^= h >>> 15;
-        h *= 0x2C1B3C6D;
-        h ^= h >>> 12;
-        return (h & 0xFFFF) / 65536.0;
+    static double oldShare(double dist, double front, double band) {
+        double x = (dist - (front - band)) / Math.max(1e-6, band);
+        if (x <= 0) return 0;
+        if (x >= 1) return 1;
+        return x * x * (3 - 2 * x);
     }
 
     /** The edge's width for a province this deep (blocks). */
