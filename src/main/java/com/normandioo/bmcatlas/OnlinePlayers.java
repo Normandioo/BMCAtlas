@@ -99,6 +99,7 @@ final class OnlinePlayers {
             ENTRIES.clear();
             return;
         }
+        if (WarRecorder.replaying()) return;   // a recording is on screen: dynmap is not asked
         long now = System.currentTimeMillis();
         Result res = INBOX.getAndSet(null);
         if (res != null) {
@@ -138,8 +139,29 @@ final class OnlinePlayers {
         }
     }
 
-    /** Jogadores atuais (já suavizados), na ordem de leitura. */
+    private static Replay replayOf;
+    private static long replayAt = Long.MIN_VALUE;
+    private static List<Entry> replayEntries = List.of();
+
+    /** Jogadores atuais (já suavizados), na ordem de leitura. During a replay: the recorded players at the moment on screen. */
     static List<Entry> list() {
+        Replay r = WarRecorder.current();
+        if (r != null) {
+            if (r != replayOf || r.time() != replayAt) {
+                replayOf = r;
+                replayAt = r.time();
+                List<Entry> out = new ArrayList<>();
+                for (Replay.Shown s : r.shown()) {
+                    Entry e = new Entry(s.account());
+                    e.name = s.name();
+                    e.shownX = e.toX = s.x();
+                    e.shownZ = e.toZ = s.z();
+                    out.add(e);
+                }
+                replayEntries = out;
+            }
+            return new ArrayList<>(replayEntries);
+        }
         return new ArrayList<>(ENTRIES.values());
     }
 

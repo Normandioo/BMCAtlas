@@ -499,9 +499,11 @@ public class MapScreen extends MapPanels {
         // onda de conquista: só entre duas leituras da mesma guerra no mesmo mapa (nada anima ao entrar)
         MapCatalog.Entry waveMap = SiteTerritories.activeMap();
         String waveKey = mode == MODE_WAR ? warSel + "|" + (waveMap == null ? "" : waveMap.key) : null;
+        boolean waveOk = WarRecorder.waveAllowed();   // no wave after a jump in a replay, going back in time, or back to live
         if (waveKey == null || !waveKey.equals(lastWaveKey)) WarWave.clear();
+        else if (!waveOk) WarWave.clear();
         else if (!same && MapStyle.provinceOverride != null && MapStyle.countryOverride != null) {
-            WarWave.changes(d, MapStyle.provinceOverride, MapStyle.countryOverride, r.provinces(), r.country(), System.currentTimeMillis());
+            WarWave.changes(d, MapStyle.provinceOverride, MapStyle.countryOverride, r.provinces(), r.country(), MapClock.anim());
         }
         lastWaveKey = waveKey;
         MapStyle.countryOverride = r.country();
@@ -1016,7 +1018,7 @@ public class MapScreen extends MapPanels {
         long now = System.currentTimeMillis();
         Spot hover = blockedAt(prevHits, mouseX, mouseY) ? null : playerAt(mouseX, mouseY);
         for (OnlinePlayers.Entry e : OnlinePlayers.list()) {
-            if (e.account.equalsIgnoreCase(self)) continue;
+            if (!WarRecorder.replaying() && e.account.equalsIgnoreCase(self)) continue;   // in a replay you are one of the recorded players
             int sx = (int) Math.round(sx(e.x(now), e.z(now)));
             int sy = (int) Math.round(sy(e.x(now), e.z(now)));
             if (sx < -40 || sx > width + 40 || sy < -40 || sy > height + 40) continue;
@@ -1036,7 +1038,9 @@ public class MapScreen extends MapPanels {
             // cabeça 16x16 com moldura na cor do país
             g.fill(0 - 10, 0 - 10, 0 + 10, 0 + 10, 0xFF05080C);
             g.fill(0 - 9, 0 - 9, 0 + 9, 0 + 9, hot ? 0xFFFFE27A : rgb);
-            RemoteImages.Img face = dyn == null ? null : RemoteImages.icon(dyn + "tiles/faces/32x32/" + e.account + ".png", 16);
+            Replay rp = WarRecorder.current();   // in a replay: the face kept with the recording, else today's
+            RemoteImages.Img face = rp != null ? RemoteImages.localIcon(rp.face(e.account), 16) : null;
+            if (face == null) face = dyn == null ? null : RemoteImages.icon(dyn + "tiles/faces/32x32/" + e.account + ".png", 16);
             boolean drawn = false;
             if (face != null) {
                 g.blit(RenderPipelines.GUI_TEXTURED, face.id(), 0 - 8, 0 - 8, 0f, 0f, 16, 16, face.w(), face.h(), face.w(), face.h());
@@ -1213,30 +1217,46 @@ public class MapScreen extends MapPanels {
 
     // ------------------------------------------------------------ war recording
 
+    /** The timeline under the recorder bar while a replay is on screen (where a drag seeks), or 0 wide. */
+    private int timelineX, timelineW;
+    private boolean timelineDrag;
+    private SiteTerritories.WarInfo timelineWar;
+
+    private void seekTimeline(double mx) {
+        if (timelineW <= 0 || timelineWar == null) return;
+        WarRecorder.seekFraction(timelineWar, (mx - timelineX) / timelineW);
+    }
+
     /** Bar at the bottom of the war map: record the war over time and play the recording back. */
     private void drawRecorder(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
         SiteTerritories.WarInfo w = mode == MODE_WAR && siteMode() && d != null ? viewedWar(d) : null;
         WarRecorder.tick(w);
+        timelineW = 0;
+        timelineWar = w;
         if (w == null) return;
         int n = WarRecorder.count(w);
         boolean rec = Prefs.get().recordWar, replay = WarRecorder.replaying();
-        int at = WarRecorder.index();
-        String info = replay ? "Replay " + (at + 1) + "/" + n + "   " + dateText(WarRecorder.time())
-                : n >= 2 ? n + " moments recorded" : rec ? "Recording: changes will show up here" : "Record this war to play it back later";
+        Replay r = WarRecorder.current();
+        String info = replay && r != null
+                ? "Replay  " + dateText(WarRecorder.time()) + (r.away(r.time()) ? "  (not recorded: you were away)" : "")
+                : n >= 1 ? n + (n == 1 ? " moment recorded" : " moments recorded") : rec ? "Recording: changes will show up here" : "Record this war to play it back later";
+        String speed = r == null ? "1x" : r.speed() + "x";
         int recW = font.width(rec ? "Recording: on" : "Recording: off") + 12;
-        int bwn = n >= 2 ? 30 * 3 + 44 + (replay ? 40 : 0) + 10 : 0;
-        int wBar = recW + bwn + font.width(info) + 26;
-        int x = Math.max(4, (width - wBar) / 2), y = height - 58;
-        box(g, x, y, wBar, 22, COL_PANEL);
-        hits.add(new Hit(x, y, wBar, 22, null, null));
+        int speedW = font.width("300x") + 12;
+        int bwn = n >= 1 ? 30 * 3 + 44 + (replay ? speedW + 2 + 40 : 0) + 10 : 0;
+        int wBar = Math.max(recW + bwn + font.width(info) + 26, replay ? 320 : 0);
+        int barH = replay ? 34 : 22;
+        int x = Math.max(4, (width - wBar) / 2), y = height - 58 - (barH - 22);
+        box(g, x, y, wBar, barH, COL_PANEL);
+        hits.add(new Hit(x, y, wBar, barH, null, null));
         int cx = x + 4;
         textButtonFixed(g, cx, y + 3, recW, 16, rec ? "Recording: on" : "Recording: off", mouseX, mouseY, () -> {
             Prefs.get().recordWar = !Prefs.get().recordWar;
             Prefs.save();
         });
         cx += recW + 4;
-        if (n >= 2) {
+        if (n >= 1) {
             textButtonFixed(g, cx, y + 3, 28, 16, "<<", mouseX, mouseY, () -> {
                 WarRecorder.pause();
                 WarRecorder.show(w, 0);
@@ -1244,7 +1264,8 @@ public class MapScreen extends MapPanels {
             cx += 30;
             textButtonFixed(g, cx, y + 3, 28, 16, " <", mouseX, mouseY, () -> {
                 WarRecorder.pause();
-                WarRecorder.show(w, (WarRecorder.replaying() ? WarRecorder.index() : n) - 1);
+                if (WarRecorder.replaying()) WarRecorder.previousChange();
+                else WarRecorder.show(w, n - 1);
             });
             cx += 30;
             textButtonFixed(g, cx, y + 3, 42, 16, WarRecorder.playing() ? "Pause" : "Play", mouseX, mouseY, () -> {
@@ -1254,15 +1275,41 @@ public class MapScreen extends MapPanels {
             cx += 44;
             textButtonFixed(g, cx, y + 3, 28, 16, " >", mouseX, mouseY, () -> {
                 WarRecorder.pause();
-                WarRecorder.show(w, (WarRecorder.replaying() ? WarRecorder.index() : n - 2) + 1);
+                if (WarRecorder.replaying()) WarRecorder.nextChange();
+                else WarRecorder.show(w, n - 1);
             });
             cx += 30;
             if (replay) {
+                textButtonFixed(g, cx, y + 3, speedW, 16, speed, mouseX, mouseY, WarRecorder::nextSpeed);
+                cx += speedW + 2;
                 textButtonFixed(g, cx, y + 3, 38, 16, "Live", mouseX, mouseY, WarRecorder::stop);
                 cx += 40;
             }
         }
         g.drawString(font, info, cx + 6, y + 7, replay ? 0xFFF0B429 : COL_DIM, false);
+        if (replay && r != null && r.length() > 0) {   // timeline: click or drag to go to any moment
+            int tx = x + 6, tw = wBar - 12, ty = y + 24;
+            timelineX = tx;
+            timelineW = tw;
+            g.fill(tx, ty, tx + tw, ty + 6, 0xFF2A2E31);
+            long len = r.length();
+            for (long[] iv : r.meta.intervals) {   // the stretches recorded; the gaps were not seen
+                int a = tx + (int) (tw * Math.max(0, iv[0] - r.meta.start) / (double) len);
+                int b = tx + (int) Math.ceil(tw * Math.min(len, iv[1] - r.meta.start) / (double) len);
+                if (b > a) g.fill(a, ty, b, ty + 6, 0xFF4A5056);
+            }
+            int px = tx + (int) (tw * r.time() / (double) len);
+            g.fill(tx, ty + 2, px, ty + 4, 0xFFF0B429);
+            for (RecFormat.Frame f : r.frames) {   // where who holds the cities changed
+                int fx = tx + (int) (tw * f.t / (double) len);
+                g.fill(fx, ty - 1, fx + 1, ty + 7, 0xFFCFD3D1);
+            }
+            g.fill(px - 1, ty - 2, px + 2, ty + 8, 0xFFFFF2B0);
+            hits.add(new Hit(tx, ty - 3, tw, 12, () -> {
+                timelineDrag = true;
+                seekTimeline(hoverMX);
+            }, null));
+        }
     }
 
     private void drawHover(GuiGraphics g, int mouseX, int mouseY) {
@@ -2272,7 +2319,7 @@ public class MapScreen extends MapPanels {
 
     /** Onda de conquista: cobre com a cor antiga o que ela ainda não alcançou e pinta a frente em vermelho claro. */
     private void drawWaves(GuiGraphics g) {
-        long now = System.currentTimeMillis();
+        long now = MapClock.anim();
         for (WarWave.Wave w : WarWave.active(now)) {
             int front = (int) (w.maxDist * (now - w.start) / (double) WarWave.DURATION);
             int band = Math.max(1, w.maxDist / 40);
@@ -2314,7 +2361,7 @@ public class MapScreen extends MapPanels {
         }
         boolean arrows = scale >= ARROW_SCALE;
         float thick = arrows ? (float) Math.max(7, Math.min(9, 3 * scale)) : 2f;
-        long now = System.currentTimeMillis();
+        long now = MapClock.anim();
         for (WarFront.Hot h : f.hotLines()) {
             double x0 = sx(h.a().x + 0.5, h.a().z + 0.5), y0 = sy(h.a().x + 0.5, h.a().z + 0.5), x1 = sx(h.b().x + 0.5, h.b().z + 0.5), y1 = sy(h.b().x + 0.5, h.b().z + 0.5);
             double len = Math.hypot(x1 - x0, y1 - y0);
@@ -2412,6 +2459,10 @@ public class MapScreen extends MapPanels {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (timelineDrag) {
+            seekTimeline(event.x() / ui);
+            return true;
+        }
         if (gDrag >= 0) {
             double f = Math.hypot((event.x() / ui) - gDragAX, (event.y() / ui) - gDragAY) / gDragDist;
             setGroupPct(gDrag, (int) (Math.round(gDragFrom * f * 20) * 5));
@@ -2433,6 +2484,10 @@ public class MapScreen extends MapPanels {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (timelineDrag) {
+            timelineDrag = false;
+            return true;
+        }
         if (gDrag >= 0) {
             gDrag = -1;
             Prefs.save();

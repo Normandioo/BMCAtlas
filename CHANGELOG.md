@@ -1,3 +1,11 @@
+## 1.4.0
+
+- Replay of a war recording: the players move on the map, with the faces they had when it was recorded, and the cities change hands with the capture wave
+- The bar on the war map has a timeline: click or drag it to go to any moment. The parts where you were away are shown darker, and the marks are where cities changed hands
+- Playback speed 1x, 10x, 60x or 300x; "<" and ">" jump to the previous and next change of cities
+- The map can be moved and zoomed anywhere while a recording plays
+- While a recording is on screen nothing is recorded and dynmap is not asked
+
 ## 1.3.0
 
 - War recordings get a new format: one folder per war in `bmcatlas/recordings/` (inside the game folder), with who held each city, where every player on the map was (dynmap's readings plus the exact positions of the players near you), their faces and the site data in use. This is the base of the video replay coming next

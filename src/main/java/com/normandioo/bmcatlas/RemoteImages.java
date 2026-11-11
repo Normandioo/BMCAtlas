@@ -93,6 +93,30 @@ final class RemoteImages {
         return get(url, key, image -> shrinkSoft(key, image, size));
     }
 
+    /** A small icon from a file on this computer (a face kept with a war recording), size x size; null while it loads. */
+    static Img localIcon(Path file, int size) {
+        if (file == null) return null;
+        String key = "file:" + file + "@" + size;
+        Object o = CACHE.get(key);
+        if (o instanceof Entry e) {
+            e.used = System.currentTimeMillis();
+            return e.img;
+        }
+        if (o != null || CACHE.putIfAbsent(key, PENDING) != null) return null;
+        try {
+            WORK.execute(() -> {
+                try {
+                    decode(key, Files.readAllBytes(file), image -> shrinkSoft(key, image, size));
+                } catch (Exception ex) {
+                    CACHE.put(key, new Failed(Long.MAX_VALUE, 1));
+                }
+            });
+        } catch (RuntimeException ex) {
+            CACHE.put(key, new Failed(Long.MAX_VALUE, 1));
+        }
+        return null;
+    }
+
     /** Verdadeiro se o download desse ícone falhou (não existe / sem rede). */
     static boolean failed(String url, int size) {
         return CACHE.get(url + "@" + size) instanceof Failed;

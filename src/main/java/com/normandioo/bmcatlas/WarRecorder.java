@@ -206,7 +206,7 @@ final class WarRecorder {
 
     /** Called often (every frame of the map or minimap, and every tick while recording) for the followed war. */
     static void observe(SiteTerritories.Data d, SiteTerritories.WarInfo war) {
-        if (replay >= 0) return;
+        if (replay != null) return;
         if (war == null || !wanted(war)) {
             stopRecording();
             return;
@@ -357,7 +357,7 @@ final class WarRecorder {
     /** What OnlinePlayers read (dynmap, or the players near you when dynmap does not answer): everyone on the map right now. */
     static void dynmapPlayers(List<Seen> seen, long now) {
         Session s = session;
-        if (s == null || replay >= 0) return;
+        if (s == null || replay != null) return;
         List<RecTrack.Sample> samples = new ArrayList<>();
         Set<Integer> present = new HashSet<>();
         for (Seen p : seen) {
@@ -379,7 +379,7 @@ final class WarRecorder {
             stopRecording();
             return;
         }
-        if (replay >= 0) return;   // nothing is recorded while a recording is played back
+        if (replay != null) return;   // nothing is recorded while a recording is played back
         long now = System.currentTimeMillis();
         if (++ticks % NEARBY_EVERY_TICKS == 0) {
             List<RecTrack.Sample> samples = new ArrayList<>();
@@ -504,13 +504,15 @@ final class WarRecorder {
 
     private static String loadedKey;
     private static List<RecFormat.Frame> loaded = new ArrayList<>();
-    private static int replay = -1;
+    /** The recording being played back, or null when the map is live. */
+    private static Replay replay;
     private static String replayKey;
-    private static boolean playing;
-    private static long stepAt;
+    /** Set when the moment on screen jumped (seek, back in time, back to live): the next colour change has no capture wave. */
+    private static boolean jumped;
+    private static int lastWaveIndex = -1;
     private static final Map<RecFormat.Frame, List<SiteTerritories.Captured>> LISTS = new java.util.IdentityHashMap<>();
 
-    /** The frames of this war: the recording being written, else its newest folder. */
+    /** The frames of this war, to count them: the recording being written, else its newest folder. */
     private static List<RecFormat.Frame> frames(SiteTerritories.WarInfo war) {
         String key = keyOf(war);
         Session s = session;
@@ -518,103 +520,150 @@ final class WarRecorder {
         if (!key.equals(loadedKey)) {
             loadedKey = key;
             importOldOnce();
-            MapCatalog.Entry map = SiteTerritories.activeMap();
-            Path dir = RecFormat.latest(recordingsDir(), map == null ? "default" : map.key, war.id != null ? war.id : war.name);
+            Path dir = latestDir(war);
             loaded = dir == null ? new ArrayList<>() : RecFormat.readCities(dir.resolve("cities.jsonl"));
-            LISTS.clear();
         }
         return loaded;
     }
 
-    /** How many moments this war has recorded. */
+    private static Path latestDir(SiteTerritories.WarInfo war) {
+        MapCatalog.Entry map = SiteTerritories.activeMap();
+        return RecFormat.latest(recordingsDir(), map == null ? "default" : map.key, war.id != null ? war.id : war.name);
+    }
+
+    /** Opens the newest recording of this war for playback (the one being written is saved first). */
+    private static boolean open(SiteTerritories.WarInfo war) {
+        String key = keyOf(war);
+        if (replay != null && key.equals(replayKey)) return true;
+        Session s = session;
+        Path dir;
+        if (s != null && s.key.equals(key)) {
+            s.flush(true);
+            dir = s.dir;
+        } else {
+            importOldOnce();
+            dir = latestDir(war);
+        }
+        Replay r = dir == null ? null : Replay.open(dir);
+        if (r == null || r.length() <= 0 && r.frames.isEmpty()) return false;
+        replay = r;
+        replayKey = key;
+        LISTS.clear();
+        jumped = true;
+        MapClock.showData(r.absTime());
+        return true;
+    }
+
+    /** How many moments (changes of who holds the cities) this war has recorded. */
     static int count(SiteTerritories.WarInfo war) {
         return war == null ? 0 : frames(war).size();
     }
 
     static boolean replaying() {
-        return replay >= 0;
+        return replay != null;
     }
 
     static boolean playing() {
-        return playing;
+        return replay != null && replay.playing();
     }
 
-    /** Moment on screen (0-based), or -1 when live. */
-    static int index() {
+    /** The recording on screen, or null when live. */
+    static Replay current() {
         return replay;
     }
 
-    /** When the moment on screen happened (ms since 1970), or 0. */
+    /** The cities frame on screen (0-based), or -1 when live. */
+    static int index() {
+        return replay == null ? -1 : replay.frameIndex();
+    }
+
+    /** The moment on screen (ms since 1970), or 0 when live. */
     static long time() {
-        if (replay < 0 || replayKey == null) return 0;
-        List<RecFormat.Frame> f = framesFor(replayKey);
-        if (replay >= f.size()) return 0;
-        long start = session != null && session.key.equals(replayKey) ? session.meta.start : loadedStart();
-        return start + f.get(replay).t;
+        return replay == null ? 0 : replay.absTime();
     }
 
-    private static long loadedStart() {
-        MapCatalog.Entry map = SiteTerritories.activeMap();
-        String[] parts = loadedKey == null ? new String[0] : loadedKey.split("\\|", 2);
-        if (parts.length < 2) return 0;
-        Path dir = RecFormat.latest(recordingsDir(), map == null ? "default" : map.key, parts[1]);
-        RecFormat.Meta m = dir == null ? null : RecFormat.readMeta(dir);
-        return m == null ? 0 : m.start;
+    /** Shows the moment the cities frame i started (paused). */
+    static void show(SiteTerritories.WarInfo war, int i) {
+        if (!open(war)) return;
+        replay.pause();
+        if (!replay.frames.isEmpty()) seek(replay.frames.get(Math.max(0, Math.min(replay.frames.size() - 1, i))).t);
     }
 
-    private static List<RecFormat.Frame> framesFor(String key) {
-        Session s = session;
-        if (s != null && s.key.equals(key)) return s.frames;
-        return key.equals(loadedKey) ? loaded : List.of();
+    /** Goes to a moment of the recording (ms since its start). A jump: no capture waves for it. */
+    static void seek(long t) {
+        if (replay == null) return;
+        int before = replay.frameIndex();
+        replay.seek(t);
+        if (replay.frameIndex() != before) jumped = true;
+        MapClock.showData(replay.absTime());
     }
 
-    static void show(SiteTerritories.WarInfo war, int index) {
-        List<RecFormat.Frame> f = frames(war);
-        if (f.isEmpty()) return;
-        replay = Math.max(0, Math.min(f.size() - 1, index));
-        replayKey = keyOf(war);
+    /** Goes to a fraction (0-1) of the recording of this war. */
+    static void seekFraction(SiteTerritories.WarInfo war, double f) {
+        if (!open(war)) return;
+        seek(Math.round(replay.length() * Math.max(0, Math.min(1, f))));
     }
 
     static void play(SiteTerritories.WarInfo war) {
-        List<RecFormat.Frame> f = frames(war);
-        if (f.size() < 2) return;
-        if (replay < 0 || replay >= f.size() - 1) show(war, 0);
-        playing = true;
-        stepAt = System.currentTimeMillis();
+        if (!open(war)) return;
+        if (replay.time() >= replay.length()) seek(0);
+        replay.play(MapClock.anim());
     }
 
     static void pause() {
-        playing = false;
+        if (replay != null) replay.pause();
+    }
+
+    static void nextSpeed() {
+        if (replay != null) replay.nextSpeed();
+    }
+
+    static void nextChange() {
+        if (replay != null) seek(replay.nextChange());
+    }
+
+    static void previousChange() {
+        if (replay != null) seek(replay.previousChange());
     }
 
     /** Back to the live map. */
     static void stop() {
-        replay = -1;
-        playing = false;
+        if (replay != null) jumped = true;
+        replay = null;
         replayKey = null;
+        LISTS.clear();
+        MapClock.live();
     }
 
     /** Called every frame of the map: moves the playback forward. */
     static void tick(SiteTerritories.WarInfo war) {
-        if (replay < 0) return;
+        if (replay == null) return;
         if (war == null || !keyOf(war).equals(replayKey)) {   // another war on screen
             stop();
             return;
         }
-        if (!playing) return;
-        long now = System.currentTimeMillis();
-        if (now - stepAt < 800) return;
-        stepAt = now;
-        if (replay >= framesFor(replayKey).size() - 1) playing = false;
-        else replay++;
+        replay.advance(MapClock.anim());
+        MapClock.showData(replay.absTime());
+    }
+
+    /**
+     * Whether a change of colours on the map now may show a capture wave: not right after a jump, not when going back in time,
+     * not when coming back to live. Called by MapScreen when the colours change.
+     */
+    static boolean waveAllowed() {
+        int i = index();
+        boolean ok = !jumped && (replay == null || i >= lastWaveIndex);
+        jumped = false;
+        lastWaveIndex = i;
+        return ok;
     }
 
     /** The recorded cities of the moment on screen, or null when this war is being shown live. */
     static List<SiteTerritories.Captured> replayList(SiteTerritories.WarInfo war) {
-        if (replay < 0 || war == null || replayKey == null || !replayKey.equals(keyOf(war))) return null;
-        List<RecFormat.Frame> f = framesFor(replayKey);
-        if (replay >= f.size()) return null;
-        RecFormat.Frame frame = f.get(replay);
+        if (replay == null || war == null || !keyOf(war).equals(replayKey)) return null;
+        int i = replay.frameIndex();
+        if (i < 0) return List.of();
+        RecFormat.Frame frame = replay.frames.get(i);
         return LISTS.computeIfAbsent(frame, fr -> {
             List<SiteTerritories.Captured> out = new ArrayList<>();
             for (RecFormat.City r : fr.cities) {
