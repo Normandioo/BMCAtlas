@@ -1,30 +1,65 @@
 package com.normandioo.bmcatlas;
 
-import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 
 /**
- * Onda de conquista no modo guerra: quando uma província muda para a cor de outro lado, a cor nova avança a
- * partir da fronteira de quem conquistou (ou da cidade, se não houver divisa com ele).
- * A textura do mapa já tem a cor certa: a onda só cobre, com a cor antiga, o trecho que ela ainda não alcançou.
+ * The capture wave of the war map: when a province goes to another side's colour, the new colour spreads across it from the
+ * border with the side that took it (or from its city, when they share no border).
+ *
+ * The map's texture already has the new colour; the wave only covers what it has not reached yet with the old one, as a tint of
+ * the same strength the map uses (so the terrain still shows through), fading into the new colour across a soft edge.
+ *
+ * The front moves at the same speed in blocks everywhere. When a province is taken next to one whose wave is still running, its
+ * wave waits for that front to reach their shared border and goes on from there, so a run of captures reads as one movement.
+ * No Minecraft classes here.
  */
 final class WarWave {
     private WarWave() {}
 
-    static final long DURATION = 2800;     // duração da onda (ms)
-    private static final long QUIET = 10_000;      // duas trocas neste intervalo: troca direto, sem onda
-    private static final int MAX = 8;              // ondas ao mesmo tempo
-    private static final int MAX_CELLS = 80;       // resolução máxima da grade, por lado
+    /** How fast the front moves (blocks per ms), unless that makes a wave shorter than MIN_MS or longer than MAX_MS. */
+    static final double SPEED = 0.12;
+    static final long MIN_MS = 1_200, MAX_MS = 6_000;
+    /** The soft edge between the new and the old colour: this share of the province's depth, within these limits (blocks). */
+    static final double BAND_SHARE = 0.25, BAND_MIN = 16, BAND_MAX = 160;
+    private static final long QUIET = 10_000;      // two changes within this: straight swap, no wave
+    private static final int MAX = 12;             // waves at once
+    private static final int MAX_CELLS = 80;       // grid resolution, per side
 
     static final class Wave {
-        int cell, x0, z0, w, h, oldRgb, maxDist;
-        int frontArgb = 0xFFF2907E;     // frente da onda: tom claro da cor de quem conquistou
-        int[] dist;     // distância da origem da onda, -1 fora da província
-        long start;
+        int prov, cell, x0, z0, w, h, oldRgb, newRgb;
+        /** Distance from where the wave starts, in blocks; -1 outside the province. */
+        double[] dist;
+        double maxDist, speed, band;
+        long start, duration;
+        /** The border cells it starts from: {cell index, neighbouring province, a block of that province (x, z)}. */
+        transient List<int[]> origins = new ArrayList<>();
+
+        /** How far the front is at time t (blocks): 0 before the start, maxDist + band at the end. */
+        double front(long t) {
+            return Math.max(0, Math.min(maxDist + band, (t - start) * speed));
+        }
+
+        /** The distance (blocks) of the cell holding block (x, z), or -1 when outside this wave. */
+        double distAt(int x, int z) {
+            int i = Math.floorDiv(x - x0, cell), j = Math.floorDiv(z - z0, cell);
+            if (i < 0 || j < 0 || i >= w || j >= h) return -1;
+            return dist[j * w + i];
+        }
+
+        /** When the front has gone past block (x, z) (fully the new colour there). */
+        long passes(int x, int z) {
+            double d = distAt(x, z);
+            if (d < 0) d = maxDist;
+            return start + (long) Math.ceil((d + band) / speed);
+        }
     }
 
     private static final Map<Integer, Wave> WAVES = new HashMap<>();
@@ -35,9 +70,34 @@ final class WarWave {
         LAST_CHANGE.clear();
     }
 
+    /** The waves to draw at time t (including those waiting for their turn: still all old colour). */
     static Collection<Wave> active(long now) {
-        WAVES.values().removeIf(w -> now - w.start >= DURATION);
+        WAVES.values().removeIf(w -> now - w.start >= w.duration);
         return WAVES.values();
+    }
+
+    /**
+     * How much of the old colour covers a cell at distance dist (blocks) when the front is at front: 1 not reached yet, 0 passed,
+     * eased in between across the band behind the front.
+     */
+    static double oldShare(double dist, double front, double band) {
+        double x = (dist - (front - band)) / Math.max(1e-6, band);
+        if (x <= 0) return 0;
+        if (x >= 1) return 1;
+        return x * x * (3 - 2 * x);
+    }
+
+    /** The edge's width for a province this deep (blocks). */
+    static double band(double maxDist) {
+        return Math.max(BAND_MIN, Math.min(BAND_MAX, maxDist * BAND_SHARE));
+    }
+
+    /** The speed (blocks per ms) of a wave this deep, kept between MIN_MS and MAX_MS long. */
+    static double speed(double depth) {
+        double s = SPEED;
+        if (depth / s > MAX_MS) s = depth / MAX_MS;
+        if (depth / s < MIN_MS) s = depth / MIN_MS;
+        return Math.max(1e-4, s);
     }
 
     private static int colorOf(SiteTerritories.Data d, Map<Integer, Integer> prov, int[] country, int p) {
@@ -45,104 +105,159 @@ final class WarWave {
         return c != null ? c : country[d.provCountry[p]];
     }
 
-    private static boolean isSide(int rgb) {
+    static boolean isSide(int rgb) {
         return rgb != Relations.GREY && rgb != Relations.CONTESTED && rgb != Relations.UNCONTROLLED && rgb != Relations.NEUTRAL;
     }
 
-    /** Compara as cores antes e depois de uma leitura e cria as ondas das províncias que mudaram de lado. */
+    /** Compares the colours before and after a reading and starts the waves of the provinces that changed side. */
     static void changes(SiteTerritories.Data d, Map<Integer, Integer> oldProv, int[] oldCountry,
                         Map<Integer, Integer> newProv, int[] newCountry, long now) {
         if (oldCountry.length != newCountry.length) return;
         Set<Integer> touched = new HashSet<>(oldProv.keySet());
         touched.addAll(newProv.keySet());
+        List<Wave> fresh = new ArrayList<>();
         for (int p : touched) {
             if (p < 0 || p >= d.n) continue;
             int before = colorOf(d, oldProv, oldCountry, p), after = colorOf(d, newProv, newCountry, p);
             if (before == after) continue;
             Long last = LAST_CHANGE.put(p, now);
-            if (last != null && now - last < QUIET) {       // vai e vem: não anima
+            if (last != null && now - last < QUIET) {       // back and forth: no wave
                 WAVES.remove(p);
                 continue;
             }
-            if (!isSide(after) || WAVES.size() >= MAX) continue;
+            if (!isSide(after) || WAVES.size() + fresh.size() >= MAX) continue;
             Wave w = build(d, p, before, after, newProv, newCountry);
-            if (w != null) {
-                w.start = now;
-                WAVES.put(p, w);
-            }
+            if (w != null) fresh.add(w);
+        }
+        for (Wave w : fresh) WAVES.put(w.prov, w);
+        // Taken together with a neighbour (or next to one still moving): each wave starts when the wave before it reaches their
+        // border. Going over them a few times settles chains of any order.
+        for (int round = 0; round < Math.min(4, fresh.size()); round++) {
+            for (Wave w : fresh) resolve(w, now);
         }
     }
 
+    /** Lays out the grid of a province and finds the border cells the wave starts from. Distances come later (resolve). */
     private static Wave build(SiteTerritories.Data d, int p, int oldRgb, int conqueror, Map<Integer, Integer> prov, int[] country) {
         int[] b = d.bounds[p];
         int spanX = b[2] - b[0] + 1, spanZ = b[3] - b[1] + 1;
         Wave w = new Wave();
+        w.prov = p;
         w.cell = Math.max(1, (int) Math.ceil(Math.max(spanX, spanZ) / (double) MAX_CELLS));
         w.x0 = b[0];
         w.z0 = b[1];
         w.w = (int) Math.ceil(spanX / (double) w.cell);
         w.h = (int) Math.ceil(spanZ / (double) w.cell);
         w.oldRgb = oldRgb;
-        {
-            int cr = (conqueror >> 16) & 255, cg = (conqueror >> 8) & 255, cb = conqueror & 255;
-            w.frontArgb = 0xFF000000 | (cr + (255 - cr) * 55 / 100) << 16 | (cg + (255 - cg) * 55 / 100) << 8 | (cb + (255 - cb) * 55 / 100);
-        }
-        w.dist = new int[w.w * w.h];
+        w.newRgb = conqueror;
+        w.dist = new double[w.w * w.h];
+        Arrays.fill(w.dist, -1);
 
-        boolean[] in = new boolean[w.dist.length];
-        int inside = 0;
+        boolean inside = false;
         for (int j = 0; j < w.h; j++) {
             for (int i = 0; i < w.w; i++) {
-                in[j * w.w + i] = SiteTerritories.provinceAt(d, centerX(w, i), centerZ(w, j)) == p;
-                if (in[j * w.w + i]) inside++;
+                if (SiteTerritories.provinceAt(d, centerX(w, i), centerZ(w, j)) == p) {
+                    w.dist[j * w.w + i] = Double.MAX_VALUE;   // inside, not reached yet
+                    inside = true;
+                }
             }
         }
-        if (inside == 0) return null;
+        if (!inside) return null;
 
-        // origem: células na divisa com uma província que já é de quem conquistou
-        java.util.Arrays.fill(w.dist, -1);
-        ArrayDeque<Integer> open = new ArrayDeque<>();
         int[] ni = {-1, 1, 0, 0}, nj = {0, 0, -1, 1};
         for (int j = 0; j < w.h; j++) {
             for (int i = 0; i < w.w; i++) {
                 int at = j * w.w + i;
-                if (!in[at]) continue;
+                if (w.dist[at] < 0) continue;
                 for (int k = 0; k < 4; k++) {
                     int oi = i + ni[k], oj = j + nj[k];
-                    if (oi >= 0 && oj >= 0 && oi < w.w && oj < w.h && in[oj * w.w + oi]) continue;
-                    int q = SiteTerritories.provinceAt(d, centerX(w, oi), centerZ(w, oj));
+                    if (oi >= 0 && oj >= 0 && oi < w.w && oj < w.h && w.dist[oj * w.w + oi] >= 0) continue;
+                    int qx = centerX(w, oi), qz = centerZ(w, oj);
+                    int q = SiteTerritories.provinceAt(d, qx, qz);
                     if (q >= 0 && q != p && colorOf(d, prov, country, q) == conqueror) {
-                        w.dist[at] = 0;
-                        open.add(at);
+                        w.origins.add(new int[]{at, q, qx, qz});
                         break;
                     }
                 }
             }
         }
-        if (open.isEmpty()) {       // sem divisa (ataque por mar, ilha): sai da cidade
-            int at = nearestCell(d, w, in, p);
-            w.dist[at] = 0;
-            open.add(at);
-        }
+        if (w.origins.isEmpty()) w.origins.add(new int[]{nearestCell(d, w, p), -1, 0, 0});   // no border (by sea, an island): from the city
+        return w;
+    }
 
-        // distância em grade a partir da origem
+    /**
+     * Works out when the wave starts and how far each cell is: every border cell starts when the neighbouring province is fully
+     * the new colour there (now, or when a wave still running there passes it); the distance of a cell is the shortest way from
+     * any border cell, counting the later ones as already that far behind.
+     */
+    private static void resolve(Wave w, long now) {
+        // Border cells next to the taker's land that is already settled start now. Only a province with no such border waits
+        // for a neighbour's wave still on its way (taken in the same reading, or a moment before) and goes on from it: so waves
+        // flow outwards from settled land and never wait on each other in a circle.
+        int n = w.origins.size();
+        long[] reach = new long[n];
+        boolean anySettled = false;
+        for (int o = 0; o < n; o++) {
+            int[] or = w.origins.get(o);
+            Wave before = or[1] >= 0 ? WAVES.get(or[1]) : null;
+            if (before == null || before == w || before.newRgb != w.newRgb) {
+                reach[o] = now;
+                anySettled = true;
+            } else if (before.duration <= 0) {
+                reach[o] = Long.MAX_VALUE;   // that wave is not worked out yet (next round)
+            } else {
+                reach[o] = Math.max(now, before.passes(or[2], or[3]));
+                if (reach[o] == now) anySettled = true;   // it has already gone past there
+            }
+        }
+        long start = Long.MAX_VALUE;
+        for (int o = 0; o < n; o++) {
+            if (anySettled && reach[o] != now) reach[o] = Long.MAX_VALUE;   // settled land leads: ignore the waiting borders
+            start = Math.min(start, reach[o]);
+        }
+        if (start == Long.MAX_VALUE) {   // only neighbours not worked out yet (or a circle with no settled land): start now
+            start = now;
+            Arrays.fill(reach, now);
+        }
+        double depthGuess = Math.max(w.w, w.h) * (double) w.cell;
+        double speed = speed(depthGuess);
+        double[] dist = new double[w.dist.length];
+        for (int at = 0; at < dist.length; at++) dist[at] = w.dist[at] < 0 ? -1 : Double.MAX_VALUE;
+        PriorityQueue<double[]> open = new PriorityQueue<>((a, b) -> Double.compare(a[0], b[0]));
+        for (int o = 0; o < n; o++) {
+            if (reach[o] == Long.MAX_VALUE) continue;
+            int at = w.origins.get(o)[0];
+            double d0 = (reach[o] - start) * speed;   // a later start counts as being that far behind
+            if (d0 < dist[at]) {
+                dist[at] = d0;
+                open.add(new double[]{d0, at});
+            }
+        }
+        int[] ni = {-1, 1, 0, 0}, nj = {0, 0, -1, 1};
         while (!open.isEmpty()) {
-            int at = open.poll(), i = at % w.w, j = at / w.w;
-            w.maxDist = Math.max(w.maxDist, w.dist[at]);
+            double[] e = open.poll();
+            int at = (int) e[1];
+            if (e[0] > dist[at]) continue;
+            int i = at % w.w, j = at / w.w;
             for (int k = 0; k < 4; k++) {
                 int oi = i + ni[k], oj = j + nj[k];
                 if (oi < 0 || oj < 0 || oi >= w.w || oj >= w.h) continue;
                 int to = oj * w.w + oi;
-                if (!in[to] || w.dist[to] >= 0) continue;
-                w.dist[to] = w.dist[at] + 1;
-                open.add(to);
+                double nd = dist[at] + w.cell;
+                if (dist[to] < 0 || nd >= dist[to]) continue;
+                dist[to] = nd;
+                open.add(new double[]{nd, to});
             }
         }
-        for (int at = 0; at < w.dist.length; at++) {        // pedaços soltos da província aparecem no fim
-            if (in[at] && w.dist[at] < 0) w.dist[at] = w.maxDist;
-        }
-        w.maxDist = Math.max(1, w.maxDist);
-        return w;
+        double max = 0;
+        for (double v : dist) if (v >= 0 && v < Double.MAX_VALUE) max = Math.max(max, v);
+        for (int at = 0; at < dist.length; at++) if (dist[at] == Double.MAX_VALUE) dist[at] = max;   // loose bits: at the end
+        w.dist = dist;
+        w.maxDist = Math.max(w.cell, max);
+        w.speed = speed(w.maxDist);
+        w.band = band(w.maxDist);
+        w.start = start;
+        w.duration = (long) Math.ceil((w.maxDist + w.band) / w.speed);
     }
 
     private static int centerX(Wave w, int i) {
@@ -153,8 +268,8 @@ final class WarWave {
         return w.z0 + j * w.cell + w.cell / 2;
     }
 
-    /** Célula da província mais perto de uma cidade dela (ou do centro, se não houver cidade). */
-    private static int nearestCell(SiteTerritories.Data d, Wave w, boolean[] in, int p) {
+    /** The province's cell nearest one of its cities (or its middle, when it has none). */
+    private static int nearestCell(SiteTerritories.Data d, Wave w, int p) {
         int tx = w.x0 + w.w * w.cell / 2, tz = w.z0 + w.h * w.cell / 2;
         for (SiteTerritories.Locality l : d.localities) {
             if (SiteTerritories.provinceAt(d, l.x, l.z) == p) {
@@ -165,8 +280,8 @@ final class WarWave {
         }
         int best = -1;
         long bestD = Long.MAX_VALUE;
-        for (int at = 0; at < in.length; at++) {
-            if (!in[at]) continue;
+        for (int at = 0; at < w.dist.length; at++) {
+            if (w.dist[at] < 0) continue;
             long dx = centerX(w, at % w.w) - tx, dz = centerZ(w, at / w.w) - tz, dd = dx * dx + dz * dz;
             if (dd < bestD) {
                 bestD = dd;

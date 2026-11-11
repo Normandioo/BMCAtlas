@@ -2373,25 +2373,32 @@ public class MapScreen extends MapEditor {
         if (pushed) g.pose().popMatrix();
     }
 
-    /** Onda de conquista: cobre com a cor antiga o que ela ainda não alcançou e pinta a frente em vermelho claro. */
+    /** The capture wave: what it has not reached yet keeps the old colour (as a tint, like the map), fading into the new one. */
     private void drawWaves(GuiGraphics g) {
         long now = MapClock.anim();
+        // the old colour is laid as a tint of the strength the map paints countries with (MapStyle: 0.72 x Fill), so the
+        // terrain still shows through; a side that was grey before is greyed the way the map greys it
+        float fill = Math.max(0f, Math.min(1f, 0.72f * Prefs.fill()));
         for (WarWave.Wave w : WarWave.active(now)) {
-            int front = (int) (w.maxDist * (now - w.start) / (double) WarWave.DURATION);
-            int band = Math.max(1, w.maxDist / 40);
-            int old = 0xE6000000 | (w.oldRgb < 0 ? 0x6E6E6E : w.oldRgb & 0xFFFFFF);
+            if (w.dist == null || w.speed <= 0) continue;
+            boolean side = w.oldRgb >= 0 && WarWave.isSide(w.oldRgb);
+            int rgb = side ? w.oldRgb & 0xFFFFFF : 0x5A6066;
+            float strength = side ? fill : 0.55f;
+            if (strength <= 0.01f) continue;
+            double front = w.front(now);
             for (int j = 0; j < w.h; j++) {
                 int y0 = (int) Math.floor(toScreenY(w.z0 + j * (double) w.cell));
                 int y1 = (int) Math.floor(toScreenY(w.z0 + (j + 1) * (double) w.cell));
                 if (y1 <= y0 || y1 < 0 || y0 > height) continue;
                 int i = 0;
-                while (i < w.w) {
-                    int kind = waveKind(w.dist[j * w.w + i], front, band), end = i + 1;
-                    while (end < w.w && waveKind(w.dist[j * w.w + end], front, band) == kind) end++;
-                    if (kind != 0) {
+                while (i < w.w) {   // runs of cells with the same shade: one fill each
+                    int level = waveLevel(w, j * w.w + i, front), end = i + 1;
+                    while (end < w.w && waveLevel(w, j * w.w + end, front) == level) end++;
+                    if (level > 0) {
                         int x0 = (int) Math.floor(toScreenX(w.x0 + i * (double) w.cell));
                         int x1 = (int) Math.floor(toScreenX(w.x0 + end * (double) w.cell));
-                        g.fill(x0, y0, x1, y1, kind == 2 ? w.frontArgb : old);
+                        int a = Math.round(strength * 255f * level / WAVE_LEVELS);
+                        g.fill(x0, y0, x1, y1, (a << 24) | rgb);
                     }
                     i = end;
                 }
@@ -2399,10 +2406,14 @@ public class MapScreen extends MapEditor {
         }
     }
 
-    /** 0 = nada a desenhar, 1 = ainda não alcançado, 2 = frente da onda. */
-    private static int waveKind(int dist, int front, int band) {
-        if (dist < 0 || dist < front) return 0;
-        return dist < front + band ? 2 : 1;
+    /** Shades of the wave's edge: enough for a smooth gradient, few enough to keep the fills in long runs. */
+    private static final int WAVE_LEVELS = 24;
+
+    /** How much old colour a cell keeps (0 = none, WAVE_LEVELS = all), or 0 outside the province. */
+    private static int waveLevel(WarWave.Wave w, int at, double front) {
+        double d = w.dist[at];
+        if (d < 0) return 0;
+        return (int) Math.round(WarWave.oldShare(d, front, w.band) * WAVE_LEVELS);
     }
 
     /** Linhas de frente (grossas, cada metade na cor de quem segura), ligações internas (pontilhadas) e anéis nas cidades In Play. */
