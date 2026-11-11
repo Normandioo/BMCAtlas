@@ -161,6 +161,11 @@ final class OnlinePlayers {
     }
 
     private static void apply(List<Raw> raw, long now) {
+        if (WarRecorder.recording()) {   // everyone on the map right now goes into the war recording
+            List<WarRecorder.Seen> seen = new ArrayList<>(raw.size());
+            for (Raw r : raw) seen.add(new WarRecorder.Seen(r.account, r.name, r.x, r.z));
+            WarRecorder.dynmapPlayers(seen, now);
+        }
         Map<String, Raw> seen = new HashMap<>();
         for (Raw r : raw) seen.put(r.account.toLowerCase(Locale.ROOT), r);
         ENTRIES.keySet().removeIf(k -> !seen.containsKey(k));

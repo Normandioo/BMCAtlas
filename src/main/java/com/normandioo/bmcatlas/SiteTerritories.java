@@ -433,6 +433,11 @@ final class SiteTerritories {
         }
     }
 
+    /** The local copy of the territories.json in use (null before init). Used by WarRecorder to keep the site data a recording saw. */
+    static Path cachePath() {
+        return cacheFile;
+    }
+
     private static Path cacheFileFor(MapCatalog.Entry e) {
         return dir.resolve(e == null ? "territories_cache.json" : "territories_cache_" + e.key.replaceAll("[^a-zA-Z0-9._-]", "_") + ".json");
     }

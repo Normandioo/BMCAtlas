@@ -64,6 +64,11 @@ public class BmcAtlasClient implements ClientModInitializer {
                 Prefs.save();
             }
             MapData.tick(mc);
+            if (WarRecorder.wantsTicks() && !(Compat.screen(mc) instanceof MapScreen)) {   // keeps the recorded war up to date with the map closed
+                if (ticks % 10 == 0) MapScreen.liveTick();
+                if (SiteTerritories.showPlayers()) OnlinePlayers.tick();   // reads dynmap only when its period is due
+            }
+            WarRecorder.tick(mc);
             RemoteImages.pump();
             if (++ticks % 6000 == 0 && MapData.isDirty()) MapData.save();
         });
@@ -72,6 +77,7 @@ public class BmcAtlasClient implements ClientModInitializer {
             ChunkGen.reset();
             MapData.unload();
             ServerSync.reset();
+            WarRecorder.onDisconnect();
         });
     }
 }

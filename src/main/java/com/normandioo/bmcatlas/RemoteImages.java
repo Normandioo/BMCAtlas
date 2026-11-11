@@ -129,6 +129,12 @@ final class RemoteImages {
     // conditional request (the site answers "not modified" without sending the image again). If the site does not
     // answer, the old copy is used.
 
+    /** The downloaded copy of an image on disk (as the site sent it), or null when there is none yet. Used by WarRecorder for the faces. */
+    static Path cachedOnDisk(String url) {
+        Path f = url == null ? null : cacheFile(url);
+        return f != null && Files.exists(f) ? f : null;
+    }
+
     private static synchronized Path cacheFile(String url) {
         try {
             if (cacheDir == null) {

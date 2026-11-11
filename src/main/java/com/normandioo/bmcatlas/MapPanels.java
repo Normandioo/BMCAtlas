@@ -1340,6 +1340,10 @@ abstract class MapPanels extends MapUi {
             p.recordWar = !p.recordWar;
             Prefs.save();
         });
+        toggleRow(g, "Record live wars automatically", p.recordLiveWars, mouseX, mouseY, () -> {
+            p.recordLiveWars = !p.recordLiveWars;
+            Prefs.save();
+        });
 
         section(g, "Minimap");
         toggleRow(g, "Minimap on the game screen", p.minimap, mouseX, mouseY, () -> {
