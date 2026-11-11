@@ -1,3 +1,11 @@
+## 1.3.0
+
+- War recordings get a new format: one folder per war in `bmcatlas/recordings/` (inside the game folder), with who held each city, where every player on the map was (dynmap's readings plus the exact positions of the players near you), their faces and the site data in use. This is the base of the video replay coming next
+- Recording goes on with the map closed, and coming back to the same war continues the same recording (the time you were away shows as a gap)
+- New setting "Record live wars automatically" (off by default)
+- Old recordings in `config/bmcatlas/recordings/` are imported the first time (the old file is kept, renamed to `.jsonl.imported`)
+- Recordings stay on your computer: nothing is sent anywhere
+
 ## 1.2.6
 
 - On a server with the BmcWar plugin (0.19.0 or newer), the mod tells the plugin its version, so the server can warn you when your mod is out of date (only that: nothing else is sent, and only to servers with the plugin)

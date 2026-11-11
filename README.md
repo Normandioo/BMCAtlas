@@ -22,7 +22,7 @@
 
 ## War recording
 
-Turn on **Recording** on the bar at the bottom of the war map (or in the settings). Every change in who holds the cities of the followed war is saved with its time in `config/bmcatlas/recordings/`. The same bar plays the recording back on the map, step by step or continuously, with score and fronts as they were.
+Turn on **Recording** on the bar at the bottom of the war map (or in the settings). Every change in who holds the cities of the followed war, and where the players on the map are, is saved in a folder per war in `bmcatlas/recordings/` (inside the game folder); it keeps recording with the map closed. The setting "Record live wars automatically" starts it by itself during a live war. The same bar plays the recording back on the map, step by step or continuously, with score and fronts as they were.
 
 ## Server plugin (BmcWar)
 
