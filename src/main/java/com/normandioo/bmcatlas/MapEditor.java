@@ -38,11 +38,22 @@ abstract class MapEditor extends MapPanels {
     private List<RecFormat.Meta> listMeta = List.of();
     private int listFirst;
 
-    // timeline geometry (set while drawing) and what is being dragged
-    private int tlX, tlW;
-    private static final int DRAG_NONE = 0, DRAG_SEEK = 1, DRAG_MOVE = 2, DRAG_FROM = 3, DRAG_TO = 4, DRAG_CAM_MOVE = 5, DRAG_CAM_SIZE = 6, DRAG_KEY = 7;
+    /** The editor's view follows the camera of the cut in force (a preview of the edited video). */
+    boolean viewCuts;
+    /** The "Show" panel (what the map draws in the editor and in the videos) is open. */
+    boolean showOpen;
+
+    // timeline geometry (set while drawing), the stretch it shows (zoom), and what is being dragged
+    private int tlX, tlW, tlTop, tlBottom;
+    /** The stretch of the recording the tracks show (ms); tlTo < 0: all of it. */
+    private long tlFrom, tlTo = -1;
+    private static final int DRAG_NONE = 0, DRAG_SEEK = 1, DRAG_MOVE = 2, DRAG_FROM = 3, DRAG_TO = 4, DRAG_CAM_MOVE = 5, DRAG_CAM_SIZE = 6, DRAG_KEY = 7,
+            DRAG_CUT = 8, DRAG_PAN = 9;
     private int dragKind;
     private long dragGrab;
+    private double panGrab;
+    /** The map's own switches while the editor overrides them (put back on close). */
+    private boolean savedCities, savedLimits, savedPlayers;
     private RecProject.Clip dragClip;
     private double grabX, grabZ, fixedX, fixedZ;
     /** Each camera's share of terrain, worked out every 2 s: {share, when}. */
@@ -90,7 +101,15 @@ abstract class MapEditor extends MapPanels {
         ed = e;
         listOpen = false;
         viewCam = false;
+        viewCuts = false;
+        showOpen = false;
+        tlFrom = 0;
+        tlTo = -1;
         terrain.clear();
+        savedCities = showCities;
+        savedLimits = showLimits;
+        savedPlayers = showPlayers;
+        applyShow();
         RecHighlights.Highlight first = null;
         for (RecHighlights.Highlight h : e.highlights) if (h.type() != RecHighlights.Type.START && h.type() != RecHighlights.Type.END) { first = h; break; }
         if (first != null && first.city() != null) {   // start looking at the first place something happened
@@ -107,8 +126,97 @@ abstract class MapEditor extends MapPanels {
         ed.save();
         ed = null;
         viewCam = false;
+        viewCuts = false;
         dragKind = DRAG_NONE;
+        showCities = savedCities;   // the map's own switches again
+        showLimits = savedLimits;
+        showPlayers = savedPlayers;
+        MapScreen.refreshZoneTint();
         WarRecorder.stop();
+    }
+
+    // ------------------------------------------------------------------ what the map shows in the editor and the videos
+
+    /** Whether a part of the map is drawn: the editor's "Show" panel decides while it is open, else the map's own settings. */
+    boolean shows(String what) {
+        if (ed == null) return switch (what) {
+            case "countryNames" -> Prefs.get().countryNames;
+            case "cityNames" -> Prefs.get().cityNames;
+            default -> true;
+        };
+        RecProject.Show s = ed.project.show;
+        return switch (what) {
+            case "countryNames" -> s.countryNames;
+            case "cityNames" -> s.cityNames;
+            case "front" -> s.front;
+            case "marks" -> s.marks;
+            case "self" -> s.self;
+            default -> true;
+        };
+    }
+
+    /** The switches the map keeps as fields follow the project while editing. */
+    private void applyShow() {
+        RecProject.Show s = ed.project.show;
+        showCities = s.cities;
+        showLimits = s.limits;
+        showPlayers = s.players;
+        MapScreen.refreshZoneTint();
+    }
+
+    private void drawShowPanel(GuiGraphics g, ReplayEditor e, int mouseX, int mouseY, int bottom) {
+        RecProject.Show s = e.project.show;
+        String[][] rows = {{"countryNames", "Country names"}, {"front", "Front lines"}, {"cities", "Cities"}, {"cityNames", "City names"},
+                {"limits", "City limits"}, {"players", "Players"}, {"marks", "Your points"}, {"self", "Your position"},
+                {"clock", "Date (in the video)"}, {"score", "Score (in the video)"}};
+        int w = 170, h = 18 + rows.length * 17 + 4, x = 8, y = bottom - 6 - h;
+        box(g, x, y, w, h, COL_PANEL);
+        hits.add(new Hit(x, y, w, h, null, null));
+        g.drawString(font, "Show", x + 6, y + 5, COL_TEXT, false);
+        int ry = y + 17;
+        for (String[] row : rows) {
+            boolean on = get(s, row[0]);
+            textButtonFixed(g, x + 4, ry, w - 8, 15, row[1], mouseX, mouseY, () -> {
+                set(s, row[0], !get(s, row[0]));
+                applyShow();
+                e.save();
+            });
+            g.fill(x + w - 16, ry + 4, x + w - 9, ry + 11, 0xFF0E0C08);
+            g.fill(x + w - 15, ry + 5, x + w - 10, ry + 10, on ? 0xFF4CD964 : 0xFF5A584E);
+            ry += 17;
+        }
+    }
+
+    private static boolean get(RecProject.Show s, String k) {
+        return switch (k) {
+            case "countryNames" -> s.countryNames;
+            case "front" -> s.front;
+            case "cities" -> s.cities;
+            case "cityNames" -> s.cityNames;
+            case "limits" -> s.limits;
+            case "players" -> s.players;
+            case "marks" -> s.marks;
+            case "self" -> s.self;
+            case "clock" -> s.clock;
+            case "score" -> s.score;
+            default -> true;
+        };
+    }
+
+    private static void set(RecProject.Show s, String k, boolean v) {
+        switch (k) {
+            case "countryNames" -> s.countryNames = v;
+            case "front" -> s.front = v;
+            case "cities" -> s.cities = v;
+            case "cityNames" -> s.cityNames = v;
+            case "limits" -> s.limits = v;
+            case "players" -> s.players = v;
+            case "marks" -> s.marks = v;
+            case "self" -> s.self = v;
+            case "clock" -> s.clock = v;
+            case "score" -> s.score = v;
+            default -> { }
+        }
     }
 
     void drawRecordingsList(GuiGraphics g, int mouseX, int mouseY) {
@@ -149,14 +257,62 @@ abstract class MapEditor extends MapPanels {
 
     // ------------------------------------------------------------------ the editor
 
+    /** The stretch the tracks show: from vFrom() to vTo() (ms since the recording's start). */
+    private long vFrom() {
+        return tlTo < 0 ? 0 : tlFrom;
+    }
+
+    private long vTo() {
+        return tlTo < 0 ? Math.max(1, ed.replay.length()) : tlTo;
+    }
+
+    private boolean zoomed() {
+        return tlTo >= 0;
+    }
+
     private long timeAtX(double mx) {
-        long len = ed.replay.length();
-        return Math.max(0, Math.min(len, Math.round((mx - tlX) / Math.max(1, tlW) * len)));
+        long len = ed.replay.length(), from = vFrom(), span = Math.max(1, vTo() - from);
+        return Math.max(0, Math.min(len, from + Math.round((mx - tlX) / Math.max(1, tlW) * span)));
     }
 
     private int xAt(long t) {
+        long from = vFrom(), span = Math.max(1, vTo() - from);
+        return tlX + (int) Math.round(tlW * (double) (t - from) / span);
+    }
+
+    /** Shows the stretch [from, from + span] of the recording on the tracks (all of it when span covers it). */
+    private void setView(long from, long span) {
         long len = Math.max(1, ed.replay.length());
-        return tlX + (int) Math.round(tlW * (double) t / len);
+        span = Math.max(2_000, span);
+        if (span >= len) {
+            tlTo = -1;
+            tlFrom = 0;
+            return;
+        }
+        tlFrom = Math.max(0, Math.min(len - span, from));
+        tlTo = tlFrom + span;
+    }
+
+    /** While playing zoomed in: the stretch shown moves on so the cursor stays in sight. */
+    private void followCursor(long now) {
+        if (!zoomed() || (now >= tlFrom && now <= tlTo)) return;
+        long span = tlTo - tlFrom;
+        setView(now - span / 10, span);
+    }
+
+    /** The mouse wheel over the timeline zooms it around the mouse (the side wheel moves along); true when it was there. */
+    boolean editorScroll(double mx, double my, double scrollX, double scrollY) {
+        if (ed == null || exportBusy() || my < tlTop - 3 || my > tlBottom || mx < tlX || mx > tlX + tlW) return false;
+        long from = vFrom(), span = Math.max(1, vTo() - from);
+        if (scrollY != 0) {
+            long anchor = timeAtX(mx);
+            double f = Math.pow(0.8, scrollY);   // up: closer
+            long ns = Math.round(span * f);
+            setView(anchor - Math.round((anchor - from) * (ns / (double) span)), ns);
+        } else if (scrollX != 0 && zoomed()) {
+            setView(from - Math.round(span * 0.1 * scrollX), span);
+        }
+        return true;
     }
 
     private static int colorOf(RecHighlights.Type t) {
@@ -239,7 +395,8 @@ abstract class MapEditor extends MapPanels {
                     : "ffmpeg not found: PNG frames, with the command to join them");
             long total = 0;
             for (ExportPlan.Pass p : passes) {
-                int[] s = p.camera() != null ? p.camera().outputSize(fbW, fbH) : new int[]{fbW & ~1, fbH & ~1};
+                RecCamera pc = p.cameraAt(e.project, ExportPlan.timeAt(p, 0, e.project.fps));
+                int[] s = pc != null ? pc.outputSize(fbW, fbH) : new int[]{fbW & ~1, fbH & ~1};
                 lines.add("  " + p.name() + "   " + s[0] + "x" + s[1] + "   " + ExportPlan.duration(p.frames(), e.project.fps));
                 total += p.frames();
             }
@@ -335,15 +492,18 @@ abstract class MapEditor extends MapPanels {
         double ratio = windowRatio();
         RecCamera selCam = e.camera();
         if (viewCam && selCam == null) viewCam = false;
-        if (viewCam) {   // the view follows the camera: exactly what its video will show
-            double[] f = e.frame(selCam, now);
-            double cr = selCam.ratio(ratio), fw = f[2], fh = fw / cr;
+        if (viewCuts && e.project.cuts.isEmpty()) viewCuts = false;
+        RecCamera viewed = viewCuts ? e.project.cameraAt(now) : viewCam ? selCam : null;
+        if (viewed != null) {   // the view follows the camera (or the cut in force): exactly what its video will show
+            double[] f = e.frame(viewed, now);
+            double cr = viewed.ratio(ratio), fw = f[2], fh = fw / cr;
             viewX = f[0];
             viewZ = f[1];
             scale = zoomTarget = Math.max(0.03, Math.min(8, Math.min(width / fw, height / fh)));
         }
+        if (r.playing()) followCursor(now);
 
-        drawCameras(g, e, now, ratio, mouseX, mouseY);
+        drawCameras(g, e, now, ratio, mouseX, mouseY, viewed);
 
         // top left: the war, the moment on screen, the score
         int ix = 8, iy = 8, iw = 240;
@@ -352,13 +512,15 @@ abstract class MapEditor extends MapPanels {
         hits.add(new Hit(ix, iy, iw, score ? 46 : 32, null, null));
         drawFit(g, e.title, iw - 12, ix + 6, iy + 5, COL_TEXT, false);
         String when = MapFormat.dateText(r.absTime()) + "  " + ReplayEditor.clock(now) + " / " + ReplayEditor.clock(r.length());
-        drawFit(g, when + (viewCam ? "   (camera view)" : ""), iw - 12, ix + 6, iy + 17, r.recorded(now) ? 0xFFF0B429 : COL_DIM, false);
+        String viewing = viewCuts ? "   (edit preview)" : viewCam ? "   (camera view)" : "";
+        drawFit(g, when + viewing, iw - 12, ix + 6, iy + 17, r.recorded(now) ? 0xFFF0B429 : COL_DIM, false);
         if (score) sideBar(g, e.war, WarScore.of(d, e.war).points().clone(), ix + 6, iy + 31, iw - 12);
 
-        int ph = 112, py = height - ph - 8;
+        int ph = 136, py = height - ph - 8;
         drawCameraPanel(g, e, ratio, mouseX, mouseY, py);
+        if (showOpen) drawShowPanel(g, e, mouseX, mouseY, py);
 
-        // bottom: transport, the three tracks, the clip line
+        // bottom: transport, the four tracks, the scroll bar, the selection line
         int px = 8, pw = width - 16;
         box(g, px, py, pw, ph, COL_PANEL);
         hits.add(new Hit(px, py, pw, ph, null, null));
@@ -394,8 +556,12 @@ abstract class MapEditor extends MapPanels {
         int camW = font.width("New camera") + 12;
         textButtonFixed(g, cx, by, camW, 16, "New camera", mouseX, mouseY, () -> {
             viewCam = false;
+            viewCuts = false;
             e.newCamera(viewX, viewZ, Math.max(16, width * 0.6 / scale));
         });
+        cx += camW + 2;
+        int showW = font.width("Show") + 12;
+        textButtonFixed(g, cx, by, showW, 16, "Show", mouseX, mouseY, () -> showOpen = !showOpen);
         int closeW = font.width("Close") + 12, expW = font.width("Export") + 12;
         textButtonFixed(g, px + pw - 4 - closeW - 2 - expW, by, expW, 16, "Export", mouseX, mouseY, () -> {
             exportDialog = true;
@@ -404,18 +570,24 @@ abstract class MapEditor extends MapPanels {
         });
         textButtonFixed(g, px + pw - 4 - closeW, by, closeW, 16, "Close", mouseX, mouseY, this::closeEditor);
 
-        // track 1: the recording (sessions light, time away dark), hour marks, highlights, In/Out marks
         tlX = px + 8;
         tlW = pw - 16;
-        int t1 = py + 26, t2 = py + 48, t3 = py + 70;
-        long len = Math.max(1, r.length());
+        int t1 = py + 24, t2 = py + 44, t3 = py + 64, t4 = py + 84, sb = py + 102;
+        tlTop = t1;
+        tlBottom = sb + 6;
+        long len = Math.max(1, r.length()), from = vFrom(), to = vTo();
+        g.enableScissor(tlX, t1 - 3, tlX + tlW, t4 + 19);   // zoomed in: what is outside the visible stretch is cut off
+
+        // track 1: the recording (sessions light, time away dark), time marks, highlights, In/Out marks
         g.fill(tlX, t1, tlX + tlW, t1 + 16, 0xFF1E2123);
         for (long[] s : r.sessions()) g.fill(xAt(s[0]), t1, Math.max(xAt(s[0]) + 1, xAt(s[1])), t1 + 16, 0xFF3A4046);
-        long hour = 3_600_000, step = len > 6 * hour ? hour : len > hour ? 15 * 60_000 : len > 600_000 ? 5 * 60_000 : 60_000;
-        for (long t = step; t < len; t += step) g.fill(xAt(t), t1 + 12, xAt(t) + 1, t1 + 16, 0xFF6A6F72);
+        long span = Math.max(1, to - from);
+        long step = span > 6 * 3_600_000L ? 3_600_000L : span > 3_600_000L ? 900_000L : span > 600_000L ? 300_000L
+                : span > 120_000L ? 60_000L : span > 30_000L ? 10_000L : 1_000L;
+        for (long t = (from / step + 1) * step; t < to; t += step) g.fill(xAt(t), t1 + 12, xAt(t) + 1, t1 + 16, 0xFF6A6F72);
         RecHighlights.Highlight hot = null;
         for (RecHighlights.Highlight h : e.highlights) {
-            if (h.type() == RecHighlights.Type.START || h.type() == RecHighlights.Type.END) continue;
+            if (h.type() == RecHighlights.Type.START || h.type() == RecHighlights.Type.END || h.t() < from || h.t() > to) continue;
             int hx = xAt(h.t()), hh = (int) Math.max(4, Math.min(12, 3 + h.weight()));
             g.fill(hx, t1 + 12 - hh, hx + 2, t1 + 12, colorOf(h.type()));
             if (Math.abs(mouseX - hx) <= 2 && mouseY >= t1 && mouseY < t1 + 16) hot = h;
@@ -437,13 +609,14 @@ abstract class MapEditor extends MapPanels {
         g.fill(tlX, t2, tlX + tlW, t2 + 16, 0xFF1E2123);
         RecProject.Clip hoverClip = null;
         for (RecProject.Clip c : e.project.clips) {
+            if (c.to < from || c.from > to) continue;
             int a = xAt(c.from), b = Math.max(a + 2, xAt(c.to));
             boolean sel = c == e.selected();
             int col = c.speed > 2 ? 0xFF3A7BD5 : c.speed < 1 ? 0xFF6CC3A0 : 0xFFF0B429;
             g.fill(a, t2 + 2, b, t2 + 14, sel ? 0xFFFFF2B0 : col);
             g.fill(a, t2 + 2, a + 1, t2 + 14, 0xFF0A0B08);
             g.fill(b - 1, t2 + 2, b, t2 + 14, 0xFF0A0B08);
-            if (b - a > font.width(ReplayEditor.speedText(c.speed)) + 4) g.drawString(font, ReplayEditor.speedText(c.speed), a + 3, t2 + 4, 0xFF0A0B08, false);
+            if (b - a > font.width(ReplayEditor.speedText(c.speed)) + 4) g.drawString(font, ReplayEditor.speedText(c.speed), Math.max(a, tlX) + 3, t2 + 4, 0xFF0A0B08, false);
             if (mouseX >= a - 3 && mouseX < b + 3 && mouseY >= t2 && mouseY < t2 + 16) hoverClip = c;
         }
         final RecProject.Clip hc = hoverClip;
@@ -454,6 +627,7 @@ abstract class MapEditor extends MapPanels {
             }
             e.select(hc);
             e.selKey = null;
+            e.selCut = null;
             int a = xAt(hc.from), b = xAt(hc.to);
             dragClip = hc;
             dragKind = Math.abs(mouseX - a) <= 3 ? DRAG_FROM : Math.abs(mouseX - b) <= 3 ? DRAG_TO : DRAG_MOVE;
@@ -465,6 +639,7 @@ abstract class MapEditor extends MapPanels {
         RecCamera.Key hoverKey = null;
         if (selCam != null) {
             for (RecCamera.Key k : selCam.keys) {
+                if (k.t < from || k.t > to) continue;
                 int kx = xAt(k.t);
                 boolean sel = k == e.selKey;
                 int col = sel ? 0xFFFFF2B0 : selCam.color;
@@ -480,13 +655,53 @@ abstract class MapEditor extends MapPanels {
             if (hk == null) return;
             e.selKey = hk;
             e.selClip = -1;
+            e.selCut = null;
             e.seek(hk.t);
             dragKind = DRAG_KEY;
         }, null));
 
+        // track 4: the cuts of the edited video (which camera from when)
+        g.fill(tlX, t4, tlX + tlW, t4 + 16, 0xFF1E2123);
+        RecProject.Cut hoverCut = null;
+        List<RecProject.Cut> cuts = e.project.cuts;
+        for (int i = 0; i < cuts.size(); i++) {
+            RecProject.Cut c = cuts.get(i);
+            long end = i + 1 < cuts.size() ? cuts.get(i + 1).t : len;
+            if (end < from || c.t > to) continue;
+            RecCamera cam = e.project.cameraById(c.camera);
+            int a = xAt(c.t), b = Math.max(a + 2, xAt(end));
+            boolean sel = c == e.selCut;
+            g.fill(a, t4 + 2, b, t4 + 14, cam == null ? 0xFF6A6F72 : cam.color);
+            g.fill(a, t4 + 1, a + 2, t4 + 15, sel ? 0xFFFFF2B0 : 0xFF0A0B08);
+            if (cam != null && b - a > 20) drawFit(g, cam.name, b - Math.max(a, tlX) - 6, Math.max(a, tlX) + 4, t4 + 4, 0xFF0A0B08, false);
+            if (mouseX >= a - 3 && mouseX < b && mouseY >= t4 && mouseY < t4 + 16) hoverCut = c;
+        }
+        if (cuts.isEmpty()) g.drawString(font, "No cuts: select a camera and press C to make one edited video from several cameras", tlX + 4, t4 + 4, 0xFF6A6F72, false);
+        final RecProject.Cut hcut = hoverCut;
+        hits.add(new Hit(tlX, t4, tlW, 16, () -> {
+            if (hcut == null) return;
+            e.selCut = hcut;
+            e.selClip = -1;
+            e.selKey = null;
+            if (Math.abs(mouseX - xAt(hcut.t)) <= 4) dragKind = DRAG_CUT;   // its start: drag it in time
+            else e.seek(Math.max(hcut.t, timeAtX(mouseX)));
+        }, null));
+
         // the cursor
         int cxr = xAt(now);
-        g.fill(cxr - 1, t1 - 3, cxr + 1, t3 + 19, 0xFFFFF2B0);
+        g.fill(cxr - 1, t1 - 3, cxr + 1, t4 + 19, 0xFFFFF2B0);
+        g.disableScissor();
+
+        // scroll bar: which stretch of the recording the tracks show (mouse wheel on the tracks zooms, drag this to move)
+        g.fill(tlX, sb, tlX + tlW, sb + 4, 0xFF1E2123);
+        int thumbX = tlX + (int) (tlW * (double) from / len), thumbW = Math.max(6, (int) (tlW * (double) span / len));
+        g.fill(thumbX, sb, Math.min(tlX + tlW, thumbX + thumbW), sb + 4, zoomed() ? 0xFFCFD3D1 : 0xFF4A5056);
+        final int thumbXF = thumbX;
+        hits.add(new Hit(tlX, sb - 2, tlW, 8, () -> {
+            if (!zoomed()) return;
+            dragKind = DRAG_PAN;
+            panGrab = mouseX - thumbXF;
+        }, "Wheel on the timeline: zoom in and out. Drag here to move along"));
 
         // bottom line: the selected clip, or what is under the mouse, or the keys
         int ly = py + ph - 20;
@@ -510,6 +725,12 @@ abstract class MapEditor extends MapPanels {
             long frames = 0;
             for (RecProject.Clip c : e.project.clips) frames += RecProject.frames(c, e.project.fps);
             g.drawString(font, "Video: " + ReplayEditor.clock(frames * 1000 / e.project.fps), lx, ly + 4, COL_DIM, false);
+        } else if (e.selCut != null) {
+            RecCamera cc = e.project.cameraById(e.selCut.camera);
+            String txt = "Cut to " + (cc == null ? "?" : cc.name) + " at " + ReplayEditor.clock(e.selCut.t) + "   (drag its start to move it)";
+            g.drawString(font, txt, px + 8, ly + 4, COL_TEXT, false);
+            int dw = font.width("Delete cut") + 12;
+            textButtonFixed(g, px + 16 + font.width(txt), ly, dw, 16, "Delete cut", mouseX, mouseY, e::deleteCut);
         } else if (e.selKey != null && selCam != null) {
             String txt = selCam.name + ": keyframe at " + ReplayEditor.clock(e.selKey.t) + ", " + Math.round(e.selKey.width) + " blocks wide";
             g.drawString(font, txt, px + 8, ly + 4, COL_TEXT, false);
@@ -524,7 +745,7 @@ abstract class MapEditor extends MapPanels {
     }
 
     /** The cameras on the map: a rectangle each, with its name on a tab (drag it to move) and, when selected, corner handles. */
-    private void drawCameras(GuiGraphics g, ReplayEditor e, long now, double ratio, int mouseX, int mouseY) {
+    private void drawCameras(GuiGraphics g, ReplayEditor e, long now, double ratio, int mouseX, int mouseY, RecCamera viewed) {
         RecCamera selCam = e.camera();
         for (RecCamera c : e.project.cameras) {
             if (!c.active(now)) continue;
@@ -533,7 +754,7 @@ abstract class MapEditor extends MapPanels {
             int x0 = (int) Math.round(scrX(f[0] - w / 2)), x1 = (int) Math.round(scrX(f[0] + w / 2));
             int y0 = (int) Math.round(scrY(f[1] - h / 2)), y1 = (int) Math.round(scrY(f[1] + h / 2));
             boolean sel = c == selCam;
-            if (viewCam && sel) {   // darken what the video will not show
+            if (c == viewed) {   // darken what the video will not show
                 g.fill(0, 0, width, Math.max(0, y0), 0xA0000000);
                 g.fill(0, Math.min(height, y1), width, height, 0xA0000000);
                 g.fill(0, Math.max(0, y0), Math.max(0, x0), Math.min(height, y1), 0xA0000000);
@@ -548,12 +769,12 @@ abstract class MapEditor extends MapPanels {
             final double fcx = f[0], fcz = f[1];
             hits.add(new Hit(x0, ly, lw, 12, () -> {   // select, and drag to move
                 e.selectCamera(c);
-                if (viewCam) return;
+                if (viewed != null) return;
                 dragKind = DRAG_CAM_MOVE;
                 grabX = blkX(mouseX) - fcx;
                 grabZ = blkZ(mouseY) - fcz;
             }, null));
-            if (!sel || viewCam) continue;
+            if (!sel || viewed != null) continue;
             int[][] corners = {{x0, y0}, {x1, y0}, {x0, y1}, {x1, y1}};
             for (int i = 0; i < 4; i++) {
                 int hx = corners[i][0], hy = corners[i][1];
@@ -575,11 +796,15 @@ abstract class MapEditor extends MapPanels {
         List<RecCamera> cams = e.project.cameras;
         RecCamera sel = e.camera();
         int w = 200, x = width - 8 - w, rowH = 14;
-        int h = 18 + Math.max(1, cams.size()) * rowH + (sel != null ? 4 + 4 * 18 : 0) + 4;
+        int h = 18 + Math.max(1, cams.size()) * rowH + (sel != null ? 4 + 5 * 18 : 0) + 4;
         int y = Math.max(8, bottom - 6 - h);
         box(g, x, y, w, h, COL_PANEL);
         hits.add(new Hit(x, y, w, h, null, null));
         g.drawString(font, "Cameras", x + 6, y + 5, COL_TEXT, false);
+        if (!cams.isEmpty()) {   // switch the camera selected (also Tab, Shift+Tab, 1-9)
+            textButtonFixed(g, x + w - 42, y + 2, 18, 13, "<", mouseX, mouseY, () -> e.nextCamera(-1));
+            textButtonFixed(g, x + w - 22, y + 2, 18, 13, ">", mouseX, mouseY, () -> e.nextCamera(1));
+        }
         if (cams.isEmpty()) {
             g.drawString(font, "None: the export uses the view", x + 6, y + 18, COL_DIM, false);
         }
@@ -610,7 +835,10 @@ abstract class MapEditor extends MapPanels {
             e.save();
         });
         ry += 18;
-        textButtonFixed(g, bx1, ry, bw, 16, viewCam ? "Free view" : "View", mouseX, mouseY, () -> viewCam = !viewCam);
+        textButtonFixed(g, bx1, ry, bw, 16, viewCam ? "Free view" : "View", mouseX, mouseY, () -> {
+            viewCam = !viewCam;
+            viewCuts = false;
+        });
         textButtonFixed(g, bx2, ry, bw, 16, sel.export ? "Export: on" : "Export: off", mouseX, mouseY, () -> {
             sel.export = !sel.export;
             e.save();
@@ -622,6 +850,12 @@ abstract class MapEditor extends MapPanels {
         textButtonFixed(g, bx1, ry, w - 12, 16, fit(fl, w - 24), mouseX, mouseY, () -> e.nextFollow(pickedAccount));
         hits.set(hits.size() - 1, new Hit(bx1, ry, w - 12, 16, () -> e.nextFollow(pickedAccount), flTip));
         ry += 18;
+        textButtonFixed(g, bx1, ry, bw, 16, "Cut here (C)", mouseX, mouseY, e::cutHere);
+        textButton(g, bx2, ry, bw, 16, viewCuts ? "Stop preview" : "Preview edit", mouseX, mouseY, !e.project.cuts.isEmpty(), () -> {
+            viewCuts = !viewCuts;
+            viewCam = false;
+        });
+        ry += 18;
         textButtonFixed(g, bx1, ry, bw, 16, "Duplicate", mouseX, mouseY, e::duplicateCamera);
         textButtonFixed(g, bx2, ry, bw, 16, "Delete", mouseX, mouseY, () -> {
             viewCam = false;
@@ -632,7 +866,7 @@ abstract class MapEditor extends MapPanels {
     /** Centres the map on a highlight that has a place. */
     private void jumpTo(RecHighlights.Highlight h) {
         if (h == null || h.type() == RecHighlights.Type.START || h.type() == RecHighlights.Type.END || h.type() == RecHighlights.Type.CAPITULATION) return;
-        if (viewCam) return;
+        if (viewCam || viewCuts) return;
         viewX = h.x();
         viewZ = h.z();
     }
@@ -644,6 +878,13 @@ abstract class MapEditor extends MapPanels {
         RecCamera cam = ed.camera();
         switch (dragKind) {
             case DRAG_SEEK -> ed.seek(t);
+            case DRAG_CUT -> {
+                if (ed.selCut != null) ed.selCut.t = t;
+            }
+            case DRAG_PAN -> {
+                long len2 = Math.max(1, ed.replay.length());
+                setView(Math.round((mx - panGrab - tlX) / Math.max(1, tlW) * len2), vTo() - vFrom());
+            }
             case DRAG_KEY -> {
                 if (cam != null && ed.selKey != null) {
                     cam.moveKey(ed.selKey, t);
@@ -682,6 +923,7 @@ abstract class MapEditor extends MapPanels {
 
     boolean editorRelease() {
         if (ed == null || dragKind == DRAG_NONE) return false;
+        if (dragKind == DRAG_CUT) ed.project.sortCuts();
         if (dragClip != null) {
             RecProject.Clip c = dragClip;
             ed.project.sort();
@@ -720,7 +962,8 @@ abstract class MapEditor extends MapPanels {
         Replay r = e.replay;
         switch (k) {
             case InputConstants.KEY_ESCAPE -> {   // out of the camera view, then the camera, then the editor
-                if (viewCam) viewCam = false;
+                if (viewCuts) viewCuts = false;
+                else if (viewCam) viewCam = false;
                 else if (e.camera() != null) e.selectCamera(null);
                 else closeEditor();
             }
@@ -736,9 +979,14 @@ abstract class MapEditor extends MapPanels {
             case InputConstants.KEY_I -> e.markIn();
             case InputConstants.KEY_O -> e.markOut();
             case InputConstants.KEY_K -> e.keyHere();
+            case InputConstants.KEY_C -> e.cutHere();
+            case InputConstants.KEY_TAB -> e.nextCamera(shift ? -1 : 1);
+            case InputConstants.KEY_1, InputConstants.KEY_2, InputConstants.KEY_3, InputConstants.KEY_4, InputConstants.KEY_5,
+                 InputConstants.KEY_6, InputConstants.KEY_7, InputConstants.KEY_8, InputConstants.KEY_9 -> e.pickCamera(k - InputConstants.KEY_1);
             case InputConstants.KEY_RETURN, InputConstants.KEY_NUMPADENTER -> e.addClip();
             case InputConstants.KEY_DELETE, InputConstants.KEY_BACKSPACE -> {
                 if (e.selKey != null) e.deleteKey();
+                else if (e.selCut != null) e.deleteCut();
                 else e.deleteClip();
             }
             case InputConstants.KEY_HOME -> e.seek(0);

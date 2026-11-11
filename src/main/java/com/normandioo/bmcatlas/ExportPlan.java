@@ -12,8 +12,13 @@ import java.util.Locale;
 final class ExportPlan {
     private ExportPlan() {}
 
-    /** One output file: the camera (null: the editor's view), its file name without extension, and its clips. */
-    record Pass(RecCamera camera, String name, List<RecProject.Clip> clips, long frames) {}
+    /** One output file: the camera (null: the editor's view, or the cuts when edit), its file name without extension, its clips. */
+    record Pass(RecCamera camera, String name, List<RecProject.Clip> clips, long frames, boolean edit) {
+        /** The camera of frame time t: the pass's own, or the cut in force for the edited video. */
+        RecCamera cameraAt(RecProject p, long t) {
+            return edit ? p.cameraAt(t) : camera;
+        }
+    }
 
     /** The passes of an export. base: the recording's folder name. */
     static List<Pass> of(RecProject p, String base) {
@@ -31,7 +36,12 @@ final class ExportPlan {
             }
             long n = 0;
             for (RecProject.Clip clip : clips) n += RecProject.frames(clip, p.fps);
-            if (n > 0) out.add(new Pass(c, fileName(base, c == null ? "view" : c.name), clips, n));
+            if (n > 0) out.add(new Pass(c, fileName(base, c == null ? "view" : c.name), clips, n, false));
+        }
+        if (!p.cuts.isEmpty() && !p.clips.isEmpty()) {   // the edited video: every clip, cutting between cameras
+            long n = 0;
+            for (RecProject.Clip clip : p.clips) n += RecProject.frames(clip, p.fps);
+            if (n > 0) out.add(0, new Pass(null, fileName(base, "edit"), List.copyOf(p.clips), n, true));
         }
         return out;
     }

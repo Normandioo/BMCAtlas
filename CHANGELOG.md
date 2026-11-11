@@ -5,6 +5,11 @@
 - The recording is played in the window at a fixed step (30 or 60 fps), so the video is smooth however fast the game draws; before each clip it waits for the terrain and images to load. The date and the score show inside the video
 - During the export: progress, time left, Cancel (or Esc). Keep the window as it is: resizing or minimizing stops the export
 - Fast: a frame is captured every frame the game draws (the next one is drawn while the last is copied), PNG frames are compressed on several cores, and ffmpeg uses its "fast" preset
+- Camera zoom between keyframes works like the mouse wheel: an even zoom around one point of the map that stays put, instead of a stretch that sped up and slowed down
+- Cuts: one edited video that switches between cameras. Select a camera and press C (or "Cut here") to show it from that moment on; the fourth track of the timeline shows the cuts (drag one's start to move it, Delete removes it), "Preview edit" plays them in the editor, and the export makes the edited video besides one per camera
+- Switch cameras quickly: the arrows on the Cameras panel, Tab / Shift+Tab, or 1-9
+- Zoom on the timeline: the mouse wheel over it zooms around the mouse, the bar under the tracks moves along, and it follows the cursor while playing
+- "Show" in the editor: turn country names, front lines, cities, city names, city limits, players, your points, your position, and the date and score of the video on or off; kept with the project and used in the videos
 
 ## 1.6.0
 

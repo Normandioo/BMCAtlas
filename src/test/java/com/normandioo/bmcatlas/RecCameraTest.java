@@ -32,10 +32,29 @@ class RecCameraTest {
         RecCamera c = camera();
         assertArrayEquals(new double[]{0, 0, 100}, c.keyed(0), 1e-9);          // before the first: the first
         assertArrayEquals(new double[]{0, 0, 100}, c.keyed(10_000), 1e-9);
-        assertArrayEquals(new double[]{50, -50, 200}, c.keyed(15_000), 1e-9);  // halfway (ease in/out is 0.5 there)
+        double[] mid = c.keyed(15_000);   // halfway in time (ease in/out is 0.5 there)
+        assertEquals(Math.sqrt(100 * 300), mid[2], 1e-9);   // the width changes by the same ratio in equal times, like the wheel
         double[] early = c.keyed(12_000);
         assertTrue(early[0] < 20, "eased: slow at the start, " + early[0]);
         assertArrayEquals(new double[]{100, -100, 300}, c.keyed(99_000), 1e-9); // after the last: the last
+    }
+
+    @Test
+    void zoomingBetweenKeyframesKeepsOnePointStillLikeTheWheel() {
+        RecCamera.Key a = new RecCamera.Key(0, 0, 0, 100), b = new RecCamera.Key(1000, 100, -100, 300);
+        // the point both framings are scaled around: p = (cb - ca * r) / (1 - r), r = wb / wa
+        double r = 3, px = (100 - 0 * r) / (1 - r), pz = (-100 - 0 * r) / (1 - r);
+        for (double f = 0; f <= 1.0001; f += 0.125) {
+            double[] k = RecCamera.between(a, b, f);
+            // where that point sits in the frame, as a share of the width: always the same
+            assertEquals((px - 0) / 100, (px - k[0]) / k[2], 1e-9);
+            assertEquals((pz - 0) / 100, (pz - k[1]) / k[2], 1e-9);
+        }
+        // the zoom speed is even: equal steps in time multiply the width by the same amount
+        assertEquals(RecCamera.between(a, b, 0.25)[2] / 100, RecCamera.between(a, b, 0.5)[2] / RecCamera.between(a, b, 0.25)[2], 1e-9);
+        // the same width: a plain pan
+        double[] pan = RecCamera.between(a, new RecCamera.Key(1000, 50, 0, 100), 0.5);
+        assertArrayEquals(new double[]{25, 0, 100}, pan, 1e-9);
     }
 
     @Test
@@ -63,7 +82,7 @@ class RecCameraTest {
         double[] f = c.at(15_000, (acc, t) -> acc.equals("Steve") ? new double[]{t / 1000.0, 7} : null, null);
         assertEquals(15, f[0], 1e-9);   // the average around 15 s of x = t/1000
         assertEquals(7, f[1], 1e-9);
-        assertEquals(200, f[2], 1e-9);
+        assertEquals(c.keyed(15_000)[2], f[2], 1e-9);   // the width still from the keyframes
         double[] gone = c.at(15_000, (acc, t) -> null, null);   // not on the map: the keyframes
         assertArrayEquals(c.keyed(15_000), gone, 1e-9);
     }

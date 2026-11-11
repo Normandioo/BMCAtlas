@@ -44,6 +44,62 @@ final class RecProject {
     /** What the video shows. */
     static final class Show {
         boolean players = true, playerNames = true, cityNames = true, score = true, clock = true, captions = true;
+        boolean countryNames = false, front = true, cities = true, limits = true, marks = true, self = true;
+    }
+
+    /** A cut of the edited video: from time t on, camera (its id) is the one shown. */
+    static final class Cut {
+        long t;
+        String camera;
+
+        Cut() {}
+
+        Cut(long t, String camera) {
+            this.t = t;
+            this.camera = camera;
+        }
+    }
+
+    /** The cuts of the edited video, in time order (none: no edited video, one video per camera). */
+    List<Cut> cuts = new ArrayList<>();
+
+    RecCamera cameraById(String id) {
+        for (RecCamera c : cameras) if (c.id != null && c.id.equals(id)) return c;
+        return null;
+    }
+
+    /** The camera shown at time t in the edited video: the last cut at or before t (the first cut's before it), or null. */
+    RecCamera cameraAt(long t) {
+        Cut best = null;
+        for (Cut c : cuts) {
+            if (best == null || c.t <= t) best = c;
+            if (c.t > t) break;
+        }
+        return best == null ? null : cameraById(best.camera);
+    }
+
+    /** Adds a cut to a camera at t (or changes the cut there, within half a second); the cuts stay in time order. */
+    Cut cut(long t, String camera) {
+        for (Cut c : cuts) {
+            if (Math.abs(c.t - t) <= 500) {
+                c.camera = camera;
+                return c;
+            }
+        }
+        Cut c = new Cut(Math.max(0, t), camera);
+        cuts.add(c);
+        sortCuts();
+        return c;
+    }
+
+    void sortCuts() {
+        cuts.sort(Comparator.comparingLong(c -> c.t));
+    }
+
+    /** Removes a camera and its cuts. */
+    void removeCamera(RecCamera c) {
+        cameras.remove(c);
+        cuts.removeIf(x -> x.camera == null || x.camera.equals(c.id));
     }
 
     List<Clip> clips = new ArrayList<>();
@@ -65,6 +121,9 @@ final class RecProject {
                     if (p.show == null) p.show = new Show();
                     if (p.cameras == null) p.cameras = new ArrayList<>();
                     p.cameras.removeIf(c -> c == null);
+                    if (p.cuts == null) p.cuts = new ArrayList<>();
+                    p.cuts.removeIf(c -> c == null || p.cameraById(c.camera) == null);
+                    p.sortCuts();
                     for (RecCamera c : p.cameras) {
                         if (c.keys == null) c.keys = new ArrayList<>();
                         c.keys.removeIf(k -> k == null || !(k.width > 0));

@@ -120,6 +120,18 @@ final class RecCamera {
         return f * f * (3 - 2 * f);
     }
 
+    /**
+     * The framing a fraction f (0-1) of the way from keyframe a to b, zoomed like the mouse wheel zooms the map: the width changes
+     * by the same ratio in equal times (so zooming in does not speed up or slow down), and the centre moves with it so that one
+     * point of the map stays put on screen, the one both framings are scaled around. With the same width it is a plain pan.
+     */
+    static double[] between(Key a, Key b, double f) {
+        double wa = Math.max(1e-6, a.width), wb = Math.max(1e-6, b.width);
+        double w = wa * Math.pow(wb / wa, f);
+        double g = Math.abs(wb - wa) < 1e-6 * Math.max(wa, wb) ? f : (w - wa) / (wb - wa);   // how far the centre has moved
+        return new double[]{a.cx + (b.cx - a.cx) * g, a.cz + (b.cz - a.cz) * g, w};
+    }
+
     /** The keyframes' framing at time t: {cx, cz, width}, eased between the two around it; the nearest one before or after. */
     double[] keyed(long t) {
         if (keys.isEmpty()) return new double[]{0, 0, 256};
@@ -127,10 +139,7 @@ final class RecCamera {
         if (t <= a.t) return new double[]{a.cx, a.cz, a.width};
         for (int i = 1; i < keys.size(); i++) {
             Key b = keys.get(i);
-            if (t <= b.t) {
-                double f = ease((t - a.t) / (double) Math.max(1, b.t - a.t));
-                return new double[]{a.cx + (b.cx - a.cx) * f, a.cz + (b.cz - a.cz) * f, a.width + (b.width - a.width) * f};
-            }
+            if (t <= b.t) return between(a, b, ease((t - a.t) / (double) Math.max(1, b.t - a.t)));
             a = b;
         }
         return new double[]{a.cx, a.cz, a.width};

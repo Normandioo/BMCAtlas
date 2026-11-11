@@ -27,6 +27,8 @@ final class ReplayEditor {
     /** The camera selected (index in project.cameras), and its keyframe selected on the timeline. */
     int selCam = -1;
     RecCamera.Key selKey;
+    /** The cut selected on the timeline (edited video), or null. */
+    RecProject.Cut selCut;
     private java.util.function.BiFunction<String, Long, double[]> playerAt;
     private List<double[]> places;
 
@@ -166,9 +168,40 @@ final class ReplayEditor {
     void deleteCamera() {
         RecCamera c = camera();
         if (c == null) return;
-        project.cameras.remove(c);
+        project.removeCamera(c);
+        selCut = null;
         selCam = -1;
         selKey = null;
+        save();
+    }
+
+    /** Tab / the arrows: the next (or previous) camera becomes the selected one. */
+    void nextCamera(int dir) {
+        int n = project.cameras.size();
+        if (n == 0) return;
+        int i = selCam < 0 ? (dir > 0 ? 0 : n - 1) : Math.floorMod(selCam + dir, n);
+        selectCamera(project.cameras.get(i));
+    }
+
+    /** 1-9: the camera of that number. */
+    void pickCamera(int i) {
+        if (i >= 0 && i < project.cameras.size()) selectCamera(project.cameras.get(i));
+    }
+
+    /** C: from the moment on screen on, the edited video shows the selected camera. */
+    void cutHere() {
+        RecCamera c = camera();
+        if (c == null) return;
+        selCut = project.cut(replay.time(), c.id);
+        selClip = -1;
+        selKey = null;
+        save();
+    }
+
+    void deleteCut() {
+        if (selCut == null) return;
+        project.cuts.remove(selCut);
+        selCut = null;
         save();
     }
 

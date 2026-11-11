@@ -64,6 +64,40 @@ class ExportPlanTest {
     }
 
     @Test
+    void cutsMakeOneEditedVideoThatSwitchesCameras() {
+        RecProject p = project();
+        RecCamera a = new RecCamera();
+        a.id = "a";
+        a.name = "Wide";
+        a.setKey(0, 0, 0, 1000);
+        RecCamera b = a.copy("b", "Close");
+        p.cameras.addAll(List.of(a, b));
+        p.cut(5_000, "b");
+        p.cut(0, "a");
+        p.cut(100_000, "a");
+        p.cut(5_200, "b");   // within half a second of the one at 5 s: the same cut
+        assertEquals(3, p.cuts.size());
+        assertEquals(List.of(0L, 5_000L, 100_000L), p.cuts.stream().map(c -> c.t).toList());
+        assertEquals(a, p.cameraAt(4_999));
+        assertEquals(b, p.cameraAt(5_000));
+        assertEquals(b, p.cameraAt(99_999));
+        assertEquals(a, p.cameraAt(500_000));
+
+        List<ExportPlan.Pass> passes = ExportPlan.of(p, "rec");
+        assertEquals(3, passes.size());   // the edited video first, then one per camera
+        ExportPlan.Pass edit = passes.get(0);
+        assertTrue(edit.edit());
+        assertEquals("rec_edit", edit.name());
+        assertEquals(600, edit.frames());
+        assertEquals(a, edit.cameraAt(p, 0));
+        assertEquals(b, edit.cameraAt(p, 60_000));
+        assertEquals(a, passes.get(1).cameraAt(p, 60_000));   // a camera's own video always shows that camera
+
+        p.removeCamera(b);   // its cuts go with it
+        assertEquals(List.of(0L, 100_000L), p.cuts.stream().map(c -> c.t).toList());
+    }
+
+    @Test
     void nothingToExportWithoutClips() {
         RecProject p = new RecProject();
         assertTrue(ExportPlan.of(p, "rec").isEmpty());

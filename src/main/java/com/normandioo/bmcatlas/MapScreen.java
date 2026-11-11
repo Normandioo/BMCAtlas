@@ -583,9 +583,9 @@ public class MapScreen extends MapEditor {
             Perf.begin("waves");
             if (mode == MODE_WAR) drawWaves(g);
             Perf.end("waves");
-            if (mode == MODE_POLITICAL || rel) drawSiteNames(g, d);
+            if (mode == MODE_POLITICAL || rel) drawSiteNames(g, d);   // (country names follow shows("countryNames"))
             Perf.begin("front");
-            drawWarFront(g, d);
+            if (shows("front")) drawWarFront(g, d);
             Perf.end("front");
             Perf.begin("cities");
             drawCities(g, d, mouseX, mouseY);
@@ -594,11 +594,11 @@ public class MapScreen extends MapEditor {
             Perf.end("markers");
         }
         if (site && d != null && simActive()) drawSimRings(g, d);
-        drawMarksAndMeasure(g, mouseX, mouseY);
+        if (shows("marks")) drawMarksAndMeasure(g, mouseX, mouseY);
         Perf.begin("players");
         drawOnlinePlayers(g, site ? d : null, mouseX, mouseY);
         Perf.end("players");
-        drawPlayer(g);
+        if (shows("self")) drawPlayer(g);
     }
 
     private void drawGrid(GuiGraphics g, double leftB, double rightB, double topB, double botB) {
@@ -638,7 +638,7 @@ public class MapScreen extends MapEditor {
 
     /** Nomes dos países: cada um cabe inteiro dentro do território (posição calculada por LabelFit). */
     private void drawSiteNames(GuiGraphics g, SiteTerritories.Data d) {
-        if (!Prefs.get().countryNames || scale > 1.2) return; // desligado, ou muito perto: os nomes só atrapalham
+        if (!shows("countryNames") || scale > 1.2) return; // desligado, ou muito perto: os nomes só atrapalham
         for (int c = 0; c < d.ids.length; c++) {
             if (d.shape[c] == null) continue;
             String text = d.labels[c].toUpperCase();
@@ -716,7 +716,7 @@ public class MapScreen extends MapEditor {
 
     /** Modo manual: nome no centro do país, com o tamanho limitado pela área real. */
     private void drawManualNames(GuiGraphics g) {
-        if (!Prefs.get().countryNames) return;
+        if (!shows("countryNames")) return;
         refreshStats();
         int span = MapData.PROV * 16;
         for (Map.Entry<String, double[]> e : stats.entrySet()) {
@@ -958,7 +958,7 @@ public class MapScreen extends MapEditor {
             } else {
                 drawIcon(g, sx, sy, l, rgb, hot);
             }
-            if ((Prefs.get().cityNames && scale >= NAME_MIN[l.tier] * 100.0 / Prefs.get().zoomBiasPct) || hot) {
+            if ((shows("cityNames") && scale >= NAME_MIN[l.tier] * 100.0 / Prefs.get().zoomBiasPct) || hot) {
                 String name = SiteTerritories.splitCamel(l.name);
                 int w = nameWidth(name) + 2;
                 int rx = sx + iconRadius(l) + 3, ry = sy - 5;
@@ -2624,6 +2624,7 @@ public class MapScreen extends MapEditor {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (exportBusy()) return true;   // the view belongs to the export
+        if (editorScroll(mouseX / ui, mouseY / ui, scrollX, scrollY)) return true;   // zooms the editor's timeline
         mouseX /= ui;
         mouseY /= ui;
         if (cardVisible && mouseX >= cardX && mouseX < cardX + cardW && mouseY >= cardY && mouseY < cardY + cardH) {
