@@ -69,6 +69,8 @@ final class Prefs {
         boolean recordWar = false;
         /** Record by itself every live war the map follows (see WarRecorder). */
         boolean recordLiveWars = false;
+        /** The recording bar on the war map is unfolded. */
+        boolean recorderOpen = true;
         /** Tell the player when a newer version of the mod is out (see UpdateCheck). */
         boolean updateCheck = true;
         // what the big map looked like when it was last closed

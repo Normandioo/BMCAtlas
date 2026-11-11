@@ -76,7 +76,7 @@ abstract class MapEditor extends MapPanels {
         box(g, x, y, w, h, COL_PANEL);
         hits.add(new Hit(x, y, w, h, null, null));
         g.drawString(font, "Recordings", x + 8, y + 8, COL_TEXT, false);
-        g.drawString(font, fit("Open one to watch it, pick highlights and make clips", w - 90), x + 8, y + 20, COL_DIM, false);
+        drawFit(g, "Open one to watch it, pick highlights and make clips", w - 90, x + 8, y + 20, COL_DIM, false);
         textButtonFixed(g, x + w - 52, y + 5, 46, 16, "Close", mouseX, mouseY, () -> listOpen = false);
         int ry = y + 36;
         if (listDirs.isEmpty()) {
@@ -92,8 +92,8 @@ abstract class MapEditor extends MapPanels {
             String sub = m == null ? "unreadable" : MapFormat.dateText(m.start) + "   " + ReplayEditor.clock(m.end - m.start)
                     + "   " + m.intervals.size() + (m.intervals.size() == 1 ? " session" : " sessions")
                     + (ReplayEditor.hasPlayers(dir) ? "   players" : "") + (m.importedFrom != null ? "   (old format)" : "");
-            g.drawString(font, fit(name == null ? "?" : name, w - 20), x + 10, ry + 2, COL_TEXT, false);
-            g.drawString(font, fit(sub, w - 20), x + 10, ry + 12, COL_DIM, false);
+            drawFit(g, name == null ? "?" : name, w - 20, x + 10, ry + 2, COL_TEXT, false);
+            drawFit(g, sub, w - 20, x + 10, ry + 12, COL_DIM, false);
             if (m != null) hits.add(new Hit(x + 4, ry, w - 8, rowH - 2, () -> openEditor(dir), null));
             ry += rowH;
         }
@@ -140,9 +140,9 @@ abstract class MapEditor extends MapPanels {
         boolean score = e.war != null && e.war.sides != null && e.war.sides.size() >= 2 && d != null;
         box(g, ix, iy, iw, score ? 46 : 32, COL_PANEL);
         hits.add(new Hit(ix, iy, iw, score ? 46 : 32, null, null));
-        g.drawString(font, fit(e.title, iw - 12), ix + 6, iy + 5, COL_TEXT, false);
+        drawFit(g, e.title, iw - 12, ix + 6, iy + 5, COL_TEXT, false);
         String when = MapFormat.dateText(r.absTime()) + "  " + ReplayEditor.clock(r.time()) + " / " + ReplayEditor.clock(r.length());
-        g.drawString(font, fit(when, iw - 12), ix + 6, iy + 17, r.recorded(r.time()) ? 0xFFF0B429 : COL_DIM, false);
+        drawFit(g, when, iw - 12, ix + 6, iy + 17, r.recorded(r.time()) ? 0xFFF0B429 : COL_DIM, false);
         if (score) sideBar(g, e.war, WarScore.of(d, e.war).points().clone(), ix + 6, iy + 31, iw - 12);
 
         // bottom: transport, the two tracks, the clip line
@@ -266,7 +266,7 @@ abstract class MapEditor extends MapPanels {
         } else {
             String help = hot != null ? hot.text() + "  (" + ReplayEditor.clock(hot.t()) + ")"
                     : "Space play   Left/Right 1 s   Shift+Left/Right highlights   I/O marks   Enter clip   Del delete   Esc close";
-            g.drawString(font, fit(help, pw - 16), px + 8, ly + 4, hot != null ? COL_TEXT : COL_DIM, false);
+            drawFit(g, help, pw - 16, px + 8, ly + 4, hot != null ? COL_TEXT : COL_DIM, false);
         }
     }
 

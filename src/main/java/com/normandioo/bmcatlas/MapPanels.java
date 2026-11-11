@@ -347,8 +347,8 @@ abstract class MapPanels extends MapUi {
                     }
                     String kind = pretty(l.kind);
                     int kw = kind == null ? 0 : Math.min(font.width(kind), 90);
-                    g.drawString(font, fit(pretty(l.name), bw - 66 - kw), bx + 30, rowTop + 4, isSel ? 0xFFFFF2B0 : COL_TEXT, false);
-                    if (kind != null) g.drawString(font, fit(kind, 90), bx + bw - 12 - kw, rowTop + 4, COL_DIM, false);
+                    drawFit(g, pretty(l.name), bw - 66 - kw, bx + 30, rowTop + 4, isSel ? 0xFFFFF2B0 : COL_TEXT, false);
+                    if (kind != null) drawFit(g, kind, 90, bx + bw - 12 - kw, rowTop + 4, COL_DIM, false);
                     hits.add(new Hit(bx + 6, rowTop, bw - 12, 16, () -> focusCity(l), "Go to " + pretty(l.name)));
                 }
                 rowIdx++;
@@ -537,7 +537,7 @@ abstract class MapPanels extends MapUi {
         int rowTop = cy;
         zebra(g, rowTop, 14, false, false);
         int rw = font.width(right);
-        g.drawString(font, fit(text, bw - 28 - rw), bx + 11, rowTop + 3, COL_TEXT, false);
+        drawFit(g, text, bw - 28 - rw, bx + 11, rowTop + 3, COL_TEXT, false);
         g.drawString(font, right, bx + bw - 11 - rw, rowTop + 3, COL_DIM, false);
         rowIdx++;
         cy += 14;
@@ -572,7 +572,7 @@ abstract class MapPanels extends MapUi {
             zebra(g, rowTop, 16, hover, false);
             miniFlag(g, d, c, bx + 9, rowTop + 2);
             String right = areaPct(c);
-            g.drawString(font, fit(place + ". " + d.labels[c], bw - 50 - font.width(right)), bx + 36, rowTop + 4, COL_TEXT, false);
+            drawFit(g, place + ". " + d.labels[c], bw - 50 - font.width(right), bx + 36, rowTop + 4, COL_TEXT, false);
             g.drawString(font, right, bx + bw - 11 - font.width(right), rowTop + 4, COL_DIM, false);
             if (visible(rowTop, 16)) hits.add(new Hit(bx + 4, rowTop, bw - 8, 16, () -> selectCountry(country), null));
             rowIdx++;
@@ -657,7 +657,7 @@ abstract class MapPanels extends MapUi {
                 if (flag != null) drawImage(g, flag, bx + 9, rowTop + 3, 20, 10);
                 else g.fill(bx + 9, rowTop + 3, bx + 29, rowTop + 13, d.rgb[idx] | 0xFF000000);
                 String count = String.valueOf(d.provinceCount[idx]);
-                g.drawString(font, fit(d.labels[idx], bw - 84), bx + 36, rowTop + 4, COL_TEXT, false);
+                drawFit(g, d.labels[idx], bw - 84, bx + 36, rowTop + 4, COL_TEXT, false);
                 g.drawString(font, count, bx + bw - 10 - font.width(count), rowTop + 4, COL_DIM, false);
                 final int country = idx;
                 hits.add(new Hit(bx + 4, rowTop, bw - 8, 16, () -> selectCountry(country), null));
@@ -722,7 +722,7 @@ abstract class MapPanels extends MapUi {
                     if (flag != null) drawImage(g, flag, bx + 9, rowTop + 3, 20, 10);
                     else g.fill(bx + 9, rowTop + 3, bx + 29, rowTop + 13, 0xFF000000 | Relations.blocColor(a, i));
                     String count = String.valueOf(Relations.countriesOf(d, a).size());
-                    g.drawString(font, fit(a.name == null ? a.id : a.name, bw - 84), bx + 36, rowTop + 4, COL_TEXT, false);
+                    drawFit(g, a.name == null ? a.id : a.name, bw - 84, bx + 36, rowTop + 4, COL_TEXT, false);
                     g.drawString(font, count, bx + bw - 10 - font.width(count), rowTop + 4, COL_DIM, false);
                     final int idx = i;
                     hits.add(new Hit(bx + 4, rowTop, bw - 8, 16, () -> {
@@ -873,7 +873,7 @@ abstract class MapPanels extends MapUi {
         boolean run = warRunning(w);
         String tag = !run ? "ENDED" : w.live ? "LIVE" : "ACTIVE";
         int tagCol = !run ? COL_DIM : COL_WAR;
-        g.drawString(font, fit(warName(w), wd - 14 - font.width(tag) - 6), x + 6, y + 4, hover ? 0xFFFFFFFF : COL_TEXT, false);
+        drawFit(g, warName(w), wd - 14 - font.width(tag) - 6, x + 6, y + 4, hover ? 0xFFFFFFFF : COL_TEXT, false);
         g.drawString(font, tag, x + wd - 6 - font.width(tag), y + 4, tagCol, false);
         if (w.sides != null && w.sides.size() >= 2) {
             WarScore.Result r = WarScore.of(d, w);
@@ -883,7 +883,7 @@ abstract class MapPanels extends MapUi {
         long now = System.currentTimeMillis();
         String line = st != NONE ? "started " + countdown(st - now) : "";
         if (en != NONE) line += (line.isEmpty() ? "" : "   ") + (en <= now ? "ended " : "ends ") + countdown(en - now);
-        if (!line.isEmpty()) g.drawString(font, fit(line, wd - 12), x + 6, y + 31, COL_DIM, false);
+        if (!line.isEmpty()) drawFit(g, line, wd - 12, x + 6, y + 31, COL_DIM, false);
         if (vis) hits.add(new Hit(x, y, wd, h, () -> {
             warSel = idx;
             warTab = 0;
@@ -909,7 +909,7 @@ abstract class MapPanels extends MapUi {
             if (n == 2) g.fill(bx + bw / 2, cy - 3, bx + bw / 2 + 1, cy + 15, 0xFFECEBE4);
             cy += 17;
             String verdict = !any ? "No city values recorded" : r.even() ? "Balanced: no side ahead" : sideName(w, r.leader()) + " ahead";
-            g.drawString(font, fit(verdict, bw - 18), bx + 9, cy, !any || r.even() ? COL_DIM : ctlColor(w, r.leader()), false);
+            drawFit(g, verdict, bw - 18, bx + 9, cy, !any || r.even() ? COL_DIM : ctlColor(w, r.leader()), false);
             cy += 12;
             double[] caps = new double[n];
             int taken = 0;
@@ -933,7 +933,7 @@ abstract class MapPanels extends MapUi {
                 g.fill(bx + 10, cy + 2, bx + 16, cy + 8, color);
                 String tail = (any ? Math.round(r.share(i) * 100) + "%  " + pts(r.points()[i]) + " pts" : "") + "   " + (int) caps[i] + " taken";
                 int tw = font.width(tail);
-                g.drawString(font, fit(sideName(w, i), bw - 40 - tw), bx + 21, cy, COL_TEXT, false);
+                drawFit(g, sideName(w, i), bw - 40 - tw, bx + 21, cy, COL_TEXT, false);
                 g.drawString(font, tail, bx + bw - 10 - tw, cy, COL_DIM, false);
                 cy += 11;
             }
@@ -975,7 +975,7 @@ abstract class MapPanels extends MapUi {
             if (side.members == null) continue;
             for (SiteTerritories.Member m : side.members) {
                 if (m.name != null) {
-                    g.drawString(font, fit(stripAt(m.name) + (m.note != null && !m.note.isBlank() ? "  (" + m.note + ")" : ""), bw - 20), bx + 9, cy, COL_LINK, false);
+                    drawFit(g, stripAt(m.name) + (m.note != null && !m.note.isBlank() ? "  (" + m.note + ")" : ""), bw - 20, bx + 9, cy, COL_LINK, false);
                     cy += 11;
                 }
                 List<String> countries = m.countries == null || m.countries.isEmpty() ? (m.name == null ? List.<String>of() : List.of(stripAt(m.name))) : m.countries;
@@ -997,7 +997,7 @@ abstract class MapPanels extends MapUi {
                     WarFront.Score sc = scoreBy.get(c.toLowerCase(Locale.ROOT));
                     if (sc != null && sc.capitulated()) tail = "CAPITULOU";
                     int tw = font.width(tail);
-                    g.drawString(font, fit(ci >= 0 ? d.labels[ci] : c, bw - 60 - tw), bx + 36, rowTop + 3, hover ? 0xFFDDE7EE : COL_TEXT, false);
+                    drawFit(g, ci >= 0 ? d.labels[ci] : c, bw - 60 - tw, bx + 36, rowTop + 3, hover ? 0xFFDDE7EE : COL_TEXT, false);
                     g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 3, sc != null && sc.capitulated() ? COL_WAR : COL_DIM, false);
                     final int cc = ci;
                     if (vis && ci >= 0) hits.add(new Hit(bx + 6, rowTop, bw - 12, 14, () -> selectCountry(cc), null));
@@ -1038,7 +1038,7 @@ abstract class MapPanels extends MapUi {
                     if (mine.isEmpty()) continue;
                     mine.sort(BY_VALUE);
                     g.fill(bx + 9, cy + 1, bx + 17, cy + 9, ctlColor(w, s));
-                    g.drawString(font, fit(sideName(w, s) + " took " + mine.size(), bw - 34), bx + 21, cy, COL_TEXT, false);
+                    drawFit(g, sideName(w, s) + " took " + mine.size(), bw - 34, bx + 21, cy, COL_TEXT, false);
                     cy += 12;
                     for (WarScore.Holding h : mine) warCityRow(g, d, f, h, true, mouseX, mouseY);
                 }
@@ -1089,7 +1089,7 @@ abstract class MapPanels extends MapUi {
                 if (ci >= 0) miniFlag(g, d, ci, bx + 20, rowTop + 1);
                 String tail = list.size() + (list.size() == 1 ? " city" : " cities") + (lost > 0 ? ", " + lost + " lost" : "");
                 int tw = font.width(tail);
-                g.drawString(font, fit(ci >= 0 ? d.labels[ci] : e.getKey(), bw - 64 - tw), bx + 46, rowTop + 4, hover ? 0xFFDDE7EE : COL_TEXT, false);
+                drawFit(g, ci >= 0 ? d.labels[ci] : e.getKey(), bw - 64 - tw, bx + 46, rowTop + 4, hover ? 0xFFDDE7EE : COL_TEXT, false);
                 g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 4, lost > 0 ? COL_WAR : COL_DIM, false);
                 if (vis) hits.add(new Hit(bx + 6, rowTop, bw - 12, 15, () -> {
                     if (!WAR_CLOSED.remove(key)) WAR_CLOSED.add(key);
@@ -1121,7 +1121,7 @@ abstract class MapPanels extends MapUi {
         if (status != null) tail = (tail.isEmpty() ? "" : tail + "  ") + status;
         int tw = font.width(tail);
         String name = pretty(l.name) + (withCountry && l.country != null && !l.country.isBlank() ? " (" + l.country + ")" : "");
-        g.drawString(font, fit(name, bw - 56 - tw), bx + 29, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
+        drawFit(g, name, bw - 56 - tw, bx + 29, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
         g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 2, status != null ? COL_WAR : COL_DIM, false);
         if (vis) {
             final SiteTerritories.Locality ll = l;
@@ -1160,7 +1160,7 @@ abstract class MapPanels extends MapUi {
             g.fill(bx + 9, cy + 1, bx + 17, cy + 9, ctlColor(w, i));
             String tail = play + " In Play  /  " + enc + " encircled";
             int tw = font.width(tail);
-            g.drawString(font, fit(sideName(w, i), bw - 40 - tw), bx + 21, cy, COL_TEXT, false);
+            drawFit(g, sideName(w, i), bw - 40 - tw, bx + 21, cy, COL_TEXT, false);
             g.drawString(font, tail, bx + bw - 10 - tw, cy, COL_DIM, false);
             cy += 12;
         }
@@ -1195,7 +1195,7 @@ abstract class MapPanels extends MapUi {
             String tail = st == null ? "In Play" : st;
             int tw = font.width(tail);
             String name = pretty(l.name) + (l.country == null || l.country.isBlank() ? "" : " (" + l.country + ")");
-            g.drawString(font, fit(name, bw - 56 - tw), bx + 29, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
+            drawFit(g, name, bw - 56 - tw, bx + 29, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
             g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 2, COL_WAR, false);
             if (vis) hits.add(new Hit(bx + 6, rowTop, bw - 12, 12, () -> focusPoint(l), null));
             cy += 12;
@@ -1212,7 +1212,7 @@ abstract class MapPanels extends MapUi {
             g.fill(bx + 9, rowTop + 1, bx + 17, rowTop + 9, ctlColor(w, s.side()));
             String tail = s.capitulated() ? "CAPITULOU" : pts(s.score()) + " / 100" + (s.capitalTaken() ? "  capital taken" : "");
             int tw = font.width(tail);
-            g.drawString(font, fit(s.nation() + (s.hasCapital() ? "" : " (no capital)"), bw - 40 - tw), bx + 21, rowTop, s.capitulated() ? COL_WAR : COL_TEXT, false);
+            drawFit(g, s.nation() + (s.hasCapital() ? "" : " (no capital)"), bw - 40 - tw, bx + 21, rowTop, s.capitulated() ? COL_WAR : COL_TEXT, false);
             g.drawString(font, tail, bx + bw - 10 - tw, rowTop, s.capitulated() ? COL_WAR : COL_DIM, false);
             cy += 11;
             int barW = bw - 18;
@@ -1391,7 +1391,7 @@ abstract class MapPanels extends MapUi {
                 boolean vis = visible(rowTop, 16);
                 boolean hover = vis && mouseX >= bx + 9 && mouseX < bx + bw - 9 && mouseY >= rowTop && mouseY < rowTop + 16;
                 bevel(g, bx + 9, rowTop, bw - 18, 16, hover, e.key.equalsIgnoreCase(cur));
-                g.drawString(font, fit(e.name, bw - 40), bx + 16, rowTop + 4, e.key.equalsIgnoreCase(cur) ? 0xFFFFF2B0 : COL_TEXT, false);
+                drawFit(g, e.name, bw - 40, bx + 16, rowTop + 4, e.key.equalsIgnoreCase(cur) ? 0xFFFFF2B0 : COL_TEXT, false);
                 if (vis) hits.add(new Hit(bx + 9, rowTop, bw - 18, 16, () -> SiteTerritories.selectMap(e.key), null));
                 cy += 19;
             }
@@ -1459,7 +1459,7 @@ abstract class MapPanels extends MapUi {
                     if (flag != null) drawImage(g, flag, bx + 11, rowTop + 3, 20, 12);
                     else g.fill(bx + 11, rowTop + 3, bx + 31, rowTop + 15, 0xFF000000 | Relations.blocColor(a, i));
                     String count2 = String.valueOf(Relations.countriesOf(d, a).size());
-                    g.drawString(font, fit(a.name == null ? a.id : a.name, bw - 90), bx + 38, rowTop + 5, COL_TEXT, false);
+                    drawFit(g, a.name == null ? a.id : a.name, bw - 90, bx + 38, rowTop + 5, COL_TEXT, false);
                     g.drawString(font, count2, bx + bw - 12 - font.width(count2), rowTop + 5, COL_DIM, false);
                     final int idx = i;
                     hits.add(new Hit(bx + 6, rowTop, bw - 12, 18, () -> dipAlliance = dipAlliance == idx ? -1 : idx, null));
@@ -1511,7 +1511,7 @@ abstract class MapPanels extends MapUi {
             int half = (bw - 24 - 40) / 2;
             int x = bx + 11;
             if (t.b() == null) {
-                g.drawString(font, fit(t.a(), bw - 26), x, rowTop + 3, COL_TEXT, false);
+                drawFit(g, t.a(), bw - 26, x, rowTop + 3, COL_TEXT, false);
             } else {
                 Integer ia = idx.get(Relations.norm(t.a())), ib = idx.get(Relations.norm(t.b()));
                 String ta = fit(ia != null ? d.labels[ia] : t.a(), half), tb = fit(ib != null ? d.labels[ib] : t.b(), half);
@@ -1522,7 +1522,7 @@ abstract class MapPanels extends MapUi {
             }
             String when = (t.note().startsWith("->") ? "automatically accepted " : t.note().isEmpty() ? "until " : t.note() + " until ")
                     + dateText(t.until()) + "  (" + countdown(t.until() - now) + ")";
-            g.drawString(font, fit(when, bw - 26), bx + 11, rowTop + 13, color, false);
+            drawFit(g, when, bw - 26, bx + 11, rowTop + 13, color, false);
         }
         rowIdx++;
         cy += 24;
@@ -1702,12 +1702,12 @@ abstract class MapPanels extends MapUi {
                 zebra(g, rowTop, 24, hover, false);
                 String when = left < 0 ? "overdue " + countdown(left) : countdown(left);
                 int color = left < 0 ? 0xFFE06A6A : left < 2 * DAY ? 0xFFE8B04A : COL_TEXT;
-                g.drawString(font, fit(pu.site(), bw - 36 - font.width(when)), bx + 11, rowTop + 3, hover ? 0xFFDDE7EE : COL_LINK, false);
+                drawFit(g, pu.site(), bw - 36 - font.width(when), bx + 11, rowTop + 3, hover ? 0xFFDDE7EE : COL_LINK, false);
                 g.drawString(font, when, bx + bw - 11 - font.width(when), rowTop + 3, color, false);
                 String sub = (pu.p().country == null ? "" : pu.p().country)
                         + (pu.p().purge.realm == null ? "" : "  -  realm " + pu.p().purge.realm)
                         + "  -  " + pu.p().purge.days + " days";
-                g.drawString(font, fit(sub, bw - 24), bx + 11, rowTop + 13, COL_DIM, false);
+                drawFit(g, sub, bw - 24, bx + 11, rowTop + 13, COL_DIM, false);
                 final String site = pu.site();
                 hits.add(new Hit(bx + 6, rowTop, bw - 12, 24, () -> openPlayer(site), null));
             }
@@ -1922,11 +1922,11 @@ abstract class MapPanels extends MapUi {
         int tw = bx + bw - 10 - tx;
         if (p != null) {
             if (p.ign != null) {
-                g.drawString(font, fit(p.ign, tw), tx, ty, 0xFFFFFFFF, false);
+                drawFit(g, p.ign, tw, tx, ty, 0xFFFFFFFF, false);
                 ty += 12;
             }
             if (p.country != null) {
-                g.drawString(font, fit(p.country, tw), tx, ty, COL_TEXT, false);
+                drawFit(g, p.country, tw, tx, ty, COL_TEXT, false);
                 ty += 12;
             }
             if (p.immune != null) {
@@ -1982,7 +1982,7 @@ abstract class MapPanels extends MapUi {
                     boolean hover = vis && mouseX >= bx + 6 && mouseX < bx + bw - 6 && mouseY >= rowTop && mouseY < rowTop + 12;
                     zebra(g, rowTop, 12, hover, false);
                     rowIdx++;
-                    g.drawString(font, fit(label, bw - 24), bx + 10, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
+                    drawFit(g, label, bw - 24, bx + 10, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
                     if (vis) hits.add(new Hit(bx + 6, rowTop, bw - 12, 12, () -> focusPoint(l), null));
                     cy += 12;
                 }
@@ -2074,7 +2074,7 @@ abstract class MapPanels extends MapUi {
             g.fill(bx + 10, rowTop + 4, bx + 20, rowTop + 10, c.rgb);
             double[] s = stats.get(c.id);
             String count = String.valueOf(s == null ? 0 : (int) s[2]);
-            g.drawString(font, fit(c.name, bw - 70), bx + 27, rowTop + 3, COL_TEXT, false);
+            drawFit(g, c.name, bw - 70, bx + 27, rowTop + 3, COL_TEXT, false);
             g.drawString(font, count, bx + bw - 10 - font.width(count), rowTop + 3, COL_DIM, false);
             rowIdx++;
             cy += 14;

@@ -200,7 +200,7 @@ final class WarRecorder {
     /** Whether this war should be recorded now: the switch, or a live war with the automatic option. */
     private static boolean wanted(SiteTerritories.WarInfo war) {
         Prefs.Data p = Prefs.get();
-        if (war == null) return false;
+        if (war == null || keyOf(war).equals(stoppedByHand)) return false;   // stopped with the button: not even the automatic option restarts it
         return p.recordWar || p.recordLiveWars && war.live && WarStatus.running(war);
     }
 
@@ -336,6 +336,36 @@ final class WarRecorder {
 
     static boolean recording() {
         return session != null;
+    }
+
+    /** A war whose recording was stopped with the button while "Record live wars automatically" is on (so it does not restart). */
+    private static String stoppedByHand;
+
+    /** Whether this war is being recorded right now. */
+    static boolean recording(SiteTerritories.WarInfo war) {
+        Session s = session;
+        return s != null && war != null && s.key.equals(keyOf(war));
+    }
+
+    /** How long the recording of this sitting has been going (ms), or 0. */
+    static long sittingMs() {
+        Session s = session;
+        if (s == null || s.meta.intervals.isEmpty()) return 0;
+        return Math.max(0, System.currentTimeMillis() - s.meta.intervals.get(s.meta.intervals.size() - 1)[0]);
+    }
+
+    /** The Start / Stop recording button. */
+    static void startStop(SiteTerritories.WarInfo war) {
+        Prefs.Data p = Prefs.get();
+        if (recording(war)) {
+            p.recordWar = false;
+            if (p.recordLiveWars) stoppedByHand = keyOf(war);
+            stopRecording();
+        } else {
+            stoppedByHand = null;
+            p.recordWar = true;
+        }
+        Prefs.save();
     }
 
     /** Ends the recording being written (switched off, the war ended, the player left the server). */

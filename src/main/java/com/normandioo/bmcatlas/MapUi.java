@@ -192,7 +192,7 @@ abstract class MapUi extends Screen {
         int maxW = x + w - 30 - tx;
         int ty = country ? y + 12 : subtitle != null ? y + 9 : y + 3 + (hh - 3 - 8) / 2;
         spaced(g, fitSpaced(title.toUpperCase(Locale.ROOT), maxW), tx, ty, 0xFFECEBE4, true);
-        if (subtitle != null) g.drawString(font, fit(subtitle, maxW), tx, ty + 13, COL_DIM, false);
+        if (subtitle != null) drawFit(g, subtitle, maxW, tx, ty + 13, COL_DIM, false);
         int cx = x + w - 22, cyy = y + 7;
         boolean hover = mouseX >= cx && mouseX < cx + 14 && mouseY >= cyy && mouseY < cyy + 14;
         g.fill(cx, cyy, cx + 14, cyy + 14, 0xFF0A0B08);
@@ -212,6 +212,32 @@ abstract class MapUi extends Screen {
     static int lighten(int c, float k) {
         return 0xFF000000 | (Math.min(255, (int) (((c >> 16) & 0xFF) * k)) << 16)
                 | (Math.min(255, (int) (((c >> 8) & 0xFF) * k)) << 8) | Math.min(255, (int) ((c & 0xFF) * k));
+    }
+
+    /** A text drawn cut short, with where it is: hovering it shows the whole text (drawTooltip). */
+    record Cut(int x, int y, int w, int h, String full) {}
+
+    /** The texts cut short in this frame. */
+    List<Cut> cuts = new ArrayList<>();
+    /** Drawing inside a scrolled list (beginScroll ... endScroll): what is scrolled out of sight has no tip. */
+    boolean inScroll;
+
+    /** Draws a text cut to maxW (with ...), and remembers the whole text when it was cut. */
+    void drawFit(GuiGraphics g, String text, int maxW, int x, int y, int color, boolean shadow) {
+        String shown = fit(text, maxW);
+        g.drawString(font, shown, x, y, color, shadow);
+        if (text == null || shown.equals(text)) return;
+        if (inScroll && (y + 8 <= scrollTop || y >= scrollBottom)) return;
+        cuts.add(new Cut(x, y - 1, font.width(shown), 10, text));
+    }
+
+    /** The whole text of a cut one under the mouse, or null. */
+    String cutAt(double mx, double my) {
+        for (int i = cuts.size() - 1; i >= 0; i--) {
+            Cut c = cuts.get(i);
+            if (mx >= c.x() && mx < c.x() + c.w() && my >= c.y() && my < c.y() + c.h()) return c.full();
+        }
+        return null;
     }
 
     String fit(String s, int maxWidth) {
@@ -242,6 +268,7 @@ abstract class MapUi extends Screen {
         scrollTop = top;
         scrollBottom = by + bh - 4 - reserve;
         g.enableScissor(bx + 4, top, bx + bw - 4, scrollBottom);
+        inScroll = true;
         cy = top + 4 - (int) scroll;
         rowIdx = 0;
     }
@@ -249,6 +276,7 @@ abstract class MapUi extends Screen {
     /** Fecha a área rolável; devolve a rolagem corrigida. */
     double endScroll(GuiGraphics g, double scroll) {
         g.disableScissor();
+        inScroll = false;
         int contentH = cy - (scrollTop + 4 - (int) scroll) + 8;
         int viewH = scrollBottom - scrollTop;
         double max = Math.max(0, contentH - viewH);
@@ -372,7 +400,7 @@ abstract class MapUi extends Screen {
         boolean vis = visible(y, 16);
         boolean hover = vis && mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + 16;
         bevel(g, x, y, w, 16, hover, false);
-        g.drawString(font, fit(label, w - 60), x + 6, y + 4, COL_TEXT, false);
+        drawFit(g, label, w - 60, x + 6, y + 4, COL_TEXT, false);
         String state = value ? "On" : "Off";
         g.fill(x + w - 12, y + 5, x + w - 5, y + 12, 0xFF0E0C08);
         g.fill(x + w - 11, y + 6, x + w - 6, y + 11, value ? 0xFF4CD964 : 0xFF5A584E);
@@ -383,7 +411,7 @@ abstract class MapUi extends Screen {
 
     /** Linha com uma faixa de passos: clique num trecho para escolher o valor. */
     void stepsRow(GuiGraphics g, String label, String shown, int count, int current, int mouseX, int mouseY, Consumer<Integer> pick) {
-        g.drawString(font, fit(label, bw - 24 - font.width(shown)), bx + 9, cy, COL_TEXT, false);
+        drawFit(g, label, bw - 24 - font.width(shown), bx + 9, cy, COL_TEXT, false);
         g.drawString(font, shown, bx + bw - 10 - font.width(shown), cy, COL_LINK, false);
         cy += 11;
         int x = bx + 9, w = bw - 18, y = cy;
@@ -406,7 +434,7 @@ abstract class MapUi extends Screen {
 
     /** Linha com botões lado a lado (uma escolha). */
     void choiceRow(GuiGraphics g, String label, String[] options, int sel, int mouseX, int mouseY, Consumer<Integer> pick) {
-        g.drawString(font, fit(label, bw - 20), bx + 9, cy, COL_TEXT, false);
+        drawFit(g, label, bw - 20, bx + 9, cy, COL_TEXT, false);
         cy += 11;
         int n = options.length, gap = 3;
         int w = (bw - 18 - gap * (n - 1)) / n;

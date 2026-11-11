@@ -4,6 +4,7 @@
 - Highlights found by themselves and marked on the timeline: captures, cities retaken, contested, capitals, capitulations, battles (3 or more players of 2 sides close together for 10 s); click one to go there
 - Clips for the video: In/Out marks and "Add clip", or "Auto highlights" (each highlight from 20 s before to 15 s after, with the stretches in between at 120x); drag a clip to move it, or its ends to resize it; each clip has its own speed. Saved in project.json in the recording's folder
 - Keys: Space play, Left/Right 1 s, Shift+Left/Right highlights, I/O, Enter, Delete, Home/End, Esc
+- The recording bar on the war map has a clear Start recording / Stop recording button (with the time of the recording running) and folds away with its arrow; folded, it keeps a small "Recorder" button and the red REC while recording- Stop recording also holds back "Record live wars automatically" for that war until you start it again- Any text cut short with "..." in the map menus shows the whole text when the mouse is over it
 
 ## 1.4.0
 

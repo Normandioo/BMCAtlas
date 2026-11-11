@@ -195,7 +195,7 @@ public class MapScreen extends MapEditor {
     private static final int G_PANEL = 0, G_OUT = 1, G_BAR = 2;
     /** Scale of the group being drawn right now (1 outside a group). */
     private static float groupScale = 1f;
-    private int gSaveW, gSaveH, gFirstHit;
+    private int gSaveW, gSaveH, gFirstHit, gFirstCut;
     private int gDrag = -1;
     private float gDragFrom;
     private double gDragAX, gDragAY, gDragDist;
@@ -238,6 +238,7 @@ public class MapScreen extends MapEditor {
         g.pose().pushMatrix();
         g.pose().scale(s, s);
         gFirstHit = hits.size();
+        gFirstCut = cuts.size();
         return s;
     }
 
@@ -249,6 +250,10 @@ public class MapScreen extends MapEditor {
         height = gSaveH;
         groupScale = 1f;
         RemoteImages.extraScale = ui;
+        for (int i = gFirstCut; i < cuts.size(); i++) {   // the texts cut short, to screen coordinates too
+            Cut c = cuts.get(i);
+            cuts.set(i, new Cut(Math.round(c.x() * s), Math.round(c.y() * s), Math.round(c.w() * s), Math.round(c.h() * s), c.full()));
+        }
         int x0 = Integer.MAX_VALUE, y0 = Integer.MAX_VALUE, x1 = Integer.MIN_VALUE, y1 = Integer.MIN_VALUE;
         for (int i = gFirstHit; i < hits.size(); i++) {
             Hit h = hits.get(i);
@@ -325,6 +330,7 @@ public class MapScreen extends MapEditor {
         prevHits = hits;
         hits = t;
         hits.clear();
+        cuts.clear();
         panelVisible = false;
         cardVisible = false;
         if (relationalMode() && !siteMode()) mode = MODE_POLITICAL;
@@ -1157,7 +1163,7 @@ public class MapScreen extends MapEditor {
         int ry = y + 24;
         for (String[] row : HELP) {
             g.drawString(font, row[0], x + 10, ry, 0xFFE8D9A0, false);
-            g.drawString(font, fit(row[1], w - keyW - 30), x + 22 + keyW, ry, COL_TEXT, false);
+            drawFit(g, row[1], w - keyW - 30, x + 22 + keyW, ry, COL_TEXT, false);
             ry += 12;
         }
     }
@@ -1208,7 +1214,7 @@ public class MapScreen extends MapEditor {
         box(g, x, y, w, h, COL_PANEL);
         hits.add(new Hit(x, y, w, h, null, null));
         g.fill(x + 7, y + 6, x + 13, y + 12, Prefs.markColor(m));
-        g.drawString(font, fit((m.name == null ? "Point" : m.name) + "  " + m.x + ", " + m.z, w - 24), x + 17, y + 5, COL_TEXT, false);
+        drawFit(g, (m.name == null ? "Point" : m.name) + "  " + m.x + ", " + m.z, w - 24, x + 17, y + 5, COL_TEXT, false);
         int bw3 = (w - 18) / 3;
         textButtonFixed(g, x + 7, y + 18, bw3, 16, "Rename", mouseX, mouseY, () -> startRename(m));
         textButtonFixed(g, x + 9 + bw3, y + 18, bw3, 16, "Color", mouseX, mouseY, () -> {
@@ -1243,25 +1249,43 @@ public class MapScreen extends MapEditor {
         timelineWar = w;
         if (w == null) return;
         int n = WarRecorder.count(w);
-        boolean rec = Prefs.get().recordWar, replay = WarRecorder.replaying();
+        boolean rec = WarRecorder.recording(w), replay = WarRecorder.replaying();
+        String dot = "● REC " + ReplayEditor.clock(WarRecorder.sittingMs());
+        if (!Prefs.get().recorderOpen && !replay) {   // folded: one small button, with the red dot while recording
+            String label = "Recorder ▴";
+            int bw = font.width(label) + 12 + (rec ? font.width(dot) + 10 : 0), bx2 = (width - bw) / 2, by2 = height - 58;
+            box(g, bx2, by2, bw, 22, COL_PANEL);
+            hits.add(new Hit(bx2, by2, bw, 22, null, null));
+            textButtonFixed(g, bx2 + 4, by2 + 3, font.width(label) + 8, 16, label, mouseX, mouseY, () -> {
+                Prefs.get().recorderOpen = true;
+                Prefs.save();
+            });
+            if (rec) g.drawString(font, dot, bx2 + font.width(label) + 16, by2 + 7, 0xFFE8403A, false);
+            return;
+        }
         Replay r = WarRecorder.current();
         String info = replay && r != null
                 ? "Replay  " + dateText(WarRecorder.time())
-                : n >= 1 ? n + (n == 1 ? " moment recorded" : " moments recorded") : rec ? "Recording: changes will show up here" : "Record this war to play it back later";
+                : rec ? dot : n >= 1 ? n + (n == 1 ? " moment recorded" : " moments recorded") : "Start recording to play this war back later";
         String speed = r == null ? "1x" : r.speedText();
-        int recW = font.width(rec ? "Recording: on" : "Recording: off") + 12;
+        String recLabel = rec ? "Stop recording" : "Start recording";
+        int recW = font.width(recLabel) + 12 + (rec ? 0 : 8);
         int speedW = font.width("0.25x") + 10;
         int bwn = n >= 1 ? 30 * 3 + 44 + (replay ? 18 + speedW + 18 + 2 + 40 : 0) + 10 : 0;
-        int wBar = Math.max(recW + font.width("Recordings") + 16 + bwn + font.width(info) + 26, replay ? 320 : 0);
+        int wBar = Math.max(20 + recW + font.width("Recordings") + 16 + bwn + font.width(info) + 26, replay ? 320 : 0);
         int barH = replay ? 34 : 22;
         int x = Math.max(4, (width - wBar) / 2), y = height - 58 - (barH - 22);
         box(g, x, y, wBar, barH, COL_PANEL);
         hits.add(new Hit(x, y, wBar, barH, null, null));
         int cx = x + 4;
-        textButtonFixed(g, cx, y + 3, recW, 16, rec ? "Recording: on" : "Recording: off", mouseX, mouseY, () -> {
-            Prefs.get().recordWar = !Prefs.get().recordWar;
+        textButtonFixed(g, cx, y + 3, 16, 16, "▾", mouseX, mouseY, () -> {   // fold the bar
+            Prefs.get().recorderOpen = false;
             Prefs.save();
         });
+        cx += 18;
+        textButtonFixed(g, cx, y + 3, recW, 16, rec ? recLabel : "  " + recLabel, mouseX, mouseY, () -> WarRecorder.startStop(w));
+        if (!rec) g.fill(cx + 6, y + 8, cx + 11, y + 13, 0xFFE8403A);   // the red dot of "start"
+        else g.fill(cx + recW - 10, y + 8, cx + recW - 5, y + 13, 0xFFE8403A);
         cx += recW + 4;
         int listW = font.width("Recordings") + 12;
         textButtonFixed(g, cx, y + 3, listW, 16, "Recordings", mouseX, mouseY, this::openList);
@@ -1446,7 +1470,7 @@ public class MapScreen extends MapEditor {
             RemoteImages.Img flag = RemoteImages.flag(flagOf(d, me));
             if (flag != null) drawImage(g, flag, x + 2, 5, 34, 20);
             else g.fill(x + 2, 5, x + 36, 25, 0xFF000000 | d.rgb[me]);
-            g.drawString(font, fit(d.labels[me].toUpperCase(Locale.ROOT), 62), x + 42, 6, 0xFFECEBE4, false);
+            drawFit(g, d.labels[me].toUpperCase(Locale.ROOT), 62, x + 42, 6, 0xFFECEBE4, false);
             g.drawString(font, "Your country", x + 42, 17, COL_DIM, false);
             hits.add(new Hit(x, 3, 106, 24, () -> selectCountry(me), d.names[me]));
             x += 108;
@@ -1528,7 +1552,7 @@ public class MapScreen extends MapEditor {
             String left = countdown(t.until() - now).replace("in ", "");
             String name = (ia != null ? d.labels[ia] : t.a()) + (t.b() == null ? "" : " and " + (ib != null ? d.labels[ib] : t.b()));
             int lw = font.width(left);
-            g.drawString(font, fit(name, w - 40 - lw), x + 30, ry + 3, COL_TEXT, false);
+            drawFit(g, name, w - 40 - lw, x + 30, ry + 3, COL_TEXT, false);
             g.drawString(font, left, x + w - 6 - lw, ry + 3, COL_LINK, false);
             hits.add(new Hit(x + 2, ry, w - 4, 14, () -> openPanorama(sub), name));
             ry += 14;
@@ -1557,7 +1581,7 @@ public class MapScreen extends MapEditor {
                     long end = parseMs(war.ended);
                     String left = end != NONE && end > now ? countdown(end - now).replace("in ", "") : "";
                     int lw = font.width(left);
-                    g.drawString(font, fit(warName(war), w - 14 - lw), x + 6, ry + 2, COL_TEXT, false);
+                    drawFit(g, warName(war), w - 14 - lw, x + 6, ry + 2, COL_TEXT, false);
                     g.drawString(font, left, x + w - 6 - lw, ry + 2, COL_LINK, false);
                     sideBar(g, war, WarScore.of(d, war).points(), x + 6, ry + 13, w - 12);
                     final int at = all.indexOf(war);
@@ -1583,7 +1607,7 @@ public class MapScreen extends MapEditor {
                     g.fill(x + 7, ry + 2, x + 19, ry + 9, 0xFF000000 | rel.rgb());
                     String label = rel.label();
                     if (rel.countries().size() > 1) label += " (" + rel.countries().size() + ")";
-                    g.drawString(font, fit(label, w - 32), x + 25, ry + 2, COL_TEXT, false);
+                    drawFit(g, label, w - 32, x + 25, ry + 2, COL_TEXT, false);
                     ry += 12;
                 }
             }
@@ -1760,6 +1784,7 @@ public class MapScreen extends MapEditor {
                 break;
             }
         }
+        if (tip == null) tip = cutAt(mouseX, mouseY);   // a text cut short: the whole of it
         if (tip == null && !blockedAt(hits, mouseX, mouseY)) {
             Spot sp = playerAt(mouseX, mouseY);
             if (sp != null) {
@@ -1926,7 +1951,7 @@ public class MapScreen extends MapEditor {
             boolean hover = mouseX >= searchX + 6 && mouseX < searchX + searchW - 6 && mouseY >= ry && mouseY < ry + 14;
             if (hover || i == searchIdx) g.fill(searchX + 6, ry, searchX + searchW - 6, ry + 14, 0x508F959A);
             int kw = font.width(h.kind());
-            g.drawString(font, fit(h.label(), searchW - 30 - kw), searchX + 11, ry + 3, COL_TEXT, false);
+            drawFit(g, h.label(), searchW - 30 - kw, searchX + 11, ry + 3, COL_TEXT, false);
             g.drawString(font, h.kind(), searchX + searchW - 11 - kw, ry + 3, COL_DIM, false);
             hits.add(new Hit(searchX + 6, ry, searchW - 12, 14, () -> runSearchHit(h), null));
             ry += 14;
@@ -2121,7 +2146,7 @@ public class MapScreen extends MapEditor {
         int rowTop = cy;
         zebra(g, rowTop, 14, false, false);
         int aw = font.width(after), bwid = font.width(before + "  to  ");
-        g.drawString(font, fit(label, bw - 34 - aw - bwid), bx + 11, rowTop + 3, COL_TEXT, false);
+        drawFit(g, label, bw - 34 - aw - bwid, bx + 11, rowTop + 3, COL_TEXT, false);
         g.drawString(font, after, bx + bw - 11 - aw, rowTop + 3, 0xFFECEBE4, false);
         g.drawString(font, before + "  to  ", bx + bw - 11 - aw - bwid, rowTop + 3, COL_DIM, false);
         rowIdx++;
