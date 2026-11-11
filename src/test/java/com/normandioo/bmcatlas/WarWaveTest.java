@@ -50,10 +50,17 @@ class WarWaveTest {
 
     @Test
     void theOldColourFadesAcrossTheEdgeBehindTheFront() {
-        assertEquals(1, WarWave.oldShare(100, 50, 20), 1e-9);    // ahead of the front: all old
-        assertEquals(0, WarWave.oldShare(10, 50, 20), 1e-9);     // well behind it: all new
-        assertEquals(0.5, WarWave.oldShare(40, 50, 20), 1e-9);   // halfway across the edge
-        assertEquals(1, WarWave.oldShare(0, 0, 20), 1e-9);       // before the start nothing has changed yet
+        int flippedEarly = 0;
+        for (int at = 0; at < 1000; at++) {
+            double j = WarWave.jitter(3, at);
+            assertTrue(j >= 0 && j < 1);
+            assertEquals(j, WarWave.jitter(3, at), 0);                  // the same every frame
+            assertTrue(!WarWave.taken(3, at, 100, 90, 20));             // ahead of the front: old
+            assertTrue(WarWave.taken(3, at, 10, 50, 20));               // past the band behind it: new
+            assertTrue(!WarWave.taken(3, at, 0, 0, 20));                // before the start nothing flips
+            if (WarWave.taken(3, at, 40, 50, 20)) flippedEarly++;       // inside the band: some have, some not (ragged)
+        }
+        assertTrue(flippedEarly > 300 && flippedEarly < 700, "ragged front: " + flippedEarly);
         assertEquals(16, WarWave.band(10), 1e-9);
         assertEquals(160, WarWave.band(10_000), 1e-9);
         assertEquals(WarWave.SPEED, WarWave.speed(300), 1e-12);
