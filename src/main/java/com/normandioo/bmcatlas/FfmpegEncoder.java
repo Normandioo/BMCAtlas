@@ -36,7 +36,7 @@ final class FfmpegEncoder implements VideoEncoder {
     /** The command line (a list of arguments, no shell). */
     static List<String> args(String exe, int w, int h, int fps, Path out) {
         return List.of(exe, "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", w + "x" + h, "-r", String.valueOf(fps), "-i", "-",
-                "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                "-an", "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
                 out.toString());
     }
 

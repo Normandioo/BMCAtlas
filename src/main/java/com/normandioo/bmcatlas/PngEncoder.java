@@ -22,6 +22,10 @@ import java.util.zip.DeflaterOutputStream;
 final class PngEncoder implements VideoEncoder {
     private Path dir;
     private int w, h, fps, n;
+    /** The PNG files are compressed on several cores at once (each frame is its own file, so order does not matter). */
+    private java.util.concurrent.ExecutorService pool;
+    private java.util.concurrent.Semaphore slots;
+    private volatile IOException failure;
 
     @Override
     public void start(int w, int h, int fps, Path out) throws IOException {
@@ -30,18 +34,47 @@ final class PngEncoder implements VideoEncoder {
         this.h = h;
         this.fps = fps;
         Files.createDirectories(dir);
+        int threads = Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors() - 1));
+        pool = java.util.concurrent.Executors.newFixedThreadPool(threads, r -> {
+            Thread t = new Thread(r, "bmcatlas-png");
+            t.setDaemon(true);
+            t.setPriority(Thread.NORM_PRIORITY - 1);   // the game keeps running smoothly
+            return t;
+        });
+        slots = new java.util.concurrent.Semaphore(threads * 2);   // bounded memory: at most this many frames waiting
     }
 
     @Override
     public void frame(byte[] rgba) throws IOException {
-        n++;
-        try (OutputStream o = Files.newOutputStream(dir.resolve(String.format(Locale.ROOT, "frame-%06d.png", n)))) {
-            o.write(png(rgba, w, h));
+        if (failure != null) throw failure;
+        try {
+            slots.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted", e);
         }
+        Path file = dir.resolve(String.format(Locale.ROOT, "frame-%06d.png", ++n));
+        pool.execute(() -> {
+            try (OutputStream o = Files.newOutputStream(file)) {
+                o.write(png(rgba, w, h));
+            } catch (IOException e) {
+                failure = e;
+            } finally {
+                slots.release();
+            }
+        });
     }
 
     @Override
     public void finish() throws IOException {
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(10, java.util.concurrent.TimeUnit.MINUTES)) throw new IOException("the PNG files took too long");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted", e);
+        }
+        if (failure != null) throw failure;
         String readme = "BMC Atlas: " + n + " frames of " + w + "x" + h + " at " + fps + " fps.\n\n"
                 + "ffmpeg was not found, so the frames were saved as PNG files. To join them into a video, run in this folder:\n\n"
                 + "ffmpeg -framerate " + fps + " -i frame-%06d.png -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart video.mp4\n";
@@ -50,6 +83,14 @@ final class PngEncoder implements VideoEncoder {
 
     @Override
     public void abort() {
+        if (pool != null) {
+            pool.shutdownNow();
+            try {
+                pool.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         if (dir == null || !Files.isDirectory(dir)) return;
         try (Stream<Path> files = Files.walk(dir)) {
             files.sorted(Comparator.reverseOrder()).forEach(p -> {

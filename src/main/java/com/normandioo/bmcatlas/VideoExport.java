@@ -44,8 +44,12 @@ final class VideoExport {
     private long k, framesDone;
     private EncodeWorker worker;
     private int x0, y0, ow, oh;
+    /** The capture of the frame just drawn is queued but not yet asked of the game (it is asked at the start of the next frame). */
     private volatile boolean pending;
     private volatile long pendingSince;
+    /** Captures asked of the game whose pixels have not arrived yet (the GPU copies them while the next frames are drawn). */
+    private final java.util.concurrent.atomic.AtomicInteger inFlight = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile long lastArrival;
     private boolean captureThisFrame;
     private long settleFrames, settleSince, loadingSince;
     private boolean settling;
@@ -137,12 +141,18 @@ final class VideoExport {
             fail("The encoder stopped: " + worker.error().getMessage());
             return;
         }
+        long nowMs = System.currentTimeMillis();
         if (pending) {
-            if (System.currentTimeMillis() - pendingSince > CAPTURE_MAX_MS) fail("The game did not hand over the captured frame.");
+            if (nowMs - pendingSince > CAPTURE_MAX_MS) fail("The game did not take the capture.");
+            return;
+        }
+        if (inFlight.get() > 0 && nowMs - Math.max(lastArrival, pendingSince) > CAPTURE_MAX_MS) {
+            fail("The game did not hand over the captured frame.");
             return;
         }
         ExportPlan.Pass p = passes.get(pass);
         if (k >= p.frames()) {   // this camera is done: close its file, then the next camera
+            if (inFlight.get() > 0) return;   // its last frames are still on their way
             if (!worker.done()) {
                 worker.end();
                 return;
@@ -161,7 +171,7 @@ final class VideoExport {
             }
             return;
         }
-        if (!worker.room()) return;
+        if (!worker.room(inFlight.get())) return;
 
         long t = ExportPlan.timeAt(p, k, fps);
         boolean start = ExportPlan.clipStart(p, k, fps);
@@ -221,23 +231,36 @@ final class VideoExport {
         Minecraft mc = Minecraft.getInstance();
         EncodeWorker w = worker;
         int rx = x0, ry = y0, rw = ow, rh = oh;
-        Compat.afterFrame(mc, () -> Compat.grabFrame(mc, (NativeImage img) -> {
+        // At the start of the next frame (before the screen is cleared) the copy of this one is asked of the GPU. Asking is enough:
+        // the copy is ordered before what is drawn next, so frame k+1 can be drawn at once while k's pixels are on their way, and
+        // they arrive in order.
+        Compat.afterFrame(mc, () -> {
+            inFlight.incrementAndGet();
             try {
-                if (!running() || w != worker) return;
-                int iw = img.getWidth(), ih = img.getHeight();
-                if (iw != fbW || ih != fbH) {
-                    fail("The captured frame is " + iw + "x" + ih + ", not " + fbW + "x" + fbH + ".");
-                    return;
-                }
-                w.add(new EncodeWorker.Frame(Compat.pixels(img), iw, ih, rx, ry, rw, rh));
-                k++;
-                framesDone++;
+                Compat.grabFrame(mc, (NativeImage img) -> {
+                    try {
+                        if (!running() || w != worker) return;
+                        int iw = img.getWidth(), ih = img.getHeight();
+                        if (iw != fbW || ih != fbH) {
+                            fail("The captured frame is " + iw + "x" + ih + ", not " + fbW + "x" + fbH + ".");
+                            return;
+                        }
+                        w.add(new EncodeWorker.Frame(Compat.pixels(img), iw, ih, rx, ry, rw, rh));
+                        framesDone++;
+                    } catch (RuntimeException e) {
+                        fail("Capture failed: " + e);
+                    } finally {
+                        img.close();
+                        lastArrival = System.currentTimeMillis();
+                        inFlight.decrementAndGet();
+                    }
+                });
             } catch (RuntimeException e) {
+                inFlight.decrementAndGet();
                 fail("Capture failed: " + e);
-            } finally {
-                img.close();
-                pending = false;
             }
-        }));
+            k++;
+            pending = false;
+        });
     }
 }

@@ -4,6 +4,7 @@
 - With ffmpeg installed (found on the PATH, in the usual places, or where "ffmpeg path" says) each video is an .mp4 (H.264); without it, a folder of PNG frames with the ffmpeg command to join them. Nothing is downloaded
 - The recording is played in the window at a fixed step (30 or 60 fps), so the video is smooth however fast the game draws; before each clip it waits for the terrain and images to load. The date and the score show inside the video
 - During the export: progress, time left, Cancel (or Esc). Keep the window as it is: resizing or minimizing stops the export
+- Fast: a frame is captured every frame the game draws (the next one is drawn while the last is copied), PNG frames are compressed on several cores, and ffmpeg uses its "fast" preset
 
 ## 1.6.0
 

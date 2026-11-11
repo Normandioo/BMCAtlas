@@ -59,9 +59,9 @@ final class EncodeWorker {
         }
     }
 
-    /** Whether one more frame may be captured now. */
-    boolean room() {
-        return queue.size() < QUEUE && error == null;
+    /** Whether one more frame may be captured now, with inFlight captures already asked for and not yet here. */
+    boolean room(int inFlight) {
+        return queue.size() + inFlight < QUEUE && error == null;
     }
 
     void add(Frame f) {

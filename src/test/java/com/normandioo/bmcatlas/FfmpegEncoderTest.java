@@ -118,7 +118,7 @@ class FfmpegEncoderTest {
         EncodeWorker w = new EncodeWorker(enc);
         w.start(2, 2, 30, null);
         for (int i = 0; i < 3; i++) {
-            while (!w.room()) Thread.sleep(1);
+            while (!w.room(0)) Thread.sleep(1);
             w.add(new EncodeWorker.Frame(new int[16], 4, 4, 1, 1, 2, 2));
         }
         w.end();
