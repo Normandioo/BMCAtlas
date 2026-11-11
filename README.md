@@ -22,7 +22,7 @@
 
 ## War recording
 
-Turn on **Recording** on the bar at the bottom of the war map (or in the settings). Every change in who holds the cities of the followed war, and where the players on the map are, is saved in a folder per war in `bmcatlas/recordings/` (inside the game folder); it keeps recording with the map closed. The setting "Record live wars automatically" starts it by itself during a live war. The same bar plays the recording back on the map at 0.25x to 300x, with the players moving, the capture waves, and score and fronts as they were; click or drag its timeline to go to any moment. "Recordings" opens the replay editor: every recording, its highlights (captures, capitals, battles...), the clips that will make the video, the cameras that frame it, and "Export", which makes the videos (an .mp4 per camera with ffmpeg installed, PNG frames without it).
+Turn on **Recording** on the bar at the bottom of the war map (or in the settings). Every change in who holds the cities of the followed war, and where the players on the map are, is saved in a folder per war in `bmcatlas/recordings/` (inside the game folder); it keeps recording with the map closed. The setting "Record live wars automatically" starts it by itself during a live war. The same bar plays the recording back on the map at 0.25x to 300x, with the players moving, the capture waves, and score and fronts as they were; click or drag its timeline to go to any moment. "Recordings" opens the replay editor: every recording, its highlights (captures, capitals, battles...), the clips that will make the video, the cameras that frame it, and "Export", which makes the video (an .mp4 with ffmpeg installed, PNG frames without it).
 
 ## Server plugin (BmcWar)
 

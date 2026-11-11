@@ -10,12 +10,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 /**
  * The preferred encoder: an .mp4 (H.264) made by the player's own ffmpeg, fed the raw frames on its standard input. The
@@ -40,8 +42,8 @@ final class FfmpegEncoder implements VideoEncoder {
                 out.toString());
     }
 
-    /** Where ffmpeg may be, in order: the settings' path, each PATH folder, the usual install places. */
-    static List<String> candidates(String fromSettings, String pathEnv, boolean windows) {
+    /** Where ffmpeg may be, in order: the settings' path, each PATH folder, the usual install places, the WinGet packages. */
+    static List<String> candidates(String fromSettings, String pathEnv, boolean windows, Path wingetPackages) {
         Set<String> out = new LinkedHashSet<>();
         if (fromSettings != null && !fromSettings.isBlank()) out.add(fromSettings.trim());
         String name = windows ? "ffmpeg.exe" : "ffmpeg";
@@ -53,8 +55,10 @@ final class FfmpegEncoder implements VideoEncoder {
         if (windows) {
             out.add("C:\\ffmpeg\\bin\\ffmpeg.exe");
             out.add("C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe");
-            String local = System.getenv("LOCALAPPDATA");
-            if (local != null) out.add(local + "\\Microsoft\\WinGet\\Links\\ffmpeg.exe");
+            if (wingetPackages != null) {   // WinGet's install folder is named by version and is not on the game's PATH
+                out.add(wingetPackages.resolveSibling("Links").resolve(name).toString());
+                out.addAll(winget(wingetPackages, name));
+            }
         } else {
             out.add("/usr/bin/ffmpeg");
             out.add("/usr/local/bin/ffmpeg");
@@ -64,10 +68,28 @@ final class FfmpegEncoder implements VideoEncoder {
         return new ArrayList<>(out);
     }
 
+    /** The ffmpeg.exe files under the WinGet packages folder (the Gyan.FFmpeg package), newest folder name first. */
+    static List<String> winget(Path packages, String name) {
+        List<String> out = new ArrayList<>();
+        try (Stream<Path> dirs = Files.list(packages)) {
+            for (Path d : dirs.filter(p -> p.getFileName().toString().startsWith("Gyan.FFmpeg")).toList()) {
+                try (Stream<Path> files = Files.walk(d, 4)) {
+                    files.filter(f -> f.getFileName().toString().equalsIgnoreCase(name))
+                            .sorted(Comparator.reverseOrder()).forEach(f -> out.add(f.toString()));
+                }
+            }
+        } catch (IOException e) {
+            // no WinGet packages folder: nothing to add
+        }
+        return out;
+    }
+
     /** The first candidate that exists and answers "ffmpeg -version", or null. Takes a moment: call it off the game thread. */
     static String find(String fromSettings) {
         boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-        for (String c : candidates(fromSettings, System.getenv("PATH"), windows)) {
+        String local = System.getenv("LOCALAPPDATA");
+        Path packages = windows && local != null ? Path.of(local, "Microsoft", "WinGet", "Packages") : null;
+        for (String c : candidates(fromSettings, System.getenv("PATH"), windows, packages)) {
             if (!new File(c).isFile()) continue;
             try {
                 Process p = new ProcessBuilder(c, "-version").redirectErrorStream(true).start();

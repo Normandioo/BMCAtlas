@@ -185,7 +185,7 @@ final class VideoExport {
         WarRecorder.exportSeek(t, start);
         MapClock.setAnim(animBase + framesDone * 1000 / fps);
         double pxPerGui = fbW / (double) Math.max(1, guiW);
-        RecCamera cam = p.cameraAt(ed.project, t);   // the edited video cuts between cameras
+        RecCamera cam = ed.project.cameraById(ExportPlan.clipOf(p, k, fps).camera);   // each clip shows its own camera
         if (cam != null) {
             double[] f = ed.frame(cam, t);
             MapPanels.viewX = f[0];
@@ -206,7 +206,7 @@ final class VideoExport {
 
     private boolean openPass() {
         ExportPlan.Pass p = passes.get(pass);
-        RecCamera first = p.cameraAt(ed.project, ExportPlan.timeAt(p, 0, fps));   // the edited video takes the first cut's aspect
+        RecCamera first = ed.project.cameraById(p.clips().get(0).camera);   // the video takes the first clip's aspect
         int[] size = first != null ? first.outputSize(fbW, fbH) : new int[]{fbW & ~1, fbH & ~1};
         ow = size[0];
         oh = size[1];

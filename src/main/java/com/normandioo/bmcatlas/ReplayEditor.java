@@ -27,8 +27,6 @@ final class ReplayEditor {
     /** The camera selected (index in project.cameras), and its keyframe selected on the timeline. */
     int selCam = -1;
     RecCamera.Key selKey;
-    /** The cut selected on the timeline (edited video), or null. */
-    RecProject.Cut selCut;
     private java.util.function.BiFunction<String, Long, double[]> playerAt;
     private List<double[]> places;
 
@@ -172,7 +170,6 @@ final class ReplayEditor {
         RecCamera c = camera();
         if (c == null) return;
         project.removeCamera(c);
-        selCut = null;
         selCam = -1;
         selKey = null;
         save();
@@ -191,21 +188,10 @@ final class ReplayEditor {
         if (i >= 0 && i < project.cameras.size()) selectCamera(project.cameras.get(i));
     }
 
-    /** C: from the moment on screen on, the edited video shows the selected camera. */
-    void cutHere() {
-        RecCamera c = camera();
-        if (c == null) return;
-        selCut = project.cut(replay.time(), c.id);
-        selClip = -1;
-        selKey = null;
-        save();
-    }
-
-    void deleteCut() {
-        if (selCut == null) return;
-        project.cuts.remove(selCut);
-        selCut = null;
-        save();
+    /** X: cuts the selected clip in two at the moment on screen. */
+    void splitHere() {
+        RecProject.Clip c = selected();
+        if (c != null && project.split(c, replay.time())) save();
     }
 
     /** Next "Follow" for the selected camera: none, the highlights, then the player last clicked on the map (if any). */
@@ -276,7 +262,8 @@ final class ReplayEditor {
     /** Enter / "Add clip": a clip between the marks, or 30 s from the moment on screen. */
     void addClip() {
         long a = markIn >= 0 ? markIn : replay.time(), b = markOut >= 0 ? markOut : a + 30_000;
-        RecProject.Clip c = project.add(a, b, 1, replay.length());
+        RecCamera cam = camera();
+        RecProject.Clip c = project.add(a, b, 1, replay.length(), cam == null ? null : cam.id);   // the clip is shown with the camera selected
         if (c == null) return;
         markIn = markOut = -1;
         select(c);

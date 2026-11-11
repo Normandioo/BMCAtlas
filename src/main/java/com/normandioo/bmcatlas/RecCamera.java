@@ -7,7 +7,7 @@ import java.util.function.BiPredicate;
 
 /**
  * A camera of the replay editor: a named framing of the map, kept in project.json. The time comes from the clips; the framing
- * comes from the cameras, and the export makes one video per camera marked "export". No Minecraft classes here.
+ * comes from the cameras, and the clips of the video say which camera shows when. No Minecraft classes here.
  *
  * The framing is kept in blocks (centre and width covered), never as a zoom, so it does not depend on the window or on the
  * interface scale. The height covered is the width divided by the camera's aspect.
@@ -45,7 +45,6 @@ final class RecCamera {
     List<Key> keys = new ArrayList<>();
     /** "none", "player:<account>" or "highlight". */
     String follow = "none";
-    boolean export = true;
     /** Optional: the stretch this camera is for (ms since the start); outside it, it makes no frames. */
     Long from, to;
 
@@ -238,7 +237,6 @@ final class RecCamera {
         c.color = color;
         c.aspect = aspect;
         c.follow = follow;
-        c.export = export;
         c.from = from;
         c.to = to;
         for (Key k : keys) c.keys.add(new Key(k.t, k.cx, k.cz, k.width));

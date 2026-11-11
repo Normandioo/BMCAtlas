@@ -1,6 +1,8 @@
 package com.normandioo.bmcatlas;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,8 +27,8 @@ class RecProjectTest {
     @Test
     void framesOfTheVideoForSpeedsAndFps() {
         RecProject p = new RecProject();
-        p.clips.add(new RecProject.Clip(0, 10_000, 1));        // 10 s of video
-        p.clips.add(new RecProject.Clip(20_000, 620_000, 60));  // 10 min at 60x: 10 s of video
+        p.clips.add(new RecProject.Clip(0, 10_000, 1, null));        // 10 s of video
+        p.clips.add(new RecProject.Clip(20_000, 620_000, 60, null));  // 10 min at 60x: 10 s of video
         assertEquals(300, RecProject.frames(p.clips.get(0), 30));
         assertEquals(300, RecProject.frames(p.clips.get(1), 30));
         assertEquals(600, p.totalFrames());
@@ -60,19 +62,64 @@ class RecProjectTest {
     @Test
     void addKeepsClipsInsideAndInOrder() {
         RecProject p = new RecProject();
-        p.add(50_000, 40_000, 1, 100_000);   // reversed marks
-        p.add(90_000, 130_000, 2, 100_000);  // past the end
-        p.add(0, 10_000, 1, 100_000);
-        assertNull(p.add(5_000, 5_000, 1, 100_000));
+        p.add(50_000, 40_000, 1, 100_000, null);   // reversed marks
+        p.add(90_000, 130_000, 2, 100_000, null);  // past the end
+        p.add(0, 10_000, 1, 100_000, null);
+        assertNull(p.add(5_000, 5_000, 1, 100_000, null));
         assertEquals(List.of(0L, 40_000L, 90_000L), p.clips.stream().map(c -> c.from).toList());
         assertEquals(50_000, p.clips.get(1).to);
         assertEquals(100_000, p.clips.get(2).to);
     }
 
     @Test
+    void clipsNeverOverlap() {
+        RecProject p = new RecProject();
+        p.add(10_000, 20_000, 1, 100_000, "a");
+        assertNull(p.add(15_000, 30_000, 1, 100_000, "b"));   // another camera may not take the same moment
+        assertNull(p.add(5_000, 11_000, 1, 100_000, null));
+        assertEquals(20_000, p.add(20_000, 30_000, 1, 100_000, "b").from);   // touching is fine
+    }
+
+    @Test
+    void aClipStopsAtItsNeighbours() {
+        RecProject p = new RecProject();
+        RecProject.Clip a = p.add(0, 10_000, 1, 100_000, null);
+        RecProject.Clip b = p.add(20_000, 30_000, 1, 100_000, null);
+        long[] room = p.room(b, 100_000);
+        assertEquals(10_000, room[0]);
+        assertEquals(100_000, room[1]);
+        room = p.room(a, 100_000);
+        assertEquals(0, room[0]);
+        assertEquals(20_000, room[1]);
+    }
+
+    @Test
+    void cutSplitsAClipInTwoWithTheSameCamera() {
+        RecProject p = new RecProject();
+        RecProject.Clip c = p.add(0, 10_000, 2, 100_000, "cam1");
+        assertFalse(p.split(c, 200));   // too close to the start
+        assertTrue(p.split(c, 4_000));
+        assertEquals(List.of(0L, 4_000L), p.clips.stream().map(x -> x.from).toList());
+        assertEquals(4_000, p.clips.get(0).to);
+        assertEquals("cam1", p.clips.get(1).camera);
+        assertEquals(2, p.clips.get(1).speed);
+    }
+
+    @Test
+    void removingACameraSendsItsClipsBackToTheView() {
+        RecProject p = new RecProject();
+        RecCamera cam = new RecCamera();
+        cam.id = "cam1";
+        p.cameras.add(cam);
+        p.add(0, 10_000, 1, 100_000, "cam1");
+        p.removeCamera(cam);
+        assertNull(p.clips.get(0).camera);
+    }
+
+    @Test
     void projectJsonRoundTripAndBrokenFiles() throws IOException {
         RecProject p = new RecProject();
-        p.add(1000, 5000, 0.5, 10_000);
+        p.add(1000, 5000, 0.5, 10_000, null);
         p.fps = 60;
         p.show.playerNames = false;
         p.save(tmp);

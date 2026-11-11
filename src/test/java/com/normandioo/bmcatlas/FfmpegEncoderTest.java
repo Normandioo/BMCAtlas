@@ -2,6 +2,7 @@ package com.normandioo.bmcatlas;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -37,12 +38,19 @@ class FfmpegEncoderTest {
     }
 
     @Test
-    void whereFfmpegIsLookedFor() {
-        List<String> win = FfmpegEncoder.candidates("D:\\tools\\ffmpeg.exe", "C:\\bin;\"C:\\Program Files\\x\";", true);
+    void whereFfmpegIsLookedFor() throws IOException {
+        // a WinGet install: Packages\Gyan.FFmpeg_x\<build>\bin\ffmpeg.exe, and another package that must not be taken
+        Path gyan = Files.createDirectories(tmp.resolve("Packages").resolve("Gyan.FFmpeg_x").resolve("ffmpeg-9.0.2").resolve("bin"));
+        Files.createFile(gyan.resolve("ffmpeg.exe"));
+        Files.createDirectories(tmp.resolve("Packages").resolve("Other.Tool").resolve("bin"));
+        Files.createFile(tmp.resolve("Packages").resolve("Other.Tool").resolve("bin").resolve("ffmpeg.exe"));
+        List<String> win = FfmpegEncoder.candidates("D:\\tools\\ffmpeg.exe", "C:\\bin;\"C:\\Program Files\\x\";", true, tmp.resolve("Packages"));
         assertEquals("D:\\tools\\ffmpeg.exe", win.get(0));   // the settings first
         assertTrue(win.get(1).endsWith("ffmpeg.exe") && win.get(1).startsWith("C:\\bin"));
         assertTrue(win.contains("C:\\ffmpeg\\bin\\ffmpeg.exe"));
-        List<String> nix = FfmpegEncoder.candidates(null, "/usr/bin:/home/me/bin", false);
+        assertTrue(win.contains(gyan.resolve("ffmpeg.exe").toString()));
+        assertFalse(win.stream().anyMatch(s -> s.contains("Other.Tool")));
+        List<String> nix = FfmpegEncoder.candidates(null, "/usr/bin:/home/me/bin", false, null);
         assertTrue(nix.get(0).endsWith("ffmpeg"));
         assertTrue(nix.contains("/opt/homebrew/bin/ffmpeg"));
         assertEquals(nix.size(), nix.stream().distinct().count());   // /usr/bin/ffmpeg only once
