@@ -80,6 +80,15 @@ class ServerSyncTest {
     }
 
     @Test
+    void helloReplySaysTheModVersion() {
+        com.google.gson.JsonObject o = com.google.gson.JsonParser.parseString(ServerSync.helloReply("1.2.6", true)).getAsJsonObject();
+        assertEquals("hello", o.get("t").getAsString());
+        assertEquals("1.2.6", o.get("mod").getAsString());
+        assertTrue(o.get("selfCheck").getAsBoolean());
+        assertFalse(com.google.gson.JsonParser.parseString(ServerSync.helloReply("1.2.6", false)).getAsJsonObject().get("selfCheck").getAsBoolean());
+    }
+
+    @Test
     void leavingTheServerForgetsEverything() {
         sendMap("{\"b1(beta)\":0}", "{}");
         assertTrue(ServerSync.active());

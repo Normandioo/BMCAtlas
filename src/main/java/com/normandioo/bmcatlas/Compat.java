@@ -79,6 +79,7 @@ final class Compat {
     /** Listens on the "bmcatlas:sync" channel; the handler runs on the game thread with each message's bytes. */
     static void registerSync(java.util.function.Consumer<byte[]> handler) {
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playS2C().register(SyncPayload.TYPE, SyncPayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.playC2S().register(SyncPayload.TYPE, SyncPayload.CODEC);   // the mod's version, back to the plugin
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(SyncPayload.TYPE, (payload, context) -> handler.accept(payload.data()));
     }
 
@@ -93,5 +94,12 @@ final class Compat {
     static void chat(Minecraft mc, String text, String linkText, String url) {
         if (mc.player == null) return;
         mc.player.displayClientMessage(Component.literal(text).withStyle(net.minecraft.ChatFormatting.YELLOW).append(link(linkText, url)), false);
+    }
+
+    /** Sends bytes to the server on the "bmcatlas:sync" channel, when the server listens on it (it has the BmcWar plugin). */
+    static void sendSync(byte[] data) {
+        if (net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(SyncPayload.TYPE)) {
+            net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new SyncPayload(data));
+        }
     }
 }

@@ -1,3 +1,7 @@
+## 1.2.6
+
+- On a server with the BmcWar plugin (0.19.0 or newer), the mod tells the plugin its version, so the server can warn you when your mod is out of date (only that: nothing else is sent, and only to servers with the plugin)
+
 ## 1.2.5
 
 - The mod tells you when a newer version is out: once per game start it reads the latest release on GitHub and, the first time you are in a world, shows a chat message with a link to the download page. Turn it off in the settings ("Tell me when a new version is out")

@@ -53,6 +53,7 @@ final class ServerSync {
         if ("hello".equals(type)) {
             hello = true;
             version++;
+            replyOnce();
             return;
         }
         if (!"map".equals(type)) return;
@@ -111,8 +112,36 @@ final class ServerSync {
         SiteTerritories.reload();
     }
 
+    /** Sends bytes back to the server (set by BmcAtlasClient; null in tests). */
+    static volatile java.util.function.Consumer<byte[]> sender;
+    private static volatile boolean replied;
+
+    /**
+     * Tells the server's plugin, once per connection, this mod's version and whether it tells the player about updates itself,
+     * so the plugin can warn a player whose mod is out of date (and leave alone one that does it itself). Only sent to a server
+     * that said hello, that is one with the plugin.
+     */
+    private static void replyOnce() {
+        if (replied || sender == null) return;
+        String mine = UpdateCheck.installedVersion();
+        if (mine == null) return;
+        replied = true;
+        sender.accept(helloReply(mine, Prefs.get().updateCheck).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** {"t":"hello","v":1,"mod":"1.2.6","selfCheck":true} */
+    static String helloReply(String modVersion, boolean selfCheck) {
+        JsonObject o = new JsonObject();
+        o.addProperty("t", "hello");
+        o.addProperty("v", 1);
+        o.addProperty("mod", modVersion);
+        o.addProperty("selfCheck", selfCheck);
+        return o.toString();
+    }
+
     /** Leaving the server: forget everything it said. */
     static void reset() {
+        replied = false;
         hello = false;
         MAPS.clear();
         reloadedFor = null;
