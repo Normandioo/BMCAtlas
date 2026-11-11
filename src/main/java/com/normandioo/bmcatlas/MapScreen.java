@@ -344,6 +344,7 @@ public class MapScreen extends MapEditor {
         Perf.end("map total");
         if (editing()) {   // the replay editor: the map, then its own timeline instead of the menus
             drawEditor(g, mouseX, mouseY);
+            drawSearch(g, mouseX, mouseY, delta);
             drawTooltip(g, mouseX, mouseY);
             return;
         }
@@ -1192,6 +1193,19 @@ public class MapScreen extends MapEditor {
         return null;
     }
 
+    /** A name asked by the replay editor in the search box (Enter saves, Esc cancels). */
+    private java.util.function.Consumer<String> renameTo;
+
+    @Override
+    void askName(String current, java.util.function.Consumer<String> done) {
+        searchOpen = true;
+        renameMark = null;
+        renameTo = done;
+        searchBox.setValue(current == null ? "" : current);
+        setFocused(searchBox);
+        searchHits = List.of();
+    }
+
     private void startRename(Prefs.Mark m) {
         searchOpen = true;
         renameMark = m;
@@ -1821,6 +1835,7 @@ public class MapScreen extends MapEditor {
     // ------------------------------------------------------------ busca e ferramentas
 
     private void openSearch() {
+        renameTo = null;
         renameMark = null;
         markMenu = null;
         searchOpen = true;
@@ -1830,6 +1845,7 @@ public class MapScreen extends MapEditor {
     }
 
     private void closeSearch() {
+        renameTo = null;
         renameMark = null;
         searchOpen = false;
         setFocused(null);
@@ -1842,7 +1858,7 @@ public class MapScreen extends MapEditor {
 
     private void updateSearch() {
         searchIdx = 0;
-        if (renameMark != null) {
+        if (renameMark != null || renameTo != null) {
             searchHits = List.of();
             return;
         }
@@ -1943,7 +1959,7 @@ public class MapScreen extends MapEditor {
         searchBox.setX(searchX + 11);
         searchBox.setY(searchY + 10);
         searchBox.setWidth(searchW - 22);
-        if (searchBox.getValue().isEmpty()) g.drawString(font, renameMark != null ? "Name of the point" : "Country, city, player, alliance, province or point", searchX + 11, searchY + 10, COL_DIM, false);
+        if (searchBox.getValue().isEmpty()) g.drawString(font, renameMark != null ? "Name of the point" : renameTo != null ? "Name" : "Country, city, player, alliance, province or point", searchX + 11, searchY + 10, COL_DIM, false);
         searchBox.render(g, mouseX, mouseY, delta);
         int ry = searchY + 24;
         for (int i = 0; i < searchHits.size(); i++) {
@@ -1956,7 +1972,7 @@ public class MapScreen extends MapEditor {
             hits.add(new Hit(searchX + 6, ry, searchW - 12, 14, () -> runSearchHit(h), null));
             ry += 14;
         }
-        if (renameMark != null) {
+        if (renameMark != null || renameTo != null) {
             g.drawString(font, "Enter: save    Esc: cancel", searchX + 11, ry + 7, COL_DIM, false);
             return;
         }
@@ -2495,7 +2511,7 @@ public class MapScreen extends MapEditor {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
-        if (editorDrag(event.x() / ui)) return true;
+        if (editorDrag(event.x() / ui, event.y() / ui)) return true;
         if (timelineDrag) {
             seekTimeline(event.x() / ui);
             return true;
@@ -2561,6 +2577,7 @@ public class MapScreen extends MapEditor {
             SiteTerritories.Data d = SiteTerritories.data();
             Spot sp = playerAt(sx, sy);
             if (sp != null) {
+                pickedAccount = sp.e().account;
                 openPlayer(sp.site() != null ? sp.site() : sp.e().account);
                 return;
             }
@@ -2589,6 +2606,7 @@ public class MapScreen extends MapEditor {
         }
         Spot sp = playerAt(sx, sy);
         if (sp != null) {
+            pickedAccount = sp.e().account;
             openPlayer(sp.e().account);
             return;
         }
@@ -2629,7 +2647,7 @@ public class MapScreen extends MapEditor {
             }
             return false;
         }
-        if (editorKey(key0, event.hasShiftDown())) return true;   // the replay editor and the list of recordings
+        if (!searchOpen && editorKey(key0, event.hasShiftDown())) return true;   // the replay editor and the list of recordings
         if (key0 == InputConstants.KEY_F7) {
             Perf.on = !Perf.on;
             return true;
@@ -2637,6 +2655,13 @@ public class MapScreen extends MapEditor {
         if (searchOpen) {
             if (key0 == InputConstants.KEY_ESCAPE) {
                 closeSearch();
+                return true;
+            }
+            if (renameTo != null && (key0 == InputConstants.KEY_RETURN || key0 == InputConstants.KEY_NUMPADENTER)) {   // a name asked by the editor
+                String name = searchBox.getValue().trim();
+                java.util.function.Consumer<String> done = renameTo;
+                closeSearch();
+                if (!name.isEmpty()) done.accept(name);
                 return true;
             }
             if (renameMark != null && (key0 == InputConstants.KEY_RETURN || key0 == InputConstants.KEY_NUMPADENTER)) {

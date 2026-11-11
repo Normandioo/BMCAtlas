@@ -48,6 +48,8 @@ final class RecProject {
 
     List<Clip> clips = new ArrayList<>();
     Show show = new Show();
+    /** The cameras (phase 3b): one video each at export. None: the editor's view is used. */
+    List<RecCamera> cameras = new ArrayList<>();
     /** Frames per second of the export (30 or 60). */
     int fps = 30;
 
@@ -61,6 +63,13 @@ final class RecProject {
                 if (p != null) {
                     if (p.clips == null) p.clips = new ArrayList<>();
                     if (p.show == null) p.show = new Show();
+                    if (p.cameras == null) p.cameras = new ArrayList<>();
+                    p.cameras.removeIf(c -> c == null);
+                    for (RecCamera c : p.cameras) {
+                        if (c.keys == null) c.keys = new ArrayList<>();
+                        c.keys.removeIf(k -> k == null || !(k.width > 0));
+                        if (c.keys.isEmpty()) c.keys.add(new RecCamera.Key(0, 0, 0, 512));
+                    }
                     if (p.fps != 60) p.fps = 30;
                     p.clips.removeIf(c -> c == null || c.to <= c.from || c.speed <= 0);
                     return p;

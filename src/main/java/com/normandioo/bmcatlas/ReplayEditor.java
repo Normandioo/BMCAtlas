@@ -24,6 +24,11 @@ final class ReplayEditor {
     final String title;
     int selClip = -1;
     long markIn = -1, markOut = -1;
+    /** The camera selected (index in project.cameras), and its keyframe selected on the timeline. */
+    int selCam = -1;
+    RecCamera.Key selKey;
+    private java.util.function.BiFunction<String, Long, double[]> playerAt;
+    private List<double[]> places;
 
     private ReplayEditor(Path dir, Replay replay, SiteTerritories.WarInfo war) {
         this.dir = dir;
@@ -105,6 +110,92 @@ final class ReplayEditor {
 
     void select(RecProject.Clip c) {
         selClip = project.clips.indexOf(c);
+    }
+
+    // ---- cameras
+
+    RecCamera camera() {
+        return selCam >= 0 && selCam < project.cameras.size() ? project.cameras.get(selCam) : null;
+    }
+
+    void selectCamera(RecCamera c) {
+        selCam = project.cameras.indexOf(c);
+        selKey = null;
+    }
+
+    /** Where a camera frames the map at time t: {cx, cz, width} (following a player or the highlights when set). */
+    double[] frame(RecCamera c, long t) {
+        if (playerAt == null) {
+            playerAt = RecCamera.playersOf(replay);
+            places = RecCamera.placesOf(highlights);
+        }
+        return c.at(t, playerAt, places);
+    }
+
+    /** "New camera": framing the view now on screen, from the moment on screen. */
+    RecCamera newCamera(double cx, double cz, double width) {
+        int n = 1;
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (RecCamera c : project.cameras) ids.add(c.id);
+        while (ids.contains("cam" + n)) n++;
+        RecCamera c = new RecCamera();
+        c.id = "cam" + n;
+        c.name = "Camera " + n;
+        c.color = RecCamera.COLORS[(n - 1) % RecCamera.COLORS.length];
+        c.setKey(replay.time(), cx, cz, width);
+        project.cameras.add(c);
+        selectCamera(c);
+        save();
+        return c;
+    }
+
+    void duplicateCamera() {
+        RecCamera c = camera();
+        if (c == null) return;
+        int n = project.cameras.size() + 1;
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (RecCamera o : project.cameras) ids.add(o.id);
+        while (ids.contains("cam" + n)) n++;
+        RecCamera copy = c.copy("cam" + n, c.name + " copy");
+        copy.color = RecCamera.COLORS[(n - 1) % RecCamera.COLORS.length];
+        project.cameras.add(copy);
+        selectCamera(copy);
+        save();
+    }
+
+    void deleteCamera() {
+        RecCamera c = camera();
+        if (c == null) return;
+        project.cameras.remove(c);
+        selCam = -1;
+        selKey = null;
+        save();
+    }
+
+    /** Next "Follow" for the selected camera: none, the highlights, then the player last clicked on the map (if any). */
+    void nextFollow(String pickedAccount) {
+        RecCamera c = camera();
+        if (c == null) return;
+        if (c.follow == null || "none".equals(c.follow)) c.follow = "highlight";
+        else if ("highlight".equals(c.follow) && pickedAccount != null) c.follow = "player:" + pickedAccount;
+        else c.follow = "none";
+        save();
+    }
+
+    /** K: a keyframe on the selected camera at the moment on screen, with the framing it has there. */
+    void keyHere() {
+        RecCamera c = camera();
+        if (c == null) return;
+        double[] f = c.keyed(replay.time());
+        selKey = c.setKey(replay.time(), f[0], f[1], f[2]);
+        save();
+    }
+
+    void deleteKey() {
+        RecCamera c = camera();
+        if (c == null || selKey == null) return;
+        if (c.removeKey(selKey)) selKey = null;
+        save();
     }
 
     // ---- playback

@@ -1,3 +1,12 @@
+## 1.6.0
+
+- Cameras in the replay editor: "New camera" frames the view on screen; each camera shows on the map as a coloured rectangle with its name. Drag the name to move it and a corner to resize it (keeping its aspect): either makes a keyframe at the moment on screen, and the camera moves smoothly between keyframes
+- The third track of the timeline shows the selected camera's keyframes: click one to go there, drag it to move it in time, Delete removes it; K adds one
+- Cameras panel: rename, aspect (window, 16:9, 9:16, 1:1, 4:3), export on or off, duplicate, delete; "View" makes the editor's view follow the camera, darkening what the video will not show
+- Follow: a camera can follow a recorded player (click the player on the map first) or the highlights, one after the other
+- Terrain warning: a camera covering chunks never read shows the share that has terrain, since the video would have empty areas there
+- Cameras are kept in project.json; Esc leaves the camera view, then the camera, then the editor
+
 ## 1.5.0
 
 - Replay editor: the "Recordings" button on the war map bar lists every recording (war, date, length, sessions, whether it has players); opening one shows it on the map with a timeline of the whole recording, every session, with the time away in grey
