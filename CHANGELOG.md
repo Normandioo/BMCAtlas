@@ -1,3 +1,9 @@
+## 1.7.1
+
+- Capture wave: the old colour now stays as a tint as strong as the map's (the terrain shows through) and fades into the new one across a soft edge, instead of a solid fill with a bright front
+- Provinces taken one after another next to each other read as one movement: each wave waits for the one before it to reach their border and goes on from there
+- Waves are about 2 seconds shorter (never under 0.8 s)
+
 ## 1.7.0
 
 - Video export from the replay editor: "Export" makes one video: the clips in order, each showing the camera of its row (a clip with no camera shows the view on screen). It is saved in `bmcatlas/videos/` inside the game folder
