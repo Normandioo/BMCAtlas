@@ -1,6 +1,7 @@
 package com.normandioo.bmcatlas;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -144,6 +145,18 @@ class RecHighlightsTest {
         assertEquals(2.0, b.weight());   // 4 players
         assertEquals(List.of(0, 1), b.sides());
         assertEquals(15, b.x(), 1e-9);
+    }
+
+    @Test
+    void captionShowsTheLatestCaptureForAFewSeconds() {
+        List<RecHighlights.Highlight> hs = List.of(
+                new RecHighlights.Highlight(10_000, RecHighlights.Type.CAPTURE, "Beta", 0, 0, List.of(), 1, "Blue captured Beta"),
+                new RecHighlights.Highlight(12_000, RecHighlights.Type.BATTLE, null, 0, 0, List.of(), 1, "Battle"),
+                new RecHighlights.Highlight(20_000, RecHighlights.Type.CAPITAL, "Alpha", 0, 0, List.of(), 1, "Red captured Alpha (capital)"));
+        assertNull(RecHighlights.captionAt(hs, 9_000, 4_000));                        // nothing yet
+        assertEquals("Blue captured Beta", RecHighlights.captionAt(hs, 11_000, 4_000));
+        assertNull(RecHighlights.captionAt(hs, 15_000, 4_000));                       // over
+        assertEquals("Red captured Alpha (capital)", RecHighlights.captionAt(hs, 21_000, 4_000));   // the newest wins
     }
 
     @Test

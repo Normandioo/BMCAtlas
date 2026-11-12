@@ -1083,7 +1083,7 @@ public class MapScreen extends MapEditor {
                 else g.fill(0 + 11, 0 - 6, 0 + 29, 0 + 6, rgb);
             }
             g.pose().popMatrix();
-            if (scale >= 0.5 || hot) {
+            if ((scale >= 0.5 || hot) && shows("playerNames")) {
                 String name = e.account;
                 int w = font.width(name);
                 g.drawString(font, name, sx - w / 2 + (country >= 0 ? Math.round(10 * pf) : 0), sy + Math.round(12 * pf), hot ? 0xFFFFF2B0 : 0xFFF0EAD6, true);

@@ -151,6 +151,7 @@ abstract class MapEditor extends MapPanels {
             case "front" -> s.front;
             case "marks" -> s.marks;
             case "self" -> s.self;
+            case "playerNames" -> s.playerNames;
             default -> true;
         };
     }
@@ -168,7 +169,7 @@ abstract class MapEditor extends MapPanels {
         RecProject.Show s = e.project.show;
         String[][] rows = {{"countryNames", "Country names"}, {"front", "Front lines"}, {"cities", "Cities"}, {"cityNames", "City names"},
                 {"limits", "City limits"}, {"players", "Players"}, {"marks", "Your points"}, {"self", "Your position"},
-                {"clock", "Date (in the video)"}, {"score", "Score (in the video)"}};
+                {"playerNames", "Player names"}, {"clock", "Date (in the video)"}, {"score", "Score (in the video)"}, {"captions", "Captions (in the video)"}};
         int w = 170, h = 18 + rows.length * 17 + 4, x = 8, y = bottom - 6 - h;
         box(g, x, y, w, h, COL_PANEL);
         hits.add(new Hit(x, y, w, h, null, null));
@@ -197,6 +198,8 @@ abstract class MapEditor extends MapPanels {
             case "players" -> s.players;
             case "marks" -> s.marks;
             case "self" -> s.self;
+            case "playerNames" -> s.playerNames;
+            case "captions" -> s.captions;
             case "clock" -> s.clock;
             case "score" -> s.score;
             default -> true;
@@ -213,6 +216,8 @@ abstract class MapEditor extends MapPanels {
             case "players" -> s.players = v;
             case "marks" -> s.marks = v;
             case "self" -> s.self = v;
+            case "playerNames" -> s.playerNames = v;
+            case "captions" -> s.captions = v;
             case "clock" -> s.clock = v;
             case "score" -> s.score = v;
             default -> { }
@@ -462,6 +467,12 @@ abstract class MapEditor extends MapPanels {
             int sw = Math.min(200, rw - 12);
             g.fill(rx + 6, oy - 2, rx + 12 + sw, oy + 10, 0xB0101214);
             sideBar(g, e.war, WarScore.of(d, e.war).points().clone(), rx + 9, oy, sw - 6);
+        }
+        String caption = e.project.show.captions ? RecHighlights.captionAt(e.highlights, e.replay.time(), 4_000) : null;
+        if (caption != null) {   // the latest capture, bottom left, for four seconds of the recording
+            int cy = ry + (int) Math.round(r[3] / pxPerGui) - 22;
+            g.fill(rx + 6, cy - 3, rx + 12 + font.width(caption), cy + 11, 0xB0101214);
+            g.drawString(font, caption, rx + 9, cy, 0xFFF0EAD6, false);
         }
         if (exp.capturing()) return;   // the progress is never in the video
         int w = Math.min(width - 20, 320), x = (width - w) / 2, y = height - 60;

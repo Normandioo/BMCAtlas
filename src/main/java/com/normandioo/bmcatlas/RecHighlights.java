@@ -70,6 +70,16 @@ final class RecHighlights {
         return out;
     }
 
+    /** The caption for the moment on screen: the newest capture-like highlight in the last span ms, or null. */
+    static String captionAt(List<Highlight> all, long now, long span) {
+        Highlight best = null;
+        for (Highlight h : all) {
+            boolean capture = h.type() == Type.CAPTURE || h.type() == Type.CAPITAL || h.type() == Type.RETAKEN || h.type() == Type.CAPITULATION;
+            if (capture && h.t() <= now && h.t() > now - span && (best == null || h.t() > best.t())) best = h;
+        }
+        return best == null ? null : best.text();
+    }
+
     /** Whether the change in a frame at time t was seen: inside a recorded stretch, and not the first look after coming back. */
     static boolean witnessed(RecFormat.Meta meta, long t) {
         if (meta.intervals.isEmpty()) return true;
