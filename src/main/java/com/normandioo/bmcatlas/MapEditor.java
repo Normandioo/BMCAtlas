@@ -697,6 +697,11 @@ abstract class MapEditor extends MapPanels {
             lx += sw + 1;
             textButtonFixed(g, lx, ly, 16, 16, "+", mouseX, mouseY, () -> e.clipSpeed(1));
             lx += 24;
+            RecCamera shown = e.project.cameraById(sel.camera);
+            String who = "Shows: " + (shown == null ? "View" : shown.name);
+            int ww = font.width(who) + 12;
+            textButtonFixed(g, lx, ly, ww, 16, who, mouseX, mouseY, e::cycleClipCamera);
+            lx += ww + 6;
             int xw = font.width("Cut (X)") + 12;
             textButtonFixed(g, lx, ly, xw, 16, "Cut (X)", mouseX, mouseY, e::splitHere);
             lx += xw + 6;

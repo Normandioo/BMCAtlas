@@ -106,6 +106,23 @@ class RecProjectTest {
     }
 
     @Test
+    void aClipCyclesThroughTheViewAndEachCamera() {
+        RecProject p = new RecProject();
+        for (String id : new String[]{"cam1", "cam2"}) {
+            RecCamera cam = new RecCamera();
+            cam.id = id;
+            p.cameras.add(cam);
+        }
+        RecProject.Clip c = p.add(0, 10_000, 1, 100_000, null);
+        p.cycleCamera(c);
+        assertEquals("cam1", c.camera);
+        p.cycleCamera(c);
+        assertEquals("cam2", c.camera);
+        p.cycleCamera(c);
+        assertNull(c.camera);   // back to the view
+    }
+
+    @Test
     void removingACameraSendsItsClipsBackToTheView() {
         RecProject p = new RecProject();
         RecCamera cam = new RecCamera();

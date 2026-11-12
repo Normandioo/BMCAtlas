@@ -188,6 +188,14 @@ final class ReplayEditor {
         if (i >= 0 && i < project.cameras.size()) selectCamera(project.cameras.get(i));
     }
 
+    /** The button on the selected clip: the camera it shows goes to the next one. */
+    void cycleClipCamera() {
+        RecProject.Clip c = selected();
+        if (c == null) return;
+        project.cycleCamera(c);
+        save();
+    }
+
     /** X: cuts the selected clip in two at the moment on screen. */
     void splitHere() {
         RecProject.Clip c = selected();

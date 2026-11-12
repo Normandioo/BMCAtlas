@@ -143,6 +143,14 @@ final class RecProject {
         return new long[]{lo, hi};
     }
 
+    /** The camera a clip shows, next in turn: the view (no camera), then each camera in order, then the view again. */
+    void cycleCamera(Clip c) {
+        List<String> ids = new ArrayList<>();
+        ids.add(null);
+        for (RecCamera k : cameras) ids.add(k.id);
+        c.camera = ids.get((ids.indexOf(c.camera) + 1) % ids.size());
+    }
+
     /** Cuts a clip in two at t (same speed and camera); false when t is too close to either end. */
     boolean split(Clip c, long t) {
         if (t - c.from < MIN_CLIP_MS || c.to - t < MIN_CLIP_MS) return false;
