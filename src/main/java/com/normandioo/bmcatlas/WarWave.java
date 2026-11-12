@@ -27,6 +27,8 @@ final class WarWave {
     /** How fast the front moves (blocks per ms), unless that makes a wave shorter than MIN_MS or longer than MAX_MS. */
     static final double SPEED = 0.12;
     static final long MIN_MS = 1_200, MAX_MS = 6_000;
+    /** Each wave is this much shorter than the above gives (the owner found them slow), but never under FLOOR_MS. */
+    static final long FASTER_MS = 2_000, FLOOR_MS = 800;
     /** The soft edge between the new and the old colour: this share of the province's depth, within these limits (blocks). */
     static final double BAND_SHARE = 0.25, BAND_MIN = 16, BAND_MAX = 160;
     private static final long QUIET = 10_000;      // two changes within this: straight swap, no wave
@@ -92,12 +94,10 @@ final class WarWave {
         return Math.max(BAND_MIN, Math.min(BAND_MAX, maxDist * BAND_SHARE));
     }
 
-    /** The speed (blocks per ms) of a wave this deep, kept between MIN_MS and MAX_MS long. */
+    /** The speed (blocks per ms) of a wave this deep: SPEED, kept between MIN_MS and MAX_MS long, then FASTER_MS shorter. */
     static double speed(double depth) {
-        double s = SPEED;
-        if (depth / s > MAX_MS) s = depth / MAX_MS;
-        if (depth / s < MIN_MS) s = depth / MIN_MS;
-        return Math.max(1e-4, s);
+        double ms = Math.max(MIN_MS, Math.min(MAX_MS, depth / SPEED));
+        return Math.max(1e-4, depth / Math.max(FLOOR_MS, ms - FASTER_MS));
     }
 
     private static int colorOf(SiteTerritories.Data d, Map<Integer, Integer> prov, int[] country, int p) {

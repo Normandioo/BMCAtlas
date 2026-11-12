@@ -56,9 +56,9 @@ class WarWaveTest {
         assertEquals(1, WarWave.oldShare(0, 0, 20), 1e-9);       // before the start nothing has changed yet
         assertEquals(16, WarWave.band(10), 1e-9);
         assertEquals(160, WarWave.band(10_000), 1e-9);
-        assertEquals(WarWave.SPEED, WarWave.speed(300), 1e-12);
-        assertEquals(10.0 / WarWave.MIN_MS, WarWave.speed(10), 1e-12);        // a tiny province still takes MIN_MS
-        assertEquals(100_000.0 / WarWave.MAX_MS, WarWave.speed(100_000), 1e-12); // a huge one no more than MAX_MS
+        assertEquals(600.0 / 3_000, WarWave.speed(600), 1e-12);              // 600 blocks: 5 s at SPEED, now 3 s
+        assertEquals(10.0 / WarWave.FLOOR_MS, WarWave.speed(10), 1e-12);      // a tiny province: never under FLOOR_MS
+        assertEquals(100_000.0 / (WarWave.MAX_MS - WarWave.FASTER_MS), WarWave.speed(100_000), 1e-12); // a huge one: MAX_MS less 2 s
     }
 
     @Test
