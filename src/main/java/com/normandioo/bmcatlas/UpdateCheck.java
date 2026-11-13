@@ -29,7 +29,7 @@ final class UpdateCheck {
     private static final Pattern VERSION = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)");
     private static volatile String latest;      // e.g. "1.2.5", set when the release is newer than ours
     private static volatile String page = RELEASES_PAGE;
-    private static long shownAt;   // when the notice started (ms), 0 before it does
+    private static long shownAt;   // when the notice started (ms): each time the player joins a world, 0 before the first
     private static final long SHOW_MS = 30_000;
 
     /** Asks GitHub for the latest release, off the game thread. */
@@ -56,10 +56,9 @@ final class UpdateCheck {
         });
     }
 
-    /** Called every tick: starts the notice once, when there is a newer version and the player is in a world. */
-    static void tick(Minecraft mc) {
-        if (shownAt != 0 || latest == null || mc.player == null || mc.level == null || !Prefs.get().updateCheck) return;
-        shownAt = System.currentTimeMillis();
+    /** Called each time the player joins a world or server: the notice starts again, if there is a newer version. */
+    static void joined() {
+        if (latest != null && Prefs.get().updateCheck) shownAt = System.currentTimeMillis();
     }
 
     /** The notice across the top of the screen for SHOW_MS after it starts. */

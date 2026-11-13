@@ -43,7 +43,6 @@ public class BmcAtlasClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             ChunkGen.tick(mc);
             if (mc.level == null || mc.player == null) return;
-            UpdateCheck.tick(mc);
             while (OPEN_KEY.consumeClick()) {
                 if (Compat.screen(mc) == null) Compat.setScreen(mc, new MapScreen());
             }
@@ -74,6 +73,7 @@ public class BmcAtlasClient implements ClientModInitializer {
             if (++ticks % 6000 == 0 && MapData.isDirty()) MapData.save();
         });
 
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> UpdateCheck.joined());   // every world or server entered
         ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
             ChunkGen.reset();
             MapData.unload();

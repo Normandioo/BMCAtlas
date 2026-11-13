@@ -1,3 +1,7 @@
+## 1.7.4
+
+- The "new version is out" notice shows again every time you join a world or server (before, only once per game start)
+
 ## 1.7.3
 
 - The "new version is out" notice is a line across the top of the screen for 30 seconds when you enter a world, instead of a chat message
