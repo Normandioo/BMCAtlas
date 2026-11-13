@@ -1,3 +1,7 @@
+## Unreleased
+
+- News channel: on a server with the BmcWar plugin, its diplomatic news and Staff posts (with their picture) arrive through the game connection. A new one slides down from the top corner of the screen (the one away from the minimap); the map's new News button (top bar) lists the latest ones, newest first, with the pictures
+
 ## 1.7.4
 
 - The "new version is out" notice shows again every time you join a world or server (before, only once per game start)

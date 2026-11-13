@@ -50,7 +50,7 @@ abstract class MapPanels extends MapUi {
     static final int MODE_DIPLOMACY = MapStyle.MODE_DIPLOMACY;
     static final int MODE_WAR = MapStyle.MODE_WAR;
 
-    static final int TAB_NONE = 0, TAB_INFO = 1, TAB_LIST = 2, TAB_DIPLO = 3, TAB_WAR = 4, TAB_CITY = 5, TAB_GEN = 6, TAB_DIPLOMENU = 7, TAB_SET = 8;
+    static final int TAB_NONE = 0, TAB_INFO = 1, TAB_LIST = 2, TAB_DIPLO = 3, TAB_WAR = 4, TAB_CITY = 5, TAB_GEN = 6, TAB_DIPLOMENU = 7, TAB_SET = 8, TAB_NEWS = 9;
 
     // O estado da vista persiste entre aberturas da tela.
     static double viewX, viewZ;
@@ -159,7 +159,7 @@ abstract class MapPanels extends MapUi {
 
     boolean panelOpen() {
         if (tab == TAB_NONE) return false;
-        if (tab == TAB_LIST || tab == TAB_GEN || tab == TAB_SET) return true;
+        if (tab == TAB_LIST || tab == TAB_GEN || tab == TAB_SET || tab == TAB_NEWS) return true;
         if (!siteMode()) {
             return tab == TAB_INFO && hasSel;
         }
@@ -216,6 +216,7 @@ abstract class MapPanels extends MapUi {
             case TAB_DIPLOMENU -> drawDiploMenu(g, mouseX, mouseY);
             case TAB_WAR -> drawWarPanel(g, mouseX, mouseY);
             case TAB_CITY -> drawCityPanel(g, mouseX, mouseY);
+            case TAB_NEWS -> drawNewsPanel(g, mouseX, mouseY);
             default -> {
                 if (siteMode()) drawCountryPanel(g, mouseX, mouseY);
                 else drawManualPanel(g, mouseX, mouseY);
@@ -1409,6 +1410,95 @@ abstract class MapPanels extends MapUi {
             bw = fullW;
         }
         SCROLL[TAB_SET] = endScroll(g, SCROLL[TAB_SET]);
+    }
+
+    // ------------------------------------------------- notícias do servidor
+
+    /** The news open in the News panel (its id), or 0 for the list. */
+    static long newsOpen;
+
+    /** The server's news (BmcWar plugin): the list (headline and the start of the text), or one news in full. */
+    void drawNewsPanel(GuiGraphics g, int mouseX, int mouseY) {
+        ServerNews.read();
+        List<ServerNews.Item> items = ServerNews.items();
+        ServerNews.Item open = null;
+        for (ServerNews.Item it : items) if (it.id() == newsOpen) open = it;
+        if (open == null) newsOpen = 0;
+        int top = header(g, NEUTRAL, "News", open != null ? null : items.isEmpty() ? null : "Latest " + items.size() + " from this server", null, mouseX, mouseY, () -> {
+            tab = TAB_NONE;
+            newsOpen = 0;
+        });
+        beginScroll(g, top, SCROLL[TAB_NEWS], 0);
+        if (open != null) drawNewsItem(g, open, mouseX, mouseY);
+        else if (items.isEmpty()) paragraph(g, ServerSync.active() ? "No news yet." : "No news: this server has no BmcWar plugin, or it has not sent any yet.", COL_DIM);
+        else for (ServerNews.Item it : items) drawNewsRow(g, it, mouseX, mouseY);
+        SCROLL[TAB_NEWS] = endScroll(g, SCROLL[TAB_NEWS]);
+    }
+
+    /** One news in the list: kind and date, the headline, the first lines of the text and a small picture; a click opens it. */
+    private void drawNewsRow(GuiGraphics g, ServerNews.Item it, int mouseX, int mouseY) {
+        int rowTop = cy;
+        RemoteImages.Img pic = it.image() == null ? null : RemoteImages.picture(it.image());
+        int thumbW = it.image() == null ? 0 : 64, textX = bx + 10 + (thumbW > 0 ? thumbW + 6 : 0), textW = bx + bw - 10 - textX;
+        List<String> head = wrap(it.title(), textW);
+        String body = it.notes() != null ? it.notes() : String.join(" ", it.details());
+        List<String> lines = wrap(body.replaceAll("\\s+", " ").strip(), textW);
+        boolean more = lines.size() > 3;
+        if (more) lines = new ArrayList<>(lines.subList(0, 3));
+        int h = 16 + head.size() * 10 + lines.size() * 10 + 14;
+        if (thumbW > 0) h = Math.max(h, 16 + 36 + 4);
+        boolean hover = visible(rowTop, h) && mouseX >= bx + 4 && mouseX < bx + bw - 4 && mouseY >= rowTop && mouseY < rowTop + h;
+        if (hover) g.fill(bx + 5, rowTop, bx + bw - 5, rowTop + h, 0x30FFFFFF);
+        g.drawString(font, ServerNews.label(it.type()).toUpperCase(Locale.ROOT), bx + 10, rowTop + 4, ServerNews.color(it.type()), false);
+        if (it.date() != null) drawFit(g, it.date(), bw / 2, bx + bw - 10 - Math.min(bw / 2, font.width(it.date())), rowTop + 4, COL_DIM, false);
+        int y = rowTop + 16;
+        if (pic != null) drawImage(g, pic, bx + 10, y, thumbW, 36);
+        else if (thumbW > 0) g.fill(bx + 10, y, bx + 10 + thumbW, y + 36, 0xFF18191B);
+        for (String l : head) {
+            g.drawString(font, l, textX, y, 0xFFECEBE4, false);
+            y += 10;
+        }
+        for (String l : lines) {
+            g.drawString(font, l, textX, y, COL_DIM, false);
+            y += 10;
+        }
+        g.drawString(font, more ? "Read more >" : "Open >", textX, rowTop + h - 12, hover ? 0xFFDDE7EE : COL_LINK, false);
+        g.fill(bx + 10, rowTop + h, bx + bw - 10, rowTop + h + 1, 0xFF3E4245);
+        if (visible(rowTop, h)) hits.add(new Hit(bx + 4, rowTop, bw - 8, h, () -> {
+            newsOpen = it.id();
+            SCROLL[TAB_NEWS] = 0;
+        }, null));
+        cy = rowTop + h + 2;
+    }
+
+    /** One news in full: the picture as wide as the panel, and the text with its own paragraphs. */
+    private void drawNewsItem(GuiGraphics g, ServerNews.Item it, int mouseX, int mouseY) {
+        link(g, "< All news", bx + 10, cy + 2, true, mouseX, mouseY, () -> {
+            newsOpen = 0;
+            SCROLL[TAB_NEWS] = 0;
+        });
+        cy += 16;
+        g.drawString(font, ServerNews.label(it.type()).toUpperCase(Locale.ROOT), bx + 10, cy, ServerNews.color(it.type()), false);
+        if (it.date() != null) drawFit(g, it.date(), bw / 2, bx + bw - 10 - Math.min(bw / 2, font.width(it.date())), cy, COL_DIM, false);
+        cy += 12;
+        paragraph(g, it.title(), 0xFFECEBE4);
+        cy += 2;
+        RemoteImages.Img pic = it.image() == null ? null : RemoteImages.picture(it.image());
+        if (pic != null) {
+            int w = bw - 20, h = Math.max(1, (int) Math.round(pic.h() * (double) w / pic.w()));
+            drawImage(g, pic, bx + 10, cy, w, h);
+            cy += h + 6;
+        } else if (it.image() != null) {
+            paragraph(g, "(loading picture...)", COL_DIM);
+        }
+        for (String line : it.details()) paragraph(g, line, COL_DIM);
+        if (it.notes() != null) {
+            // the text as it was written: each line break kept, an empty line is a gap between paragraphs
+            for (String para : it.notes().replace("\r", "").replace("\t", "    ").split("\n", -1)) {
+                if (para.isBlank()) cy += 5;
+                else paragraph(g, para, COL_TEXT);
+            }
+        }
     }
 
     // ------------------------------------------------- panorama diplomático

@@ -39,6 +39,7 @@ public class BmcAtlasClient implements ClientModInitializer {
 
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "minimap"), (graphics, tickCounter) -> Minimap.render(graphics, tickCounter.getGameTimeDeltaPartialTick(false)));
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "update"), (graphics, tickCounter) -> UpdateCheck.render(graphics));
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "news"), (graphics, tickCounter) -> ServerNews.render(graphics));
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             ChunkGen.tick(mc);
@@ -78,6 +79,7 @@ public class BmcAtlasClient implements ClientModInitializer {
             ChunkGen.reset();
             MapData.unload();
             ServerSync.reset();
+            ServerNews.reset();
             WarRecorder.onDisconnect();
         });
     }

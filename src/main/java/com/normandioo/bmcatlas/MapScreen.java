@@ -1656,6 +1656,12 @@ public class MapScreen extends MapEditor {
                     tab = tab == TAB_DIPLOMENU ? TAB_NONE : TAB_DIPLOMENU;
                     SCROLL[TAB_DIPLOMENU] = 0;
                 }, false));
+        int unread = ServerNews.unread();
+        b.add(new Btn("news", tab == TAB_NEWS || unread > 0, true, "News\nThe server's diplomatic news and Staff posts." + (unread > 0 ? "\n" + unread + " new" : ""), () -> {
+            tab = tab == TAB_NEWS ? TAB_NONE : TAB_NEWS;
+            newsOpen = 0;
+            SCROLL[TAB_NEWS] = 0;
+        }, false));
         b.add(new Btn("cities", showCities, site, "Cities\n" + (showCities ? "On" : "Off") + (site ? "" : needSite), () -> showCities = !showCities, true));
         b.add(new Btn("limits", showLimits, site, "City limits\n" + (showLimits ? "On" : "Off") + (site ? "" : needSite), () -> {
             showLimits = !showLimits;
@@ -1717,7 +1723,7 @@ public class MapScreen extends MapEditor {
         List<Btn> dock = new ArrayList<>(), top = new ArrayList<>(), right = new ArrayList<>();
         for (Btn b : barButtons()) {
             switch (b.glyph()) {
-                case "list", "treaty" -> top.add(b);
+                case "list", "treaty", "news" -> top.add(b);
                 case "source", "reload", "maps", "settings", "gen" -> right.add(b);
                 case "diplomacy" -> { }      // continua na tecla 4 e no painel
                 default -> dock.add(b);
