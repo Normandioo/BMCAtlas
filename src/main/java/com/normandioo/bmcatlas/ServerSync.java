@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   {"t":"map","v":1,"map":"gaia","site":"https://.../territories.json","generated":"...",
  *    "wars":[{"id":"w1","cities":{"name(country)":0,...},"bridges":{"link":true,...}}]}
  *   cities: side holding it (0, 1, 2), -2 contested, -3 uncontrolled; a city not listed is held by its own country.
+ *   {"t":"news","v":1,"fresh":true,"news":{...}}   one news for the News panel (see ServerNews)
  */
 final class ServerSync {
     private ServerSync() {}
@@ -54,6 +55,10 @@ final class ServerSync {
             hello = true;
             version++;
             replyOnce();
+            return;
+        }
+        if ("news".equals(type)) {
+            ServerNews.receive(o);
             return;
         }
         if (!"map".equals(type)) return;

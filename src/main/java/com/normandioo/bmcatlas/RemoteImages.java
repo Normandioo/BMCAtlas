@@ -85,7 +85,14 @@ final class RemoteImages {
 
     /** A bandeira desse endereço, ou null enquanto baixa (ou se não existir). */
     static Img flag(String url) {
-        return get(url, url, image -> shrink(url, image));
+        return get(url, url, image -> shrink(url, image, MAX_W, MAX_H));
+    }
+
+    /** A news picture (the Staff's /news post image), shrunk to at most 384x216; null while it downloads. */
+    static Img picture(String url) {
+        if (url == null) return null;
+        String key = url + "#picture";
+        return get(url, key, image -> shrink(key, image, 384, 216));
     }
 
     /** A vista frontal da skin desse endereço (16x32), ou null enquanto baixa. */
@@ -290,10 +297,10 @@ final class RemoteImages {
         }
     }
 
-    /** Reduz a imagem (média por área) para no máximo MAX_W x MAX_H, mantendo a proporção. */
-    private static Ready shrink(String url, NativeImage image) {
+    /** Reduz a imagem (média por área) para no máximo maxW x maxH, mantendo a proporção. */
+    private static Ready shrink(String url, NativeImage image, int maxW, int maxH) {
         int iw = image.getWidth(), ih = image.getHeight();
-        double scale = Math.min(1.0, Math.min((double) MAX_W / iw, (double) MAX_H / ih));
+        double scale = Math.min(1.0, Math.min((double) maxW / iw, (double) maxH / ih));
         int w = Math.max(1, (int) Math.round(iw * scale)), h = Math.max(1, (int) Math.round(ih * scale));
         int[] out = new int[w * h];
         for (int y = 0; y < h; y++) {
