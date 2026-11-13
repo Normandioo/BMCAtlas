@@ -639,8 +639,9 @@ public class MapScreen extends MapEditor {
     /** Nomes dos países: cada um cabe inteiro dentro do território (posição calculada por LabelFit). */
     private void drawSiteNames(GuiGraphics g, SiteTerritories.Data d) {
         if (!shows("countryNames") || scale > 1.2) return; // desligado, ou muito perto: os nomes só atrapalham
+        int[] ov = MapStyle.countryOverride;
         for (int c = 0; c < d.ids.length; c++) {
-            if (d.shape[c] == null) continue;
+            if (d.shape[c] == null || ov != null && c < ov.length && ov[c] == Relations.HIDDEN) continue;
             String text = d.labels[c].toUpperCase();
             double[] f = d.fit[c];
             if (f == null) {

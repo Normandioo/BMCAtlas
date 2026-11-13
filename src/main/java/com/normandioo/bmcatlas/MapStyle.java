@@ -194,16 +194,18 @@ final class MapStyle {
                     if (p != 0) {
                         int ci = d.provCountry[p - 1];
                         int country = d.rgb[ci] | 0xFF000000;
-                        boolean grey = false;
+                        boolean grey = false, hidden = false;
                         if (relational) {
                             int ov = cOv != null && ci < cOv.length ? cOv[ci] : Relations.GREY;
                             Integer po = pOv == null ? null : pOv.get(p - 1);
                             if (po != null) ov = po;
-                            if (ov == Relations.GREY) grey = true;
+                            if (ov == Relations.HIDDEN) hidden = true;   // not drawn: the terrain alone
+                            else if (ov == Relations.GREY) grey = true;
                             else country = ov | 0xFF000000;
                         }
                         int dist = DIST[gi] / 3;
-                        if (grey) {
+                        if (hidden) {
+                        } else if (grey) {
                             if (dist == 0) out = mix(out, 0xFF070B10, 0.6f * Prefs.border());
                         } else if (political) {
                             out = tint(out, country, 0.28f * Prefs.fill());
@@ -232,16 +234,18 @@ final class MapStyle {
                     if (p != 0) {
                         int ci = d.provCountry[p - 1];
                         int country = d.rgb[ci] | 0xFF000000;
-                        boolean grey = false;
+                        boolean grey = false, hidden = false;
                         if (relational) {
                             int ov = cOv != null && ci < cOv.length ? cOv[ci] : Relations.GREY;
                             Integer po = pOv == null ? null : pOv.get(p - 1);
                             if (po != null) ov = po;
-                            if (ov == Relations.GREY) grey = true;
+                            if (ov == Relations.HIDDEN) hidden = true;   // not drawn: the terrain alone
+                            else if (ov == Relations.GREY) grey = true;
                             else country = ov | 0xFF000000;
                         }
                         int dist = DIST[gi] / 3;
-                        if (grey) {
+                        if (hidden) {
+                        } else if (grey) {
                             c = mix(muted(c), country, 0.10f);
                             if (dist == 0) c = mix(c, 0xFF070B10, 0.6f * Prefs.border());
                         } else if (political) {

@@ -15,6 +15,8 @@ import java.util.Set;
  */
 final class Relations {
     static final int GREY = -1;
+    /** A country the map does not draw at all (not its fill, border or name): only the terrain shows around it. */
+    static final int HIDDEN = -5;
     static final int ALLY = 0x3FA34D, BLOC = 0x7FCB6F, VASSAL = 0x9A63D6, NAP = 0x3A8FD8, ENEMY = 0xD83A3A;
     static final int CONTESTED = 0xE0C040, UNCONTROLLED = 0x9A9A9A, NEUTRAL = 0x6E6E6E;
     private static final int[] SIDE_COLORS = {0xD83A3A, 0x3A6FD8, 0x3AAE5A, 0xE59A2E, 0x8E5AC8, 0x2AAFAF};
@@ -154,6 +156,7 @@ final class Relations {
     /** Uma aliança escolhida: seus membros na cor dela, o resto cinza. */
     static Result alliance(SiteTerritories.Data d, SiteTerritories.AllianceInfo a) {
         int[] ov = blank(d);
+        Arrays.fill(ov, HIDDEN);   // only the members are drawn
         int idx = Math.max(0, alliances(d).indexOf(a));
         int color = blocColor(a, idx);
         List<Integer> mine = new ArrayList<>();

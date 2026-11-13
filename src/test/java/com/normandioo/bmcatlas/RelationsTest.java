@@ -18,6 +18,14 @@ class RelationsTest {
     }
 
     @Test
+    void allianceViewHidesEveryOtherCountry() {
+        SiteTerritories.Data d = Fixtures.withNetwork();
+        Relations.Result r = Relations.alliance(d, d.war.alliances.get(0));
+        assertNotEquals(Relations.HIDDEN, r.country()[d.index.get("alpha")]);
+        assertEquals(Relations.HIDDEN, r.country()[d.index.get("beta")]);
+    }
+
+    @Test
     void warSidesAreColouredByTheirSide() {
         SiteTerritories.Data d = Fixtures.withNetwork();
         Relations.Result r = Relations.war(d, Fixtures.war(d));
