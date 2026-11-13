@@ -1,3 +1,10 @@
+## 1.7.2
+
+- Diplomacy: opening an alliance shows only its members and the terrain (the other countries are not drawn, nor their names)
+- Video: captions of the latest capture, capital, retake or capitulation, bottom left, for four seconds (Show > Captions)
+- Show > Player names: turns the names of players on the map on or off, also in the video
+- Timeline: the selected clip has a "Shows: ..." button to pick its camera (View, then each camera)
+
 ## 1.7.1
 
 - Capture wave: the old colour now stays as a tint as strong as the map's (the terrain shows through) and fades into the new one across a soft edge, instead of a solid fill with a bright front
