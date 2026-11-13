@@ -1,3 +1,7 @@
+## 1.7.3
+
+- The "new version is out" notice is a line across the top of the screen for 30 seconds when you enter a world, instead of a chat message
+
 ## 1.7.2
 
 - Diplomacy: opening an alliance shows only its members and the terrain (the other countries are not drawn, nor their names)

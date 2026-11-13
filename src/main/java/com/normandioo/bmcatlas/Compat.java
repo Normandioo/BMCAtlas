@@ -83,19 +83,6 @@ final class Compat {
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(SyncPayload.TYPE, (payload, context) -> handler.accept(payload.data()));
     }
 
-    /** A clickable link: underlined, opens the address, shows it on hover. */
-    static Component link(String text, String url) {
-        return Component.literal(text).withStyle(s -> s.withColor(net.minecraft.ChatFormatting.AQUA).withUnderlined(true)
-                .withClickEvent(new net.minecraft.network.chat.ClickEvent.OpenUrl(java.net.URI.create(url)))
-                .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(Component.literal(url))));
-    }
-
-    /** A chat line only this player sees: the text, then a clickable link. */
-    static void chat(Minecraft mc, String text, String linkText, String url) {
-        if (mc.player == null) return;
-        mc.player.displayClientMessage(Component.literal(text).withStyle(net.minecraft.ChatFormatting.YELLOW).append(link(linkText, url)), false);
-    }
-
     /** Sends bytes to the server on the "bmcatlas:sync" channel, when the server listens on it (it has the BmcWar plugin). */
     static void sendSync(byte[] data) {
         if (net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(SyncPayload.TYPE)) {

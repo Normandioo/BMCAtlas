@@ -38,6 +38,7 @@ public class BmcAtlasClient implements ClientModInitializer {
         UpdateCheck.start();   // once per game start: is a newer version out?
 
         HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "minimap"), (graphics, tickCounter) -> Minimap.render(graphics, tickCounter.getGameTimeDeltaPartialTick(false)));
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "update"), (graphics, tickCounter) -> UpdateCheck.render(graphics));
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             ChunkGen.tick(mc);

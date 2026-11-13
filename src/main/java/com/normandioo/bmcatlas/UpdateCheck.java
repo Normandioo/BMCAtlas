@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -28,7 +29,8 @@ final class UpdateCheck {
     private static final Pattern VERSION = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)");
     private static volatile String latest;      // e.g. "1.2.5", set when the release is newer than ours
     private static volatile String page = RELEASES_PAGE;
-    private static boolean shown;
+    private static long shownAt;   // when the notice started (ms), 0 before it does
+    private static final long SHOW_MS = 30_000;
 
     /** Asks GitHub for the latest release, off the game thread. */
     static void start() {
@@ -54,11 +56,22 @@ final class UpdateCheck {
         });
     }
 
-    /** Called every tick: shows the message once, when there is a newer version and the player is in a world. */
+    /** Called every tick: starts the notice once, when there is a newer version and the player is in a world. */
     static void tick(Minecraft mc) {
-        if (shown || latest == null || mc.player == null || mc.level == null || !Prefs.get().updateCheck) return;
-        shown = true;
-        Compat.chat(mc, "[BMC Atlas] Version " + latest + " is out (you have " + installedVersion() + "). ", "Download it here", page);
+        if (shownAt != 0 || latest == null || mc.player == null || mc.level == null || !Prefs.get().updateCheck) return;
+        shownAt = System.currentTimeMillis();
+    }
+
+    /** The notice across the top of the screen for SHOW_MS after it starts. */
+    static void render(GuiGraphics g) {
+        if (shownAt == 0 || latest == null || System.currentTimeMillis() - shownAt > SHOW_MS) return;
+        Minecraft mc = Minecraft.getInstance();
+        String one = "BMC Atlas " + latest + " is out (you have " + installedVersion() + ").";
+        String two = "Download: " + page;
+        int w = Math.max(mc.font.width(one), mc.font.width(two)) + 12, x = (mc.getWindow().getGuiScaledWidth() - w) / 2;
+        g.fill(x, 6, x + w, 28, 0xC0101214);
+        g.drawString(mc.font, one, x + 6, 10, 0xFFF0EAD6, false);
+        g.drawString(mc.font, two, x + 6, 19, 0xFFF0B429, false);
     }
 
     /** The installed version, without the build suffix ("1.2.4+mc26.x" -> "1.2.4"), or null. */
