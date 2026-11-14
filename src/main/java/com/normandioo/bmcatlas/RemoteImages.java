@@ -95,6 +95,13 @@ final class RemoteImages {
         return get(url, key, image -> shrink(key, image, 384, 216));
     }
 
+    /** A news picture at its original size (no shrinking), for the full-screen view; null while it downloads. */
+    static Img fullPicture(String url) {
+        if (url == null) return null;
+        String key = url + "#full";
+        return get(url, key, image -> shrink(key, image, 16384, 16384));
+    }
+
     /** A vista frontal da skin desse endereço (16x32), ou null enquanto baixa. */
     static Img skin(String url) {
         return get(url, url, image -> front(url, image));
