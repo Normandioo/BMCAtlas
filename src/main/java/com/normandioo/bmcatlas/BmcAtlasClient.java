@@ -19,6 +19,8 @@ public class BmcAtlasClient implements ClientModInitializer {
     public static KeyMapping ZOOM_IN_KEY;
     public static KeyMapping ZOOM_OUT_KEY;
     private int ticks;
+    /** Ticks left before the "press N" hint over the hotbar, counted in the world; 0 = none pending. */
+    private int hintIn;
 
     @Override
     public void onInitializeClient() {
@@ -44,6 +46,9 @@ public class BmcAtlasClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             ChunkGen.tick(mc);
             if (mc.level == null || mc.player == null) return;
+            if (hintIn > 0 && --hintIn == 0) {
+                Compat.overlay(mc, net.minecraft.network.chat.Component.literal("Press " + OPEN_KEY.getTranslatedKeyMessage().getString() + " to open the political map"));
+            }
             while (OPEN_KEY.consumeClick()) {
                 if (Compat.screen(mc) == null) Compat.setScreen(mc, new MapScreen());
             }
@@ -74,7 +79,10 @@ public class BmcAtlasClient implements ClientModInitializer {
             if (++ticks % 6000 == 0 && MapData.isDirty()) MapData.save();
         });
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> UpdateCheck.joined());   // every world or server entered
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, mc) -> {
+            UpdateCheck.joined();
+            hintIn = 60;   // 3 s in the world, so the world's own messages do not cover it
+        });   // every world or server entered
         ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
             ChunkGen.reset();
             MapData.unload();

@@ -1,3 +1,13 @@
+## 1.9.0
+
+- News panel redone with the Gaia Guardian art: each news is a card with its kind, date, headline and the start of the text; a click opens the whole news in a panel beside the list (headline in bold, country names in their colour and bold, the text with its own paragraphs, the picture as wide as the panel)
+- New news category "Breaking News" for general news; "Staff notice" is only for the staff's own posts
+- War menu: every section (scoreboard, state, each side, taken cities, In Play, capitulation, legend...) folds with a click on its gold button
+- Settings reorganised and trimmed: the separate menu sizes (drag a menu's corner instead) and the terrain fine-tuning (relief, smoothing, water, terrain style) are gone; everyone gets the Atlas look; the simple city markers are gone
+- A hint over the hotbar when you enter a world: "Press N to open the political map"
+- The "out of date" notice is now a pop-up in the top corner (away from the minimap) with the link to the latest release
+- Faster News panel: text wrapping is cached and cards out of sight are not drawn
+
 ## 1.8.0
 
 - News channel: on a server with the BmcWar plugin, its diplomatic news and Staff posts (with their picture) arrive through the game connection. A new one slides down from the top corner of the screen (the one away from the minimap); the map's new News button (top bar) lists the latest ones, newest first, with the pictures

@@ -5,7 +5,6 @@ import com.google.gson.JsonObject;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.renderer.RenderPipelines;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -61,6 +60,9 @@ final class ServerNews {
     /** The News panel is open: everything is read. */
     static void read() { unread = 0; }
 
+    /** A news notice is on screen now (the update notice makes room for it). */
+    static boolean toastOn() { return current != null; }
+
     static void reset() {
         ITEMS.clear();
         QUEUE.clear();
@@ -108,21 +110,20 @@ final class ServerNews {
         String hint = "Press " + key + " and open News to read it";
         int textMax = Math.min(220, screenW - picW - 40);
         String title = font.width(it.title()) <= textMax ? it.title() : font.plainSubstrByWidth(it.title(), textMax - font.width("...")) + "...";
-        int w = Math.max(Math.max(font.width(kind), font.width(title)), font.width(hint)) + 16 + (pic == null ? 0 : picW + 6);
-        int h = Math.max(36, picH + 10);
+        int w = Math.max(Math.max(font.width(kind), font.width(title)), font.width(hint)) + 36 + (pic == null ? 0 : picW + 12);
+        int h = Math.max(38, picH + 12);
         boolean right = Prefs.get().minimapCorner != 1;   // the minimap is top left by default: the notice goes top right
         int x = right ? screenW - w - 4 : 4;
         int y = 4 - (int) Math.round((1 - shown) * (h + 6));
 
-        g.fill(x, y, x + w, y + h, 0xF01E2123);
-        g.fill(x, y, x + 2, y + h, color(it.type()));
-        g.fill(x, y + h - 1, x + w, y + h, 0xFF3E4245);
-        int tx = x + 8;
+        NewsArt.nine(g, "toast_bg", 12, 2, x, y, w, h);
+        NewsArt.icon(g, it.type(), x + 6, y + (h - 16) / 2);
+        int tx = x + 28;
         if (pic != null) {
             double sc = Math.min((double) picW / pic.w(), (double) picH / pic.h());
             int dw = Math.max(1, (int) Math.round(pic.w() * sc)), dh = Math.max(1, (int) Math.round(pic.h() * sc));
-            g.blit(RenderPipelines.GUI_TEXTURED, pic.id(), tx + (picW - dw) / 2, y + (h - dh) / 2, 0f, 0f, dw, dh, pic.w(), pic.h(), pic.w(), pic.h());
-            tx += picW + 6;
+            NewsArt.framed(g, pic, tx + 3 + (picW - dw) / 2, y + (h - dh) / 2, dw, dh);
+            tx += picW + 12;
         }
         g.drawString(font, kind, tx, y + 5, color(it.type()), false);
         g.drawString(font, title, tx, y + 15, 0xFFECEBE4, false);

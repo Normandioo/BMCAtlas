@@ -171,22 +171,6 @@ final class Glyphs {
                 "#............#",
                 "###.##..##.###",
         });
-        ART.put("news", new String[]{
-                "..............",
-                ".############.",
-                ".#oooooooooo#.",
-                ".#oooooooooo#.",
-                ".#..........#.",
-                ".#.xxxx.###.#.",
-                ".#.xxxx.....#.",
-                ".#.xxxx.###.#.",
-                ".#.xxxx.....#.",
-                ".#..........#.",
-                ".#.########.#.",
-                ".#..........#.",
-                ".############.",
-                "..............",
-        });
         ART.put("treaty", new String[]{
                 "..............",
                 ".oooooooooooo.",
@@ -308,6 +292,10 @@ final class Glyphs {
 
     /** Cada ícone vira uma textura por combinação de cores (criada uma vez): desenhar é um blit em vez de dezenas de retângulos. */
     static void draw(GuiGraphics g, String name, int x, int y, int main, int accent, int shade) {
+        if (name.startsWith("news")) {   // drawn art, not pixel strings
+            NewsArt.button(g, name.equals("news_unread"), x, y);
+            return;
+        }
         String[] art = ART.get(name);
         if (art == null) return;
         String key = "glyph" + name + "_" + main + "_" + accent + "_" + shade;

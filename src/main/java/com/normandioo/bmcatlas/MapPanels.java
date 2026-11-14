@@ -130,6 +130,10 @@ abstract class MapPanels extends MapUi {
     // painel principal
     int panelX, panelY, panelW, panelH;
     boolean panelVisible;
+    /** The news article open beside the News list (its own panel and scroll). */
+    int articleX, articleY, articleW, articleH;
+    boolean articleVisible;
+    static double articleScroll;
     int cardX, cardY, cardH;
     boolean cardVisible;
 
@@ -202,7 +206,8 @@ abstract class MapPanels extends MapUi {
         by = panelY;
         bw = panelW;
         bh = panelH;
-        box(g, panelX, panelY, panelW, panelH, COL_PANEL);
+        if (tab == TAB_NEWS) NewsArt.nine(g, "panel_frame", 16, 4, panelX, panelY, panelW, panelH);
+        else box(g, panelX, panelY, panelW, panelH, COL_PANEL);
         hits.add(new Hit(panelX, panelY, panelW, panelH, null, null));
 
         switch (tab) {
@@ -804,6 +809,36 @@ abstract class MapPanels extends MapUi {
         return t;
     }
 
+    /** What the player opened or folded in the war menu, by section key; a section nobody touched uses its own default. */
+    static final Map<String, Boolean> FOLD = new HashMap<>();
+
+    /** A section header that folds: click to hide or show what is under it. Returns true when the content must be drawn. */
+    boolean foldable(GuiGraphics g, String key, String title, boolean open0, int mouseX, int mouseY) {
+        boolean open = FOLD.getOrDefault(key, open0);
+        cy += 4;
+        int y = cy;
+        boolean vis = visible(y, 13);
+        boolean hover = vis && mouseX >= bx + 6 && mouseX < bx + bw - 6 && mouseY >= y && mouseY < y + 13;
+        g.fill(bx + 6, y, bx + bw - 6, y + 13, hover ? 0xFF22262A : 0xFF18191B);
+        g.fill(bx + 6, y, bx + bw - 6, y + 1, 0xFF050605);
+        g.fill(bx + 6, y + 12, bx + bw - 6, y + 13, 0xFF3E4245);
+        // a small button: gold with a dark "+" when folded, dark with a gold "-" when open
+        int bx0 = bx + 9, by0 = y + 2, dx = bx0 + 4, dy = by0 + 4;
+        int sign = open ? COL_GOLD : 0xFF14130F;
+        g.fill(bx0, by0, bx0 + 9, by0 + 9, COL_GOLD);
+        g.fill(bx0 + 1, by0 + 1, bx0 + 8, by0 + 8, open ? 0xFF3A2F10 : 0xFFE0A820);
+        g.fill(dx - 2, dy, dx + 3, dy + 1, sign);
+        if (!open) g.fill(dx, dy - 2, dx + 1, dy + 3, sign);
+        String shown = fitSpaced(title.toUpperCase(Locale.ROOT), bw - 40);
+        spaced(g, shown, bx + 24, y + 3, open ? COL_GOLD : 0xFFFFF2B0, false);
+        int ruleX = bx + 24 + spacedWidth(shown) + 6;
+        if (ruleX < bx + bw - 12) g.fill(ruleX, y + 6, bx + bw - 12, y + 7, 0xFF3E4245);
+        if (vis) hits.add(new Hit(bx + 6, y, bw - 12, 13, () -> FOLD.put(key, !FOLD.getOrDefault(key, open0)), open ? "Fold" : "Unfold"));
+        cy += 17;
+        rowIdx = 0;
+        return open;
+    }
+
     void drawWarPanel(GuiGraphics g, int mouseX, int mouseY) {
         SiteTerritories.Data d = SiteTerritories.data();
         List<SiteTerritories.WarInfo> wars = Relations.wars(d);
@@ -899,8 +934,7 @@ abstract class MapPanels extends MapUi {
         long now = System.currentTimeMillis();
         long st = parseMs(w.started), en = parseMs(w.ended);
         int n = w.sides == null ? 0 : w.sides.size();
-        section(g, "Scoreboard");
-        if (n >= 2) {
+        if (foldable(g, "sb", "Scoreboard", true, mouseX, mouseY) && n >= 2) {
             WarScore.Result r = WarScore.of(d, w);
             boolean any = r.total() > 0;
             if (n == 2) warTugHeader(g, d, w, r);
@@ -940,18 +974,19 @@ abstract class MapPanels extends MapUi {
             }
             cy += 3;
         }
-        section(g, "State");
-        kv(g, "Status", !run ? "Ended" : w.live ? "In progress (live)" : "In progress");
-        kv(g, "Type", "Total War".equalsIgnoreCase(w.type) ? "Total war" : w.type);
-        kv(g, "Start", st == NONE ? null : dateText(st) + "  (" + countdown(st - now) + ")");
-        if (en != NONE) {
-            kv(g, run ? "Ends" : "End", dateText(en) + "  (" + countdown(en - now) + ")");
-            long truce = en + 3 * DAY;
-            if (!run && truce > now) kv(g, "Truce until", dateText(truce) + "  (" + countdown(truce - now) + ")");
+        if (foldable(g, "state", "State", true, mouseX, mouseY)) {
+            kv(g, "Status", !run ? "Ended" : w.live ? "In progress (live)" : "In progress");
+            kv(g, "Type", "Total War".equalsIgnoreCase(w.type) ? "Total war" : w.type);
+            kv(g, "Start", st == NONE ? null : dateText(st) + "  (" + countdown(st - now) + ")");
+            if (en != NONE) {
+                kv(g, run ? "Ends" : "End", dateText(en) + "  (" + countdown(en - now) + ")");
+                long truce = en + 3 * DAY;
+                if (!run && truce > now) kv(g, "Truce until", dateText(truce) + "  (" + countdown(truce - now) + ")");
+            }
+            kv(g, "Theater", w.theater == null || w.theater.isBlank() ? "Unrestricted (all belligerent cities)" : "Restricted: " + w.theater);
+            kv(g, "Source", LiveControl.isLive(w) ? "Live dynmap (city markers)" : w.live ? "Live war; waiting for dynmap" : "Site city list");
+            kv(g, "Notes", w.notes);
         }
-        kv(g, "Theater", w.theater == null || w.theater.isBlank() ? "Unrestricted (all belligerent cities)" : "Restricted: " + w.theater);
-        kv(g, "Source", LiveControl.isLive(w) ? "Live dynmap (city markers)" : w.live ? "Live war; waiting for dynmap" : "Site city list");
-        kv(g, "Notes", w.notes);
     }
 
     void warSides(GuiGraphics g, SiteTerritories.Data d, SiteTerritories.WarInfo w, int mouseX, int mouseY) {
@@ -967,10 +1002,11 @@ abstract class MapPanels extends MapUi {
         if (f != null) for (WarFront.Score s : f.scores()) scoreBy.put(s.nation().toLowerCase(Locale.ROOT), s);
         for (int i = 0; i < w.sides.size(); i++) {
             SiteTerritories.Side side = w.sides.get(i);
-            section(g, sideName(w, i));
+            boolean openSide = foldable(g, "side" + i, sideName(w, i), true, mouseX, mouseY);
             int color = ctlColor(w, i);
             g.fill(bx + bw - 20, cy - 14, bx + bw - 10, cy - 5, 0xFF0E0C08);
             g.fill(bx + bw - 19, cy - 13, bx + bw - 11, cy - 6, color);
+            if (!openSide) continue;
             g.drawString(font, pts(r.points()[i]) + " pts  (" + Math.round(r.share(i) * 100) + "%)", bx + 9, cy, COL_TEXT, false);
             cy += 13;
             if (side.members == null) continue;
@@ -1030,8 +1066,7 @@ abstract class MapPanels extends MapUi {
             // cidades tomadas, por lado que as segura
             List<WarScore.Holding> taken = new ArrayList<>();
             for (WarScore.Holding h : r.holdings()) if (h.taken()) taken.add(h);
-            if (warCityFilter != 2) {
-                section(g, "Taken from the enemy (" + taken.size() + ")");
+            if (warCityFilter != 2 && foldable(g, "taken", "Taken from the enemy (" + taken.size() + ")", true, mouseX, mouseY)) {
                 if (taken.isEmpty()) paragraph(g, "No city changed sides.", COL_DIM);
                 for (int s = 0; s < w.sides.size(); s++) {
                     List<WarScore.Holding> mine = new ArrayList<>();
@@ -1047,8 +1082,7 @@ abstract class MapPanels extends MapUi {
             // em disputa / sem controle
             List<WarScore.Holding> disputed = new ArrayList<>();
             for (WarScore.Holding h : r.holdings()) if (h.disputed()) disputed.add(h);
-            if (warCityFilter != 1) {
-                section(g, "Contested or uncontrolled (" + disputed.size() + ")");
+            if (warCityFilter != 1 && foldable(g, "disputed", "Contested or uncontrolled (" + disputed.size() + ")", true, mouseX, mouseY)) {
                 if (disputed.isEmpty()) paragraph(g, "None at the moment.", COL_DIM);
                 disputed.sort(BY_VALUE);
                 for (WarScore.Holding h : disputed) warCityRow(g, d, f, h, true, mouseX, mouseY);
@@ -1066,14 +1100,12 @@ abstract class MapPanels extends MapUi {
             if (f != null) {
                 List<SiteTerritories.Locality> inPlay = new ArrayList<>();
                 for (WarFront.Unit u : f.units()) if (u.inPlay && !u.neutral()) inPlay.addAll(u.members);
-                section(g, "In Play (" + inPlay.size() + ")");
-                for (SiteTerritories.Locality l : inPlay) {
+                if (foldable(g, "inplay", "In Play (" + inPlay.size() + ")", true, mouseX, mouseY)) for (SiteTerritories.Locality l : inPlay) {
                     link(g, fit(SiteTerritories.splitCamel(l.name), bw - 24), bx + 11, cy, true, mouseX, mouseY, () -> focusPoint(l));
                     cy += 12;
                 }
             }
-            section(g, "By country");
-            for (Map.Entry<String, List<WarScore.Holding>> e : byCountry.entrySet()) {
+            if (foldable(g, "bycountry", "By country (" + byCountry.size() + ")", true, mouseX, mouseY)) for (Map.Entry<String, List<WarScore.Holding>> e : byCountry.entrySet()) {
                 String key = w.id + "/" + e.getKey();
                 boolean closed = WAR_CLOSED.contains(key);
                 List<WarScore.Holding> list = e.getValue();
@@ -1150,81 +1182,86 @@ abstract class MapPanels extends MapUi {
             paragraph(g, "The site sent no connections between cities; without them fronts, In Play, encirclement and capitulation cannot be computed.", COL_DIM);
             return;
         }
-        section(g, "Front by side");
-        for (int i = 0; i < w.sides.size(); i++) {
-            int play = 0, enc = 0;
-            for (WarFront.Unit u : f.units()) {
-                if (u.control != i) continue;
-                if (u.inPlay) play += u.members.size();
-                if (u.encircled) enc += u.members.size();
+        if (foldable(g, "front", "Front by side", true, mouseX, mouseY)) {
+            for (int i = 0; i < w.sides.size(); i++) {
+                int play = 0, enc = 0;
+                for (WarFront.Unit u : f.units()) {
+                    if (u.control != i) continue;
+                    if (u.inPlay) play += u.members.size();
+                    if (u.encircled) enc += u.members.size();
+                }
+                g.fill(bx + 9, cy + 1, bx + 17, cy + 9, ctlColor(w, i));
+                String tail = play + " In Play  /  " + enc + " encircled";
+                int tw = font.width(tail);
+                drawFit(g, sideName(w, i), bw - 40 - tw, bx + 21, cy, COL_TEXT, false);
+                g.drawString(font, tail, bx + bw - 10 - tw, cy, COL_DIM, false);
+                cy += 12;
             }
-            g.fill(bx + 9, cy + 1, bx + 17, cy + 9, ctlColor(w, i));
-            String tail = play + " In Play  /  " + enc + " encircled";
-            int tw = font.width(tail);
-            drawFit(g, sideName(w, i), bw - 40 - tw, bx + 21, cy, COL_TEXT, false);
-            g.drawString(font, tail, bx + bw - 10 - tw, cy, COL_DIM, false);
-            cy += 12;
-        }
-        for (int side : f.noCapital()) {
-            if (side >= 0 && side < w.sides.size()) paragraph(g, sideName(w, side) + " holds no capital: none of their cities counts as encircled.", COL_DIM);
-        }
-        if (!f.ties().isEmpty()) {
-            paragraph(g, f.ties().size() + (f.ties().size() == 1 ? " tie" : " ties") + " on neutral land await the staff decision (Short Circuit):", COL_WAR);
-            for (WarFront.Tie t : f.ties()) {
-                for (String[] pair : t.pairs()) paragraph(g, "  " + pair[0] + " - " + pair[1] + " (" + t.distance() + ")", COL_DIM);
+            for (int side : f.noCapital()) {
+                if (side >= 0 && side < w.sides.size()) paragraph(g, sideName(w, side) + " holds no capital: none of their cities counts as encircled.", COL_DIM);
             }
+            if (!f.ties().isEmpty()) {
+                paragraph(g, f.ties().size() + (f.ties().size() == 1 ? " tie" : " ties") + " on neutral land await the staff decision (Short Circuit):", COL_WAR);
+                for (WarFront.Tie t : f.ties()) {
+                    for (String[] pair : t.pairs()) paragraph(g, "  " + pair[0] + " - " + pair[1] + " (" + t.distance() + ")", COL_DIM);
+                }
+            }
+
         }
 
         // cidades In Play
         List<SiteTerritories.Locality> play = new ArrayList<>();
         for (WarFront.Unit u : f.units()) if (u.inPlay && !u.neutral()) play.addAll(u.members);
-        section(g, "In Play cities (" + play.size() + ")");
-        if (play.isEmpty()) paragraph(g, "None right now.", COL_DIM);
-        play.sort(java.util.Comparator.comparing((SiteTerritories.Locality l) -> String.valueOf(l.country), String.CASE_INSENSITIVE_ORDER)
-                .thenComparing(l -> String.valueOf(l.name), String.CASE_INSENSITIVE_ORDER));
-        for (SiteTerritories.Locality l : play) {
-            WarFront.Unit u = f.unitOf(l);
-            int rowTop = cy;
-            boolean vis = visible(rowTop, 12);
-            boolean hover = vis && mouseX >= bx + 6 && mouseX < bx + bw - 6 && mouseY >= rowTop && mouseY < rowTop + 12;
-            zebra(g, rowTop, 12, hover, false);
-            rowIdx++;
-            int color = ctlColor(w, u == null ? -4 : u.control);
-            g.fill(bx + 16, rowTop + 3, bx + 24, rowTop + 11, 0xFF0E0C08);
-            g.fill(bx + 17, rowTop + 4, bx + 23, rowTop + 10, color);
-            String st = f.statusOf(l);
-            String tail = st == null ? "In Play" : st;
-            int tw = font.width(tail);
-            String name = pretty(l.name) + (l.country == null || l.country.isBlank() ? "" : " (" + l.country + ")");
-            drawFit(g, name, bw - 56 - tw, bx + 29, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
-            g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 2, COL_WAR, false);
-            if (vis) hits.add(new Hit(bx + 6, rowTop, bw - 12, 12, () -> focusPoint(l), null));
-            cy += 12;
+        if (foldable(g, "playcities", "In Play cities (" + play.size() + ")", true, mouseX, mouseY)) {
+            if (play.isEmpty()) paragraph(g, "None right now.", COL_DIM);
+            play.sort(java.util.Comparator.comparing((SiteTerritories.Locality l) -> String.valueOf(l.country), String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(l -> String.valueOf(l.name), String.CASE_INSENSITIVE_ORDER));
+            for (SiteTerritories.Locality l : play) {
+                WarFront.Unit u = f.unitOf(l);
+                int rowTop = cy;
+                boolean vis = visible(rowTop, 12);
+                boolean hover = vis && mouseX >= bx + 6 && mouseX < bx + bw - 6 && mouseY >= rowTop && mouseY < rowTop + 12;
+                zebra(g, rowTop, 12, hover, false);
+                rowIdx++;
+                int color = ctlColor(w, u == null ? -4 : u.control);
+                g.fill(bx + 16, rowTop + 3, bx + 24, rowTop + 11, 0xFF0E0C08);
+                g.fill(bx + 17, rowTop + 4, bx + 23, rowTop + 10, color);
+                String st = f.statusOf(l);
+                String tail = st == null ? "In Play" : st;
+                int tw = font.width(tail);
+                String name = pretty(l.name) + (l.country == null || l.country.isBlank() ? "" : " (" + l.country + ")");
+                drawFit(g, name, bw - 56 - tw, bx + 29, rowTop + 2, hover ? 0xFFDDE7EE : COL_LINK, false);
+                g.drawString(font, tail, bx + bw - 10 - tw, rowTop + 2, COL_WAR, false);
+                if (vis) hits.add(new Hit(bx + 6, rowTop, bw - 12, 12, () -> focusPoint(l), null));
+                cy += 12;
+            }
         }
 
         // capitulação
         List<WarFront.Score> risk = new ArrayList<>();
         for (WarFront.Score s : f.scores()) if (s.score() > 0 || s.capitulated()) risk.add(s);
-        section(g, "Capitulation (Law 7.9)");
-        paragraph(g, "A nation capitulates with more than 100 points lost and its capital taken.", COL_DIM);
-        if (risk.isEmpty()) paragraph(g, "No nation at risk.", COL_DIM);
-        for (WarFront.Score s : risk) {
-            int rowTop = cy;
-            g.fill(bx + 9, rowTop + 1, bx + 17, rowTop + 9, ctlColor(w, s.side()));
-            String tail = s.capitulated() ? "CAPITULOU" : pts(s.score()) + " / 100" + (s.capitalTaken() ? "  capital taken" : "");
-            int tw = font.width(tail);
-            drawFit(g, s.nation() + (s.hasCapital() ? "" : " (no capital)"), bw - 40 - tw, bx + 21, rowTop, s.capitulated() ? COL_WAR : COL_TEXT, false);
-            g.drawString(font, tail, bx + bw - 10 - tw, rowTop, s.capitulated() ? COL_WAR : COL_DIM, false);
-            cy += 11;
-            int barW = bw - 18;
-            g.fill(bx + 9, cy, bx + 9 + barW, cy + 4, 0xFF0E0C08);
-            int fill = (int) Math.min(barW - 2, Math.round((barW - 2) * Math.min(1.0, s.score() / 100.0)));
-            g.fill(bx + 10, cy + 1, bx + 10 + fill, cy + 3, s.capitulated() ? 0xFFC02B2B : 0xFFCFD3D1);
-            cy += 8;
+        if (foldable(g, "capit", "Capitulation (Law 7.9)", true, mouseX, mouseY)) {
+            paragraph(g, "A nation capitulates with more than 100 points lost and its capital taken.", COL_DIM);
+            if (risk.isEmpty()) paragraph(g, "No nation at risk.", COL_DIM);
+            for (WarFront.Score s : risk) {
+                int rowTop = cy;
+                g.fill(bx + 9, rowTop + 1, bx + 17, rowTop + 9, ctlColor(w, s.side()));
+                String tail = s.capitulated() ? "CAPITULOU" : pts(s.score()) + " / 100" + (s.capitalTaken() ? "  capital taken" : "");
+                int tw = font.width(tail);
+                drawFit(g, s.nation() + (s.hasCapital() ? "" : " (no capital)"), bw - 40 - tw, bx + 21, rowTop, s.capitulated() ? COL_WAR : COL_TEXT, false);
+                g.drawString(font, tail, bx + bw - 10 - tw, rowTop, s.capitulated() ? COL_WAR : COL_DIM, false);
+                cy += 11;
+                int barW = bw - 18;
+                g.fill(bx + 9, cy, bx + 9 + barW, cy + 4, 0xFF0E0C08);
+                int fill = (int) Math.min(barW - 2, Math.round((barW - 2) * Math.min(1.0, s.score() / 100.0)));
+                g.fill(bx + 10, cy + 1, bx + 10 + fill, cy + 3, s.capitulated() ? 0xFFC02B2B : 0xFFCFD3D1);
+                cy += 8;
+            }
         }
 
-        section(g, "Map legend");
-        paragraph(g, "Thick line: front, with arrows in the direction of the advance (at an encircled city only the side that can advance has arrows). Dotted gray line: internal link of one side. Pulsing ring: In Play city. Red ring: encircled city.", COL_DIM);
+        if (foldable(g, "legend", "Map legend", false, mouseX, mouseY)) {
+            paragraph(g, "Thick line: front, with arrows in the direction of the advance (at an encircled city only the side that can advance has arrows). Dotted gray line: internal link of one side. Pulsing ring: In Play city. Red ring: encircled city.", COL_DIM);
+        }
     }
 
     // -------------------------------------------------------------- configurações
@@ -1241,35 +1278,7 @@ abstract class MapPanels extends MapUi {
         boolean twoCols = bw >= 440;
         if (twoCols) bw = fullW / 2;
 
-        section(g, "Interface");
-        {
-            int pct = p.uiScalePct;
-            String shown = pct == 0 ? "Auto (" + Math.round(ui * 100) + "%)" : pct + "%";
-            stepsRow(g, "Menu size", shown, 11, pct == 0 ? 0 : indexOfStep(pct, 50, 10, 11), mouseX, mouseY, i -> {
-                p.uiScalePct = i == 0 ? 0 : 50 + i * 10;      // first step = automatic, then 60% to 150%
-                Prefs.save();
-            });
-            // each menu on its own (also by dragging its corner on the map)
-            stepsRow(g, "Side panel", p.panelScalePct + "%", 16, indexOfStep(p.panelScalePct, 50, 10, 16), mouseX, mouseY, i -> {
-                p.panelScalePct = 50 + i * 10;
-                Prefs.save();
-            });
-            stepsRow(g, "Wars / legend box", p.outlinerScalePct + "%", 16, indexOfStep(p.outlinerScalePct, 50, 10, 16), mouseX, mouseY, i -> {
-                p.outlinerScalePct = 50 + i * 10;
-                Prefs.save();
-            });
-            stepsRow(g, "Mode bar", p.barScalePct + "%", 16, indexOfStep(p.barScalePct, 50, 10, 16), mouseX, mouseY, i -> {
-                p.barScalePct = 50 + i * 10;
-                Prefs.save();
-            });
-        }
-
-        toggleRow(g, "Tell me when a new version is out", p.updateCheck, mouseX, mouseY, () -> {
-            p.updateCheck = !p.updateCheck;
-            Prefs.save();
-        });
-
-        section(g, "Map appearance");
+        section(g, "Map");
         stepsRow(g, "Country color intensity", p.fillPct + "%", 11, indexOfStep(p.fillPct, 0, 10, 11), mouseX, mouseY, i -> {
             p.fillPct = i * 10;
             Prefs.changed();
@@ -1278,32 +1287,12 @@ abstract class MapPanels extends MapUi {
             p.borderPct = i * 10;
             Prefs.changed();
         });
-        choiceRow(g, "Terrain style", new String[]{"Atlas", "Clean (Xaero's)"}, p.mapStyle, mouseX, mouseY, i -> {
-            p.mapStyle = i;
-            Prefs.changed();
-        });
-        stepsRow(g, "Relief emphasis", p.reliefPct + "%", 9, indexOfStep(p.reliefPct, 100, 25, 9), mouseX, mouseY, i -> {
-            p.reliefPct = 100 + i * 25;
-            Prefs.changed();
-        });
-        stepsRow(g, "Terrain noise smoothing", p.smoothPct + "%", 11, indexOfStep(p.smoothPct, 0, 10, 11), mouseX, mouseY, i -> {
-            p.smoothPct = i * 10;
-            Prefs.changed();
-        });
-        stepsRow(g, "Water saturation", p.waterSatPct + "%", 11, indexOfStep(p.waterSatPct, 0, 10, 11), mouseX, mouseY, i -> {
-            p.waterSatPct = i * 10;
-            Prefs.changed();
-        });
         toggleRow(g, "Country names", p.countryNames, mouseX, mouseY, () -> {
             p.countryNames = !p.countryNames;
             Prefs.save();
         });
         toggleRow(g, "City names", p.cityNames, mouseX, mouseY, () -> {
             p.cityNames = !p.cityNames;
-            Prefs.save();
-        });
-        choiceRow(g, "City markers", new String[]{"Site icons", "Simple"}, p.simpleMarkers ? 1 : 0, mouseX, mouseY, i -> {
-            p.simpleMarkers = i == 1;
             Prefs.save();
         });
         stepsRow(g, "City icon size", p.cityIconPct + "%", 11, indexOfStep(p.cityIconPct, 50, 25, 11), mouseX, mouseY, i -> {
@@ -1329,23 +1318,27 @@ abstract class MapPanels extends MapUi {
             Prefs.save();
         });
 
+        section(g, "Interface");
+        {
+            int pct = p.uiScalePct;
+            String shown = pct == 0 ? "Auto (" + Math.round(ui * 100) + "%)" : pct + "%";
+            stepsRow(g, "Menu size", shown, 11, pct == 0 ? 0 : indexOfStep(pct, 50, 10, 11), mouseX, mouseY, i -> {
+                p.uiScalePct = i == 0 ? 0 : 50 + i * 10;      // first step = automatic, then 60% to 150%
+                Prefs.save();
+            });
+        }
+
+        toggleRow(g, "Tell me when a new version is out", p.updateCheck, mouseX, mouseY, () -> {
+            p.updateCheck = !p.updateCheck;
+            Prefs.save();
+        });
+
         int col1End = cy;
         if (twoCols) {
             bx = fullX + fullW / 2;
             cy = colTop;
             rowIdx = 0;
         }
-        section(g, "War");
-        toggleRow(g, "Live control (dynmap)", SiteTerritories.liveWar(), mouseX, mouseY, () -> SiteTerritories.setLiveWar(!SiteTerritories.liveWar()));
-        toggleRow(g, "Record the war map (replay on the war map)", p.recordWar, mouseX, mouseY, () -> {
-            p.recordWar = !p.recordWar;
-            Prefs.save();
-        });
-        toggleRow(g, "Record live wars automatically", p.recordLiveWars, mouseX, mouseY, () -> {
-            p.recordLiveWars = !p.recordLiveWars;
-            Prefs.save();
-        });
-
         section(g, "Minimap");
         toggleRow(g, "Minimap on the game screen", p.minimap, mouseX, mouseY, () -> {
             p.minimap = !p.minimap;
@@ -1378,6 +1371,17 @@ abstract class MapPanels extends MapUi {
         choiceRow(g, "Enlarge key", new String[]{"Hold", "Toggle"}, p.minimapHold ? 0 : 1, mouseX, mouseY, i -> {
             p.minimapHold = i == 0;
             Minimap.expanded = false;
+            Prefs.save();
+        });
+
+        section(g, "War");
+        toggleRow(g, "Live control (dynmap)", SiteTerritories.liveWar(), mouseX, mouseY, () -> SiteTerritories.setLiveWar(!SiteTerritories.liveWar()));
+        toggleRow(g, "Record the war map (replay on the war map)", p.recordWar, mouseX, mouseY, () -> {
+            p.recordWar = !p.recordWar;
+            Prefs.save();
+        });
+        toggleRow(g, "Record live wars automatically", p.recordLiveWars, mouseX, mouseY, () -> {
+            p.recordLiveWars = !p.recordLiveWars;
             Prefs.save();
         });
 
@@ -1424,81 +1428,301 @@ abstract class MapPanels extends MapUi {
         ServerNews.Item open = null;
         for (ServerNews.Item it : items) if (it.id() == newsOpen) open = it;
         if (open == null) newsOpen = 0;
-        int top = header(g, NEUTRAL, "News", open != null ? null : items.isEmpty() ? null : "Latest " + items.size() + " from this server", null, mouseX, mouseY, () -> {
+        int top = header(g, NEUTRAL, "News", items.isEmpty() ? null : "Latest " + items.size() + " from this server", null, mouseX, mouseY, () -> {
             tab = TAB_NONE;
             newsOpen = 0;
         });
         beginScroll(g, top, SCROLL[TAB_NEWS], 0);
-        if (open != null) drawNewsItem(g, open, mouseX, mouseY);
-        else if (items.isEmpty()) paragraph(g, ServerSync.active() ? "No news yet." : "No news: this server has no BmcWar plugin, or it has not sent any yet.", COL_DIM);
-        else for (ServerNews.Item it : items) drawNewsRow(g, it, mouseX, mouseY);
+        if (items.isEmpty()) {
+            NewsArt.empty(g, bx + (bw - 16) / 2, cy + 8);
+            cy += 30;
+            String none = ServerSync.active() ? "No news yet." : "No news: this server has no BmcWar plugin, or it has not sent any yet.";
+            for (String l : wrap(none, bw - 40)) {
+                g.drawString(font, l, bx + (bw - font.width(l)) / 2, cy, COL_DIM, false);
+                cy += 10;
+            }
+        } else for (ServerNews.Item it : items) drawNewsRow(g, it, mouseX, mouseY);
         SCROLL[TAB_NEWS] = endScroll(g, SCROLL[TAB_NEWS]);
+        if (open != null) drawNewsArticle(g, open, mouseX, mouseY);
     }
 
-    /** One news in the list: kind and date, the headline, the first lines of the text and a small picture; a click opens it. */
+    /** One news in the list, on a card: its icon, kind and date, the headline, the first lines of the text and a small picture; a click opens it. */
     private void drawNewsRow(GuiGraphics g, ServerNews.Item it, int mouseX, int mouseY) {
-        int rowTop = cy;
+        int x0 = bx + 8, w = bw - 16, pad = 7, rowTop = cy;
         RemoteImages.Img pic = it.image() == null ? null : RemoteImages.picture(it.image());
-        int thumbW = it.image() == null ? 0 : 64, textX = bx + 10 + (thumbW > 0 ? thumbW + 6 : 0), textW = bx + bw - 10 - textX;
-        List<String> head = wrap(it.title(), textW);
+        boolean thumb = it.image() != null;
+        int inner = w - 2 * pad, textX = x0 + pad + (thumb ? 64 + 10 : 0), textW = x0 + w - pad - textX;
+        List<List<Seg>> head = richWrap(it.title(), inner, true);
         String body = it.notes() != null ? it.notes() : String.join(" ", it.details());
-        List<String> lines = wrap(body.replaceAll("\\s+", " ").strip(), textW);
+        List<List<Seg>> lines = richWrap(body.replaceAll("\\s+", " ").strip(), textW, false);
         boolean more = lines.size() > 3;
         if (more) lines = new ArrayList<>(lines.subList(0, 3));
-        int h = 16 + head.size() * 10 + lines.size() * 10 + 14;
-        if (thumbW > 0) h = Math.max(h, 16 + 36 + 4);
-        boolean hover = visible(rowTop, h) && mouseX >= bx + 4 && mouseX < bx + bw - 4 && mouseY >= rowTop && mouseY < rowTop + h;
-        if (hover) g.fill(bx + 5, rowTop, bx + bw - 5, rowTop + h, 0x30FFFFFF);
-        g.drawString(font, ServerNews.label(it.type()).toUpperCase(Locale.ROOT), bx + 10, rowTop + 4, ServerNews.color(it.type()), false);
-        if (it.date() != null) drawFit(g, it.date(), bw / 2, bx + bw - 10 - Math.min(bw / 2, font.width(it.date())), rowTop + 4, COL_DIM, false);
-        int y = rowTop + 16;
-        if (pic != null) drawImage(g, pic, bx + 10, y, thumbW, 36);
-        else if (thumbW > 0) g.fill(bx + 10, y, bx + 10 + thumbW, y + 36, 0xFF18191B);
-        for (String l : head) {
-            g.drawString(font, l, textX, y, 0xFFECEBE4, false);
+        int bodyH = Math.max(thumb ? 36 + 3 : 0, lines.size() * 10);
+        int h = pad + 16 + 4 + head.size() * 10 + 4 + bodyH + 4 + 10 + pad - 2;
+        if (rowTop + h < scrollTop || rowTop > scrollBottom) {   // out of sight: only its height counts
+            cy = rowTop + h + 5;
+            return;
+        }
+        boolean hover = visible(rowTop, h) && mouseX >= x0 && mouseX < x0 + w && mouseY >= rowTop && mouseY < rowTop + h;
+        NewsArt.nine(g, hover || it.id() == newsOpen ? "card_hover" : "card", 12, 3, x0, rowTop, w, h);
+        int y = rowTop + pad;
+        NewsArt.icon(g, it.type(), x0 + pad, y);
+        g.drawString(font, ServerNews.label(it.type()).toUpperCase(Locale.ROOT), x0 + pad + 20, y + 4, ServerNews.color(it.type()), false);
+        if (it.date() != null) drawFit(g, it.date(), w / 2 - pad, x0 + w - pad - Math.min(w / 2 - pad, font.width(it.date())), y + 4, COL_DIM, false);
+        y += 20;
+        for (List<Seg> l : head) {
+            drawRich(g, l, x0 + pad, y, 0xFFECEBE4, false);
             y += 10;
         }
-        for (String l : lines) {
-            g.drawString(font, l, textX, y, COL_DIM, false);
-            y += 10;
+        y += 4;
+        if (thumb) NewsArt.framed(g, pic, x0 + pad + 3, y + 3, 58, 33);
+        int ly = y;
+        for (List<Seg> l : lines) {
+            drawRich(g, l, textX, ly, COL_DIM, false);
+            ly += 10;
         }
-        g.drawString(font, more ? "Read more >" : "Open >", textX, rowTop + h - 12, hover ? 0xFFDDE7EE : COL_LINK, false);
-        g.fill(bx + 10, rowTop + h, bx + bw - 10, rowTop + h + 1, 0xFF3E4245);
-        if (visible(rowTop, h)) hits.add(new Hit(bx + 4, rowTop, bw - 8, h, () -> {
-            newsOpen = it.id();
-            SCROLL[TAB_NEWS] = 0;
+        y += bodyH + 4;
+        g.drawString(font, more ? "Read more >" : "Open >", x0 + pad, y, hover ? 0xFFF0B429 : COL_LINK, false);
+        if (visible(rowTop, h)) hits.add(new Hit(x0, rowTop, w, h, () -> {
+            newsOpen = newsOpen == it.id() ? 0 : it.id();   // a second click on the same news closes it
+            articleScroll = 0;
         }, null));
-        cy = rowTop + h + 2;
+        cy = rowTop + h + 5;
     }
 
-    /** One news in full: the picture as wide as the panel, and the text with its own paragraphs. */
-    private void drawNewsItem(GuiGraphics g, ServerNews.Item it, int mouseX, int mouseY) {
-        link(g, "< All news", bx + 10, cy + 2, true, mouseX, mouseY, () -> {
-            newsOpen = 0;
-            SCROLL[TAB_NEWS] = 0;
-        });
-        cy += 16;
-        g.drawString(font, ServerNews.label(it.type()).toUpperCase(Locale.ROOT), bx + 10, cy, ServerNews.color(it.type()), false);
-        if (it.date() != null) drawFit(g, it.date(), bw / 2, bx + bw - 10 - Math.min(bw / 2, font.width(it.date())), cy, COL_DIM, false);
-        cy += 12;
-        paragraph(g, it.title(), 0xFFECEBE4);
-        cy += 2;
+    /**
+     * One news in full, in its own panel beside the list (over it when the screen is too narrow): the Gaia Guardian masthead, the kind
+     * on a coloured tag, the headline, the picture as wide as the panel, the facts in a box and the text with its own paragraphs.
+     */
+    private void drawNewsArticle(GuiGraphics g, ServerNews.Item it, int mouseX, int mouseY) {
+        int sbx = bx, sby = by, sbw = bw, sbh = bh;
+        int ax = panelX + panelW + 6;
+        if (ax + PW > width - barWLocal() - MARGIN) ax = panelX;
+        articleX = ax;
+        articleY = panelY;
+        articleW = PW;
+        articleH = panelH;
+        articleVisible = true;
+        bx = ax;
+        by = panelY;
+        bw = PW;
+        bh = panelH;
+        NewsArt.nine(g, "panel_frame", 16, 4, bx, by, bw, bh);
+        hits.add(new Hit(bx, by, bw, bh, null, null));
+
+        // masthead
+        int hh = 34;
+        g.fill(bx + 4, by + 4, bx + bw - 4, by + hh, 0xFF33373A);
+        g.fill(bx + 4, by + hh, bx + bw - 4, by + hh + 1, COL_GOLD_DIM);
+        String name = "GAIA GUARDIAN", sub = "DIPLOMACY AND WAR";
+        int nw = spacedWidth(name), nx = bx + (bw - nw) / 2;
+        spaced(g, name, nx, by + 9, 0xFFF0B429, true);
+        diamond(g, nx - 8, by + 12, 0xFFF0B429);
+        diamond(g, nx + nw + 6, by + 12, 0xFFF0B429);
+        spaced(g, sub, bx + (bw - spacedWidth(sub)) / 2, by + 21, COL_DIM, false);
+        int cx = bx + bw - 22, cyy = by + 7;
+        boolean overX = mouseX >= cx && mouseX < cx + 14 && mouseY >= cyy && mouseY < cyy + 14;
+        g.fill(cx, cyy, cx + 14, cyy + 14, 0xFF0A0B08);
+        g.fill(cx + 1, cyy + 1, cx + 13, cyy + 13, overX ? 0xFF7A2A22 : 0xFF5A1F1A);
+        g.drawString(font, "X", cx + 5, cyy + 3, 0xFFF4C4B4, false);
+        hits.add(new Hit(cx, cyy, 14, 14, () -> newsOpen = 0, "Close"));
+
+        beginScroll(g, by + hh + 2, articleScroll, 0);
+        int x = bx + 12, w = bw - 24;
+        link(g, "< All news", x, cy + 2, true, mouseX, mouseY, () -> newsOpen = 0);
+        cy += 15;
+        // the kind on a tag in its colour, then the date
+        int col = ServerNews.color(it.type());
+        String kind = ServerNews.label(it.type()).toUpperCase(Locale.ROOT);
+        int tw = font.width(kind) + 8;
+        g.fill(x, cy, x + tw, cy + 12, col);
+        g.fill(x + 1, cy + 1, x + tw - 1, cy + 11, darken(col, 0.3f));
+        g.drawString(font, kind, x + 4, cy + 2, lighten(col, 1.15f), false);
+        if (it.date() != null) drawFit(g, it.date(), w - tw - 6, x + tw + 6, cy + 2, COL_DIM, false);
+        cy += 17;
+        for (List<Seg> l : richWrap(it.title().toUpperCase(Locale.ROOT), w, true)) {
+            drawRich(g, l, x, cy, 0xFFECEBE4, true);
+            cy += 11;
+        }
+        cy += 4;
         RemoteImages.Img pic = it.image() == null ? null : RemoteImages.picture(it.image());
         if (pic != null) {
-            int w = bw - 20, h = Math.max(1, (int) Math.round(pic.h() * (double) w / pic.w()));
-            drawImage(g, pic, bx + 10, cy, w, h);
-            cy += h + 6;
+            int pw = w - 6, ph = Math.max(1, (int) Math.round(pic.h() * (double) pw / pic.w()));
+            NewsArt.framed(g, pic, x + 3, cy + 3, pw, ph);
+            cy += ph + 10;
         } else if (it.image() != null) {
-            paragraph(g, "(loading picture...)", COL_DIM);
+            NewsArt.framed(g, null, x + 3, cy + 3, w - 6, 40);
+            g.drawString(font, "Loading picture...", x + (w - font.width("Loading picture...")) / 2, cy + 19, COL_DIM, false);
+            cy += 50;
         }
-        for (String line : it.details()) paragraph(g, line, COL_DIM);
+        if (!it.details().isEmpty()) {
+            List<List<List<Seg>>> facts = new ArrayList<>();
+            int fh = 8;
+            for (String d : it.details()) {
+                List<List<Seg>> ls = richWrap(d, w - 22, false);
+                facts.add(ls);
+                fh += ls.size() * 10;
+            }
+            NewsArt.nine(g, "card", 12, 3, x, cy, w, fh);
+            int fy = cy + 5;
+            for (List<List<Seg>> ls : facts) {
+                diamond(g, x + 8, fy + 3, 0xFFF0B429);
+                for (List<Seg> l : ls) {
+                    drawRich(g, l, x + 15, fy, COL_TEXT, false);
+                    fy += 10;
+                }
+            }
+            cy += fh + 6;
+        }
         if (it.notes() != null) {
+            NewsArt.sep(g, x, cy, w);
+            cy += 8;
             // the text as it was written: each line break kept, an empty line is a gap between paragraphs
             for (String para : it.notes().replace("\r", "").replace("\t", "    ").split("\n", -1)) {
-                if (para.isBlank()) cy += 5;
-                else paragraph(g, para, COL_TEXT);
+                if (para.isBlank()) {
+                    cy += 5;
+                    continue;
+                }
+                for (List<Seg> l : richWrap(para, w, false)) {
+                    drawRich(g, l, x, cy, COL_TEXT, false);
+                    cy += 10;
+                }
+                cy += 2;
             }
         }
+        articleScroll = endScroll(g, articleScroll);
+        bx = sbx;
+        by = sby;
+        bw = sbw;
+        bh = sbh;
+    }
+
+    /** A piece of a news line: a word, in bold, in a country's colour (rgb) or the line's own (-1). */
+    record Seg(String text, int rgb, boolean bold) {}
+
+    private static SiteTerritories.Data namesFor;
+    private static java.util.regex.Pattern namesRe;
+    private static Map<String, Integer> nameRgb = Map.of();
+
+    /** The countries' names and labels found in a text (longest first, whole words, any case) with their colours. */
+    private List<Seg> segments(String text, boolean bold) {
+        SiteTerritories.Data d = SiteTerritories.data();
+        List<Seg> out = new ArrayList<>();
+        if (d == null || d.names == null) {
+            out.add(new Seg(text, -1, bold));
+            return out;
+        }
+        if (namesFor != d) {
+            Map<String, Integer> m = new HashMap<>();
+            for (int c = 0; c < d.names.length; c++) {
+                for (String n : new String[]{d.names[c], d.labels == null ? null : d.labels[c]}) {
+                    if (n != null && n.strip().length() >= 3) m.putIfAbsent(n.strip().toLowerCase(Locale.ROOT), d.rgb[c] | 0xFF000000);
+                }
+            }
+            List<String> keys = new ArrayList<>(m.keySet());
+            keys.sort((a, b) -> b.length() - a.length());
+            StringBuilder re = new StringBuilder();
+            for (String k : keys) re.append(re.length() == 0 ? "" : "|").append(java.util.regex.Pattern.quote(k));
+            namesRe = keys.isEmpty() ? null : java.util.regex.Pattern.compile("(?<![\\p{L}\\p{N}])(" + re + ")(?![\\p{L}\\p{N}])", java.util.regex.Pattern.CASE_INSENSITIVE);
+            nameRgb = m;
+            namesFor = d;
+        }
+        if (namesRe == null) {
+            out.add(new Seg(text, -1, bold));
+            return out;
+        }
+        java.util.regex.Matcher mt = namesRe.matcher(text);
+        int at = 0;
+        while (mt.find()) {
+            if (mt.start() > at) out.add(new Seg(text.substring(at, mt.start()), -1, bold));
+            out.add(new Seg(mt.group(), nameRgb.getOrDefault(mt.group().toLowerCase(Locale.ROOT), -1), true));
+            at = mt.end();
+        }
+        if (at < text.length()) out.add(new Seg(text.substring(at), -1, bold));
+        return out;
+    }
+
+    /** A country's colour made readable on the dark panel: lightened, and a very dark one (black) is mixed with white until it shows. */
+    static int readable(int rgb) {
+        int c = lighten(rgb, 1.25f);
+        for (int i = 0; i < 6 && luma(c) < 140; i++) {
+            int r = (c >> 16) & 255, gr = (c >> 8) & 255, b = c & 255;
+            c = 0xFF000000 | (r + (255 - r) / 3) << 16 | (gr + (255 - gr) / 3) << 8 | (b + (255 - b) / 3);
+            if (luma(rgb) < 20 && i == 0) c = 0xFF9A9A9A;   // black: a clear grey, the mix would take several steps
+        }
+        return c;
+    }
+
+    private static int luma(int c) {
+        return (((c >> 16) & 255) * 299 + ((c >> 8) & 255) * 587 + (c & 255) * 114) / 1000;
+    }
+
+    private net.minecraft.network.chat.Component styled(Seg s, int base) {
+        net.minecraft.network.chat.MutableComponent c = Component.literal(s.text());
+        if (s.bold()) c = c.withStyle(ChatFormatting.BOLD);
+        return c.withStyle(st -> st.withColor(s.rgb() != -1 ? readable(s.rgb()) & 0xFFFFFF : base & 0xFFFFFF));
+    }
+
+    /** Wraps a text into lines of pieces, country names kept in their colour and bold; bold = the whole text in bold (headlines). */
+    List<List<Seg>> richWrap(String text, int maxW, boolean bold) {
+        // the same text at the same width comes back every frame: worked out once (the list is read-only), forgotten when the site data changes
+        SiteTerritories.Data d = SiteTerritories.data();
+        if (wrapsFor != d) {
+            WRAPS.clear();
+            wrapsFor = d;
+        }
+        String key = maxW + (bold ? "b" : "n") + text;
+        List<List<Seg>> hit = WRAPS.get(key);
+        if (hit != null) return hit;
+        hit = richWrap0(text, maxW, bold);
+        WRAPS.put(key, hit);
+        return hit;
+    }
+
+    private static SiteTerritories.Data wrapsFor;
+    private static final Map<String, List<List<Seg>>> WRAPS = new java.util.LinkedHashMap<>(64, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, List<List<Seg>>> e) {
+            return size() > 400;
+        }
+    };
+
+    private List<List<Seg>> richWrap0(String text, int maxW, boolean bold) {
+        List<List<Seg>> lines = new ArrayList<>();
+        List<Seg> line = new ArrayList<>();
+        int w = 0;
+        for (Seg s : segments(text, bold)) {
+            // words keep their spaces at the end, so the line can be cut between them
+            for (String word : s.text().split("(?<= )")) {
+                if (word.isEmpty()) continue;
+                int ww = font.width(styled(new Seg(word, s.rgb(), s.bold()), 0xFFFFFF));
+                if (w + ww > maxW + font.width(" ") && !line.isEmpty()) {
+                    lines.add(line);
+                    line = new ArrayList<>();
+                    w = 0;
+                }
+                line.add(new Seg(word, s.rgb(), s.bold()));
+                w += ww;
+            }
+        }
+        if (!line.isEmpty()) lines.add(line);
+        return lines;
+    }
+
+    /** Draws one line of pieces; returns nothing, the caller moves down. */
+    void drawRich(GuiGraphics g, List<Seg> line, int x, int y, int color, boolean shadow) {
+        for (Seg s : line) {
+            net.minecraft.network.chat.Component c = styled(s, color);
+            g.drawString(font, c, x, y, 0xFFFFFFFF, shadow);
+            x += font.width(c);
+        }
+    }
+
+    /** A small diamond (5x5) centred on (x, y). */
+    static void diamond(GuiGraphics g, int x, int y, int col) {
+        g.fill(x, y - 2, x + 1, y + 3, col);
+        g.fill(x - 1, y - 1, x + 2, y + 2, col);
+        g.fill(x - 2, y, x + 3, y + 1, col);
     }
 
     // ------------------------------------------------- panorama diplomático
