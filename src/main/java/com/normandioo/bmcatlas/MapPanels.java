@@ -134,6 +134,8 @@ abstract class MapPanels extends MapUi {
     int articleX, articleY, articleW, articleH;
     boolean articleVisible;
     static double articleScroll;
+    /** The news picture shown full screen, at its original size (its address), or null. */
+    static String viewImage;
     int cardX, cardY, cardH;
     boolean cardVisible;
 
@@ -1549,6 +1551,7 @@ abstract class MapPanels extends MapUi {
         if (pic != null) {
             int pw = w - 6, ph = Math.max(1, (int) Math.round(pic.h() * (double) pw / pic.w()));
             NewsArt.framed(g, pic, x + 3, cy + 3, pw, ph);
+            if (visible(cy + 3, ph)) hits.add(new Hit(x + 3, cy + 3, pw, ph, () -> viewImage = it.image(), "Click to enlarge"));
             cy += ph + 10;
         } else if (it.image() != null) {
             NewsArt.framed(g, null, x + 3, cy + 3, w - 6, 40);

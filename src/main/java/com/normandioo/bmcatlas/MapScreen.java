@@ -401,8 +401,28 @@ public class MapScreen extends MapEditor {
         drawTooltip(g, mouseX, mouseY);
         drawToast(g);
         drawHelp(g);
+        drawImageView(g);
         drawPerf(g);
         if (copiedFrames > 0) copiedFrames--;
+    }
+
+    /** A news picture full screen at its original resolution (as large as fits, never blurred below 1:1 by the shrink); click or Esc closes. */
+    private void drawImageView(GuiGraphics g) {
+        if (viewImage == null) return;
+        g.fill(0, 0, width, height, 0xE0000000);
+        RemoteImages.Img img = RemoteImages.fullPicture(viewImage);
+        String hint = "Click anywhere or press Esc to close";
+        if (img == null) {
+            String wait = "Loading the full picture...";
+            g.drawString(font, wait, (width - font.width(wait)) / 2, height / 2 - 4, COL_DIM, false);
+        } else {
+            double sc = Math.min((width - 24.0) / img.w(), (height - 34.0) / img.h());
+            int dw = Math.max(1, (int) Math.round(img.w() * sc)), dh = Math.max(1, (int) Math.round(img.h() * sc));
+            NewsArt.framed(g, img, (width - dw) / 2, (height - 14 - dh) / 2 + 2, dw, dh);
+            String size = img.w() + " x " + img.h() + " px";
+            g.drawString(font, size, (width - font.width(size)) / 2, (height - 14 - dh) / 2 + dh + 8, COL_DIM, false);
+        }
+        g.drawString(font, hint, (width - font.width(hint)) / 2, height - 12, 0xFFF0B429, false);
     }
 
     /** Diagnóstico (F7): quanto cada parte do desenho custa, em milissegundos por quadro. */
@@ -2493,6 +2513,10 @@ public class MapScreen extends MapEditor {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = (event.x() / ui), my = (event.y() / ui);
+        if (viewImage != null) {
+            viewImage = null;
+            return true;
+        }
         if (helpOpen) {
             helpOpen = false;
             return true;
@@ -2666,6 +2690,10 @@ public class MapScreen extends MapEditor {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key0 = event.key();
+        if (viewImage != null) {
+            viewImage = null;
+            return true;
+        }
         if (helpOpen) {
             helpOpen = false;
             return true;
