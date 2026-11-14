@@ -332,6 +332,7 @@ public class MapScreen extends MapEditor {
         hits.clear();
         cuts.clear();
         panelVisible = false;
+        articleVisible = false;
         cardVisible = false;
         if (relationalMode() && !siteMode()) mode = MODE_POLITICAL;
         if (editing()) exportBeforeFrame();   // a video export sets the moment and the view of its next frame
@@ -1657,7 +1658,7 @@ public class MapScreen extends MapEditor {
                     SCROLL[TAB_DIPLOMENU] = 0;
                 }, false));
         int unread = ServerNews.unread();
-        b.add(new Btn("news", tab == TAB_NEWS || unread > 0, true, "News\nThe server's diplomatic news and Staff posts." + (unread > 0 ? "\n" + unread + " new" : ""), () -> {
+        b.add(new Btn(unread > 0 ? "news_unread" : "news", tab == TAB_NEWS, true, "News\nThe server's diplomatic news and Staff posts." + (unread > 0 ? "\n" + unread + " new" : ""), () -> {
             tab = tab == TAB_NEWS ? TAB_NONE : TAB_NEWS;
             newsOpen = 0;
             SCROLL[TAB_NEWS] = 0;
@@ -1723,7 +1724,7 @@ public class MapScreen extends MapEditor {
         List<Btn> dock = new ArrayList<>(), top = new ArrayList<>(), right = new ArrayList<>();
         for (Btn b : barButtons()) {
             switch (b.glyph()) {
-                case "list", "treaty", "news" -> top.add(b);
+                case "list", "treaty", "news", "news_unread" -> top.add(b);
                 case "source", "reload", "maps", "settings", "gen" -> right.add(b);
                 case "diplomacy" -> { }      // continua na tecla 4 e no painel
                 default -> dock.add(b);
@@ -2647,6 +2648,10 @@ public class MapScreen extends MapEditor {
         mouseY /= ui;
         if (cardVisible && mouseX >= cardX && mouseX < cardX + cardW && mouseY >= cardY && mouseY < cardY + cardH) {
             cardScroll = Math.max(0, cardScroll - scrollY * 20);
+            return true;
+        }
+        if (articleVisible && mouseX >= articleX && mouseX < articleX + articleW && mouseY >= articleY && mouseY < articleY + articleH) {
+            articleScroll = Math.max(0, articleScroll - scrollY * 20);
             return true;
         }
         if (panelVisible && mouseX >= panelX && mouseX < panelX + panelW && mouseY >= panelY && mouseY < panelY + panelH) {

@@ -61,16 +61,22 @@ final class UpdateCheck {
         if (latest != null && Prefs.get().updateCheck) shownAt = System.currentTimeMillis();
     }
 
-    /** The notice across the top of the screen for SHOW_MS after it starts. */
+    /** The notice in the top corner (away from the minimap) for SHOW_MS after it starts. */
     static void render(GuiGraphics g) {
         if (shownAt == 0 || latest == null || System.currentTimeMillis() - shownAt > SHOW_MS) return;
         Minecraft mc = Minecraft.getInstance();
-        String one = "BMC Atlas " + latest + " is out (you have " + installedVersion() + ").";
-        String two = "Download: " + page;
-        int w = Math.max(mc.font.width(one), mc.font.width(two)) + 12, x = (mc.getWindow().getGuiScaledWidth() - w) / 2;
-        g.fill(x, 6, x + w, 28, 0xC0101214);
-        g.drawString(mc.font, one, x + 6, 10, 0xFFF0EAD6, false);
-        g.drawString(mc.font, two, x + 6, 19, 0xFFF0B429, false);
+        String one = "BMC Atlas is out of date";
+        String two = "You have " + installedVersion() + ", the latest is " + latest + ".";
+        String three = page.replaceFirst("^https?://", "");
+        int w = Math.max(Math.max(mc.font.width(one), mc.font.width(two)), mc.font.width(three)) + 36;
+        int h = 40, screenW = mc.getWindow().getGuiScaledWidth();
+        boolean right = Prefs.get().minimapCorner != 1;   // same corner as the news notice: away from the minimap
+        int x = right ? screenW - w - 4 : 4, y = ServerNews.toastOn() ? 48 : 4;
+        NewsArt.nine(g, "toast_bg", 12, 2, x, y, w, h);
+        NewsArt.icon(g, "breaking", x + 6, y + (h - 16) / 2);
+        g.drawString(mc.font, one, x + 28, y + 6, 0xFFF0643C, false);
+        g.drawString(mc.font, two, x + 28, y + 17, 0xFFECEBE4, false);
+        g.drawString(mc.font, three, x + 28, y + 28, 0xFFF0B429, false);
     }
 
     /** The installed version, without the build suffix ("1.2.4+mc26.x" -> "1.2.4"), or null. */

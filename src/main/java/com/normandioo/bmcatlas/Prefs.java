@@ -35,9 +35,9 @@ final class Prefs {
         /** Realce do relevo (100-300%). */
         int reliefPct = 100;
         /** Suavização do terreno: menos ruído entre blocos (0-100%). */
-        int smoothPct = 0;
+        int smoothPct = 100;
         /** Saturação da água (0-100%). */
-        int waterSatPct = 10;
+        int waterSatPct = 100;
         boolean cityNames = true;
         boolean countryNames = false;
         /** Marcadores simples (quadradinhos) em vez dos ícones do site. */
@@ -132,6 +132,12 @@ final class Prefs {
     }
 
     private static void clamp() {
+        // no longer options: everyone gets the same look
+        data.mapStyle = 0;
+        data.reliefPct = 100;
+        data.smoothPct = 100;
+        data.waterSatPct = 100;
+        data.simpleMarkers = false;
         data.fillPct = Math.max(0, Math.min(100, data.fillPct));
         data.borderPct = Math.max(0, Math.min(100, data.borderPct));
         data.reliefPct = Math.max(100, Math.min(300, data.reliefPct));
