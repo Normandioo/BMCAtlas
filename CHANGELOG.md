@@ -1,3 +1,7 @@
+## 1.9.1
+
+- Click a news picture to see it full screen at its original resolution (click or Esc to close)
+
 ## 1.9.0
 
 - News panel redone with the Gaia Guardian art: each news is a card with its kind, date, headline and the start of the text; a click opens the whole news in a panel beside the list (headline in bold, country names in their colour and bold, the text with its own paragraphs, the picture as wide as the panel)
@@ -6,7 +10,6 @@
 - Settings reorganised and trimmed: the separate menu sizes (drag a menu's corner instead) and the terrain fine-tuning (relief, smoothing, water, terrain style) are gone; everyone gets the Atlas look; the simple city markers are gone
 - A hint over the hotbar when you enter a world: "Press N to open the political map"
 - The "out of date" notice is now a pop-up in the top corner (away from the minimap) with the link to the latest release
-- Click a news picture to see it full screen at its original resolution (click or Esc to close)
 - Faster News panel: text wrapping is cached and cards out of sight are not drawn
 
 ## 1.8.0
